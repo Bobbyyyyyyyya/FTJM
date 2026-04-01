@@ -1,0 +1,5 @@
+{
+  "name": "FTJM",
+  "description": "Een besloten forum voor FTJM leden met een eigen login systeem en admin goedkeuring.",
+  "requestFramePermissions": []
+}

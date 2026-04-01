@@ -1,0 +1,225 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required, immutable) - User's unique ID
+    //   - displayName: string (required) - User's name
+    //   - email: string (required, immutable) - User's email
+    //   - photoURL: string (optional) - User's photo
+    //   - bio: string (optional, max 500 chars) - User's bio
+    //   - notificationSettings: map (optional) - User's notification preferences
+    //   - customTheme: map (optional) - User's theme preferences
+    //   - createdAt: string (required, immutable) - ISO date
+    //   - updatedAt: string (required) - ISO date
+    //
+    // Collection: posts
+    // Document ID: {postId}
+    // Fields:
+    //   - authorUid: string (required, immutable)
+    //   - authorName: string (required)
+    //   - authorPhoto: string (optional)
+    //   - content: string (required, max 1000 chars)
+    //   - createdAt: string (required, immutable)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isWhitelisted() {
+      return isAuthenticated() && 
+             (exists(/databases/$(database)/documents/whitelist/$(request.auth.token.email)) || isAdmin());
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             (request.auth.token.email == "markohoksen@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'displayName', 'originalName', 'email', 'photoURL', 'bio', 'notificationSettings', 'customTheme', 'useCustomTheme', 'nameChangeCount', 'lastNameChangeDate', 'createdAt', 'updatedAt']) &&
+             data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             isValidEmail(data.email) &&
+             (!('originalName' in data) || (data.originalName is string && data.originalName.size() < 100)) &&
+             (!('nameChangeCount' in data) || data.nameChangeCount is number) &&
+             (!('lastNameChangeDate' in data) || isValidDateString(data.lastNameChangeDate)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 200000)) &&
+             (!('useCustomTheme' in data) || data.useCustomTheme is bool) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 500)) &&
+             (!('notificationSettings' in data) || (
+               data.notificationSettings is map &&
+               data.notificationSettings.keys().hasAll(['enableSounds', 'notifyNewPosts', 'notifyNewMessages', 'messageSound', 'postSound']) &&
+               data.notificationSettings.enableSounds is bool &&
+               data.notificationSettings.notifyNewPosts is bool &&
+               data.notificationSettings.notifyNewMessages is bool &&
+               data.notificationSettings.messageSound is string &&
+               data.notificationSettings.postSound is string
+             )) &&
+             (!('customTheme' in data) || (
+               data.customTheme is map &&
+               data.customTheme.keys().hasOnly(['wallpaper', 'pattern', 'primaryColor', 'secondaryColor', 'accentColor', 'textColor', 'cardBgColor', 'sidebarBgColor', 'headerBgColor', 'bodyBgColor', 'glassEffect', 'blurAmount', 'opacity', 'wallpaperX', 'wallpaperY']) &&
+               (!('wallpaper' in data.customTheme) || (data.customTheme.wallpaper is string && data.customTheme.wallpaper.size() < 1048576)) &&
+               (!('pattern' in data.customTheme) || (data.customTheme.pattern is string && data.customTheme.pattern.size() < 100)) &&
+               (!('primaryColor' in data.customTheme) || (data.customTheme.primaryColor is string && data.customTheme.primaryColor.size() < 50)) &&
+               (!('secondaryColor' in data.customTheme) || (data.customTheme.secondaryColor is string && data.customTheme.secondaryColor.size() < 50)) &&
+               (!('accentColor' in data.customTheme) || (data.customTheme.accentColor is string && data.customTheme.accentColor.size() < 50)) &&
+               (!('textColor' in data.customTheme) || (data.customTheme.textColor is string && data.customTheme.textColor.size() < 50)) &&
+               (!('cardBgColor' in data.customTheme) || (data.customTheme.cardBgColor is string && data.customTheme.cardBgColor.size() < 50)) &&
+               (!('sidebarBgColor' in data.customTheme) || (data.customTheme.sidebarBgColor is string && data.customTheme.sidebarBgColor.size() < 50)) &&
+               (!('headerBgColor' in data.customTheme) || (data.customTheme.headerBgColor is string && data.customTheme.headerBgColor.size() < 50)) &&
+               (!('bodyBgColor' in data.customTheme) || (data.customTheme.bodyBgColor is string && data.customTheme.bodyBgColor.size() < 50)) &&
+               (!('glassEffect' in data.customTheme) || data.customTheme.glassEffect is bool) &&
+               (!('blurAmount' in data.customTheme) || data.customTheme.blurAmount is number) &&
+               (!('opacity' in data.customTheme) || data.customTheme.opacity is number) &&
+                (!('wallpaperX' in data.customTheme) || data.customTheme.wallpaperX is number) &&
+                (!('wallpaperY' in data.customTheme) || data.customTheme.wallpaperY is number)
+             )) &&
+             isValidDateString(data.createdAt) &&
+             isValidDateString(data.updatedAt);
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['reporterUid', 'reportedUid', 'reason', 'createdAt', 'status']) &&
+             data.keys().hasOnly(['id', 'reporterUid', 'reportedUid', 'reason', 'details', 'createdAt', 'status']) &&
+             data.reporterUid == request.auth.uid &&
+             data.reportedUid is string &&
+             data.reason is string && data.reason.size() > 0 && data.reason.size() < 500 &&
+             (!('details' in data) || (data.details is string && data.details.size() <= 2000)) &&
+             isValidDateString(data.createdAt) &&
+             data.status in ['pending', 'reviewed', 'resolved'];
+    }
+
+    function isValidPost(data) {
+      return data.keys().hasAll(['authorUid', 'authorName', 'content', 'createdAt']) &&
+             data.keys().hasOnly(['authorUid', 'authorName', 'authorPhoto', 'content', 'createdAt', 'updatedAt', 'id']) &&
+             data.authorName is string && data.authorName.size() > 0 && data.authorName.size() < 100 &&
+             (!('authorPhoto' in data) || data.authorPhoto == null || (data.authorPhoto is string && data.authorPhoto.size() < 200000)) &&
+             data.content is string && data.content.size() > 0 && data.content.size() <= 1000 &&
+             isValidDateString(data.createdAt) &&
+             (!('updatedAt' in data) || isValidDateString(data.updatedAt));
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll(['participants', 'participantNames', 'updatedAt']) &&
+             data.participants is list &&
+             data.participants.size() == 2 &&
+             data.participantNames is map &&
+             isValidDateString(data.updatedAt);
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderUid', 'text', 'createdAt']) &&
+             data.keys().hasOnly(['senderUid', 'text', 'createdAt', 'updatedAt', 'id']) &&
+             data.senderUid == request.auth.uid &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
+             isValidDateString(data.createdAt) &&
+             (!('updatedAt' in data) || isValidDateString(data.updatedAt));
+    }
+
+    function isValidTypingStatus(data) {
+      return data.keys().hasAll(['conversationId', 'userId', 'userName', 'isTyping', 'lastUpdated']) &&
+             data.keys().hasOnly(['conversationId', 'userId', 'userName', 'isTyping', 'lastUpdated']) &&
+             data.userId == request.auth.uid &&
+             data.userName is string && data.userName.size() > 0 && data.userName.size() < 100 &&
+             data.conversationId is string &&
+             data.isTyping is bool &&
+             isValidDateString(data.lastUpdated);
+    }
+
+    match /whitelist/{email} {
+      allow read: if isAuthenticated() && (request.auth.token.email == email || isAdmin());
+      allow write: if isAdmin() && 
+                       request.resource.data.email == email &&
+                       isValidDateString(request.resource.data.addedAt);
+    }
+
+    match /users/{userId} {
+      allow read: if isWhitelisted();
+      allow create: if isOwner(userId) && isWhitelisted() && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && 
+                       isWhitelisted() &&
+                       isValidUser(request.resource.data) &&
+                       request.resource.data.uid == resource.data.uid &&
+                       request.resource.data.email == resource.data.email &&
+                       request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+
+    match /posts/{postId} {
+      allow read: if isWhitelisted();
+      allow create: if isWhitelisted() && 
+                       isValidPost(request.resource.data) && 
+                       request.resource.data.authorUid == request.auth.uid;
+      allow update: if isWhitelisted() && 
+                       (request.auth.uid == resource.data.authorUid || isAdmin()) &&
+                       isValidPost(request.resource.data) &&
+                       request.resource.data.authorUid == resource.data.authorUid &&
+                       request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isWhitelisted() && (request.auth.uid == resource.data.authorUid || isAdmin());
+    }
+
+    match /conversations/{convId} {
+      allow read: if isWhitelisted() && (request.auth.uid in resource.data.participants || isAdmin());
+      allow create: if isWhitelisted() && 
+                       isValidConversation(request.resource.data) && 
+                       request.auth.uid in request.resource.data.participants;
+      allow update: if isWhitelisted() && 
+                       (request.auth.uid in resource.data.participants || isAdmin()) && 
+                       isValidConversation(request.resource.data) &&
+                       request.resource.data.participants == resource.data.participants;
+      
+      match /messages/{msgId} {
+        allow read: if isWhitelisted() && (request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants || isAdmin());
+        allow create: if isWhitelisted() && 
+                         request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants && 
+                         isValidMessage(request.resource.data);
+        allow update: if isWhitelisted() && 
+                         request.auth.uid == resource.data.senderUid && 
+                         isValidMessage(request.resource.data) &&
+                         request.resource.data.senderUid == resource.data.senderUid &&
+                         request.resource.data.createdAt == resource.data.createdAt;
+      }
+    }
+
+    match /typing/{typingId} {
+      allow read: if isWhitelisted();
+      allow write: if isWhitelisted() && isValidTypingStatus(request.resource.data);
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isWhitelisted() && isValidReport(request.resource.data);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
