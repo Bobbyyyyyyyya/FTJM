@@ -1,32 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged, 
-  User 
-} from 'firebase/auth';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  onSnapshot, 
-  updateDoc,
-  getDocFromServer,
-  collection,
-  query,
-  orderBy,
-  limit,
-  addDoc,
-  deleteDoc,
-  Timestamp,
-  where
-} from 'firebase/firestore';
-import { auth, db, googleProvider, microsoftProvider } from './firebase';
-import { UserProfile, Post, OperationType, FirestoreErrorInfo, Conversation, DirectMessage, CustomTheme } from './types';
-import { LogIn, LogOut, User as UserIcon, Save, Loader2, AlertCircle, Send, Trash2, MessageSquare, ShieldCheck, UserPlus, X, Settings, Mail, ArrowLeft, Plus, Sparkles, Pencil, Check, Bell, Volume2, VolumeX, Camera, Flag, UserCog, Moon, Sun, Upload } from 'lucide-react';
+import { supabase } from './supabase';
+import { UserProfile, Post, Conversation, DirectMessage, CustomTheme, SupabaseErrorInfo } from './types';
+import { LogIn, LogOut, User as UserIcon, Save, Loader2, AlertCircle, AlertTriangle, Send, Trash2, MessageSquare, ShieldCheck, UserPlus, X, Settings, Mail, ArrowLeft, Plus, Sparkles, Pencil, Check, Bell, Volume2, VolumeX, Camera, Flag, UserCog, Moon, Sun, Upload, Zap, CloudOff, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import { NotificationSettings, Report } from './types';
+
+// Supabase User type
+type User = any;
 
 // Sound URLs
 const SOUND_OPTIONS = [
@@ -128,28 +109,19 @@ const RichContent = React.memo(({ content }: { content: string }) => {
   );
 });
 
-// Error handler as per guidelines
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+// Error handler for Supabase
+async function handleSupabaseError(error: any, operation: string) {
+  console.error(`Supabase Error during ${operation}:`, error);
+  const { data: { user } } = await supabase.auth.getUser();
+  const errInfo: SupabaseErrorInfo = {
+    error: error?.message || String(error),
+    operation,
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
+      userId: user?.id,
+      email: user?.email,
+    }
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  toast.error(`Er is een fout opgetreden tijdens ${operation}`);
 }
 
 export default function App() {
@@ -157,6 +129,178 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'enhanced'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark' | 'enhanced') || 'light';
   });
+
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    try {
+      const cached = localStorage.getItem('cached_profile');
+      return cached ? JSON.parse(cached) : null;
+    } catch (e) {
+      console.error('Failed to parse cached_profile', e);
+      return null;
+    }
+  });
+
+  const [posts, setPosts] = useState<Post[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_posts');
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [whitelist, setWhitelist] = useState<{email: string, added_at: string}[]>(() => {
+    const cached = localStorage.getItem('cached_whitelist');
+    return cached ? JSON.parse(cached) : [];
+  });
+
+  const [isWhitelisted, setIsWhitelisted] = useState<boolean | null>(() => {
+    try {
+      const cached = localStorage.getItem('cached_isWhitelisted');
+      return cached ? JSON.parse(cached) : null;
+    } catch (e) {
+      console.error('Failed to parse cached_isWhitelisted', e);
+      return null;
+    }
+  });
+
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+
+  const [loading, setLoading] = useState(() => {
+    // If we have a cached whitelist status, we can skip initial loading screen
+    // and let the background check handle updates
+    const cached = localStorage.getItem('cached_isWhitelisted');
+    return cached === null;
+  });
+  const [saving, setSaving] = useState(false);
+  const isSavingThemeRef = useRef(false);
+  const [sending, setSending] = useState(false);
+  const [bioInput, setBioInput] = useState('');
+  const [displayNameInput, setDisplayNameInput] = useState('');
+  const [photoURLInput, setPhotoURLInput] = useState('');
+  const [postInput, setPostInput] = useState('');
+  const [whitelistInput, setWhitelistInput] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'forum' | 'messages' | 'settings'>('forum');
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin'>('profile');
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_conversations');
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      console.error('Failed to parse cached_conversations', e);
+      return [];
+    }
+  });
+
+  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [messageTimestamps, setMessageTimestamps] = useState<number[]>([]);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editPostInput, setEditPostInput] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editMessageInput, setEditMessageInput] = useState('');
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
+    try {
+      const cached = localStorage.getItem('cached_notifications');
+      return cached ? JSON.parse(cached) : {
+        enable_sounds: true,
+        notify_new_posts: true,
+        notify_new_messages: true,
+        message_sound: SOUND_OPTIONS[0].url,
+        post_sound: SOUND_OPTIONS[1].url
+      };
+    } catch (e) {
+      console.error('Failed to parse cached_notifications', e);
+      return {
+        enable_sounds: true,
+        notify_new_posts: true,
+        notify_new_messages: true,
+        message_sound: SOUND_OPTIONS[0].url,
+        post_sound: SOUND_OPTIONS[1].url
+      };
+    }
+  });
+
+  const [customTheme, setCustomTheme] = useState<CustomTheme>(() => {
+    try {
+      const cached = localStorage.getItem('cached_customTheme');
+      return cached ? JSON.parse(cached) : {
+        wallpaper: '',
+        pattern: 'none',
+        primary_color: '#18181b', // zinc-900
+        secondary_color: '#27272a', // zinc-800
+        accent_color: '#18181b',
+        text_color: '#18181b',
+        card_bg_color: '#ffffff',
+        sidebar_bg_color: '#ffffff',
+        header_bg_color: '#ffffff',
+        body_bg_color: '#f4f4f5',
+        glass_effect: false,
+        blur_amount: 10,
+        opacity: 100,
+        wallpaper_x: 50,
+        wallpaper_y: 50
+      };
+    } catch (e) {
+      console.error('Failed to parse cached_customTheme', e);
+      return {
+        wallpaper: '',
+        pattern: 'none',
+        primary_color: '#18181b',
+        secondary_color: '#27272a',
+        accent_color: '#18181b',
+        text_color: '#18181b',
+        card_bg_color: '#ffffff',
+        sidebar_bg_color: '#ffffff',
+        header_bg_color: '#ffffff',
+        body_bg_color: '#f4f4f5',
+        glass_effect: false,
+        blur_amount: 10,
+        opacity: 100,
+        wallpaper_x: 50,
+        wallpaper_y: 50
+      };
+    }
+  });
+
+  const [useCustomTheme, setUseCustomTheme] = useState(() => {
+    return localStorage.getItem('cached_useCustomTheme') === 'true';
+  });
+
+  const [reportingUser, setReportingUser] = useState<UserProfile | null>(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [showUserSearch, setShowUserSearch] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [websiteStatus, setWebsiteStatus] = useState<string>(() => {
+    return localStorage.getItem('cached_websiteStatus') || 'Online';
+  });
+  const [statusInput, setStatusInput] = useState('');
+  const [reports, setReports] = useState<Report[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_reports');
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [typingStatuses, setTypingStatuses] = useState<Record<string, string[]>>({});
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingInId, setTypingInId] = useState<string | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingUpdateRef = useRef<number>(0);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const initialLoadTime = useRef(new Date().toISOString());
+  const lastPostId = useRef<string | null>(null);
+  const lastConversationUpdates = useRef<Record<string, string>>({});
+  const notificationSettingsRef = useRef(notificationSettings);
+  const activeConversationRef = useRef(activeConversation);
+  const viewRef = useRef(view);
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
@@ -168,78 +312,41 @@ export default function App() {
       document.documentElement.setAttribute('data-theme', theme);
     }
   }, [theme]);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [whitelist, setWhitelist] = useState<{email: string, addedAt: string}[]>([]);
-  const [isWhitelisted, setIsWhitelisted] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [bioInput, setBioInput] = useState('');
-  const [displayNameInput, setDisplayNameInput] = useState('');
-  const [photoURLInput, setPhotoURLInput] = useState('');
-  const [postInput, setPostInput] = useState('');
-  const [whitelistInput, setWhitelistInput] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'forum' | 'messages' | 'settings'>('forum');
-  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin'>('profile');
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<DirectMessage[]>([]);
-  const [messageInput, setMessageInput] = useState('');
-  const [messageTimestamps, setMessageTimestamps] = useState<number[]>([]);
-  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
-  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
-  const [editingPostId, setEditingPostId] = useState<string | null>(null);
-  const [editPostInput, setEditPostInput] = useState('');
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [editMessageInput, setEditMessageInput] = useState('');
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
-    enableSounds: true,
-    notifyNewPosts: true,
-    notifyNewMessages: true,
-    messageSound: SOUND_OPTIONS[0].url,
-    postSound: SOUND_OPTIONS[1].url
-  });
-  const [customTheme, setCustomTheme] = useState<CustomTheme>({
-    wallpaper: '',
-    pattern: 'none',
-    primaryColor: '#18181b', // zinc-900
-    secondaryColor: '#27272a', // zinc-800
-    accentColor: '#18181b',
-    textColor: '#18181b',
-    cardBgColor: '#ffffff',
-    sidebarBgColor: '#ffffff',
-    headerBgColor: '#ffffff',
-    bodyBgColor: '#f4f4f5',
-    glassEffect: false,
-    blurAmount: 10,
-    opacity: 100,
-    wallpaperX: 50,
-    wallpaperY: 50
-  });
-  const [useCustomTheme, setUseCustomTheme] = useState(false);
-  const [reportingUser, setReportingUser] = useState<UserProfile | null>(null);
-  const [reportReason, setReportReason] = useState('');
-  const [reportDetails, setReportDetails] = useState('');
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [showUserSearch, setShowUserSearch] = useState(false);
-  const [userSearchQuery, setUserSearchQuery] = useState('');
-  const [websiteStatus, setWebsiteStatus] = useState<string>('Online');
-  const [statusInput, setStatusInput] = useState('');
-  const [reports, setReports] = useState<Report[]>([]);
-  const [typingStatuses, setTypingStatuses] = useState<Record<string, string[]>>({});
-  const [isTyping, setIsTyping] = useState(false);
-  const [typingInId, setTypingInId] = useState<string | null>(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const initialLoadTime = useRef(new Date().toISOString());
-  const lastPostId = useRef<string | null>(null);
-  const lastConversationUpdates = useRef<Record<string, string>>({});
-  const notificationSettingsRef = useRef(notificationSettings);
-  const activeConversationRef = useRef(activeConversation);
-  const viewRef = useRef(view);
+
+  // Caching effects
+  useEffect(() => {
+    if (profile) {
+      localStorage.setItem('cached_profile', JSON.stringify(profile));
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_whitelist', JSON.stringify(whitelist));
+  }, [whitelist]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_isWhitelisted', JSON.stringify(isWhitelisted));
+  }, [isWhitelisted]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_conversations', JSON.stringify(conversations));
+  }, [conversations]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_notifications', JSON.stringify(notificationSettings));
+  }, [notificationSettings]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_customTheme', JSON.stringify(customTheme));
+  }, [customTheme]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_useCustomTheme', useCustomTheme.toString());
+  }, [useCustomTheme]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_websiteStatus', websiteStatus);
+  }, [websiteStatus]);
 
   useEffect(() => {
     notificationSettingsRef.current = notificationSettings;
@@ -268,32 +375,33 @@ export default function App() {
       root.style.removeProperty('--custom-pattern-size');
       root.style.removeProperty('--custom-main-bg');
       root.style.removeProperty('--custom-main-bg-size');
+      root.style.removeProperty('--custom-main-bg-pos');
       return;
     }
 
-    if (customTheme.primaryColor) root.style.setProperty('--custom-primary', customTheme.primaryColor);
-    if (customTheme.secondaryColor) root.style.setProperty('--custom-secondary', customTheme.secondaryColor);
-    if (customTheme.accentColor) root.style.setProperty('--custom-accent', customTheme.accentColor);
-    if (customTheme.textColor) root.style.setProperty('--custom-text', customTheme.textColor);
-    if (customTheme.cardBgColor) root.style.setProperty('--custom-card-bg', customTheme.cardBgColor);
-    if (customTheme.sidebarBgColor) root.style.setProperty('--custom-sidebar-bg', customTheme.sidebarBgColor);
-    if (customTheme.headerBgColor) root.style.setProperty('--custom-header-bg', customTheme.headerBgColor);
-    if (customTheme.bodyBgColor) root.style.setProperty('--custom-body-bg', customTheme.bodyBgColor);
-    if (customTheme.blurAmount !== undefined) root.style.setProperty('--custom-blur', `${customTheme.blurAmount}px`);
+    if (customTheme.primary_color) root.style.setProperty('--custom-primary', customTheme.primary_color);
+    if (customTheme.secondary_color) root.style.setProperty('--custom-secondary', customTheme.secondary_color);
+    if (customTheme.accent_color) root.style.setProperty('--custom-accent', customTheme.accent_color);
+    if (customTheme.text_color) root.style.setProperty('--custom-text', customTheme.text_color);
+    if (customTheme.card_bg_color) root.style.setProperty('--custom-card-bg', customTheme.card_bg_color);
+    if (customTheme.sidebar_bg_color) root.style.setProperty('--custom-sidebar-bg', customTheme.sidebar_bg_color);
+    if (customTheme.header_bg_color) root.style.setProperty('--custom-header-bg', customTheme.header_bg_color);
+    if (customTheme.body_bg_color) root.style.setProperty('--custom-body-bg', customTheme.body_bg_color);
+    if (customTheme.blur_amount !== undefined) root.style.setProperty('--custom-blur', `${customTheme.blur_amount}px`);
     if (customTheme.opacity !== undefined) root.style.setProperty('--custom-opacity', `${customTheme.opacity / 100}`);
-    if (customTheme.wallpaperX !== undefined) root.style.setProperty('--custom-wallpaper-x', `${customTheme.wallpaperX}%`);
-    if (customTheme.wallpaperY !== undefined) root.style.setProperty('--custom-wallpaper-y', `${customTheme.wallpaperY}%`);
+    if (customTheme.wallpaper_x !== undefined) root.style.setProperty('--custom-wallpaper-x', `${customTheme.wallpaper_x}%`);
+    if (customTheme.wallpaper_y !== undefined) root.style.setProperty('--custom-wallpaper-y', `${customTheme.wallpaper_y}%`);
     
     // Glass Effect Variables
-    if (customTheme.glassEffect) {
-      const r = parseInt(customTheme.cardBgColor?.slice(1,3) || 'ff', 16);
-      const g = parseInt(customTheme.cardBgColor?.slice(3,5) || 'ff', 16);
-      const b = parseInt(customTheme.cardBgColor?.slice(5,7) || 'ff', 16);
+    if (customTheme.glass_effect) {
+      const r = parseInt(customTheme.card_bg_color?.slice(1,3) || 'ff', 16);
+      const g = parseInt(customTheme.card_bg_color?.slice(3,5) || 'ff', 16);
+      const b = parseInt(customTheme.card_bg_color?.slice(5,7) || 'ff', 16);
       const a = (customTheme.opacity || 100) / 100;
       root.style.setProperty('--custom-glass-bg', `rgba(${r}, ${g}, ${b}, ${a})`);
-      root.style.setProperty('--custom-glass-blur', `blur(${customTheme.blurAmount || 10}px)`);
+      root.style.setProperty('--custom-glass-blur', `blur(${customTheme.blur_amount || 10}px)`);
     } else {
-      root.style.setProperty('--custom-glass-bg', customTheme.cardBgColor || '#ffffff');
+      root.style.setProperty('--custom-glass-bg', customTheme.card_bg_color || '#ffffff');
       root.style.setProperty('--custom-glass-blur', 'none');
     }
     
@@ -310,19 +418,29 @@ export default function App() {
     // Main Background Variables
     const bgImages = [];
     const bgSizes = [];
+    const bgPositions = [];
     
-    if (pattern) {
+    if (pattern && pattern.style) {
       bgImages.push(pattern.style);
-      bgSizes.push(pattern.size);
+      bgSizes.push(pattern.size || 'auto');
+      bgPositions.push('center');
     }
     
     if (customTheme.wallpaper) {
       bgImages.push(`url(${customTheme.wallpaper})`);
       bgSizes.push('cover');
+      bgPositions.push(`${customTheme.wallpaper_x || 50}% ${customTheme.wallpaper_y || 50}%`);
     }
     
-    root.style.setProperty('--custom-main-bg', bgImages.length > 0 ? bgImages.join(', ') : 'none');
-    root.style.setProperty('--custom-main-bg-size', bgSizes.length > 0 ? bgSizes.join(', ') : 'auto');
+    if (bgImages.length > 0) {
+      root.style.setProperty('--custom-main-bg', bgImages.join(', '));
+      root.style.setProperty('--custom-main-bg-size', bgSizes.join(', '));
+      root.style.setProperty('--custom-main-bg-pos', bgPositions.join(', '));
+    } else {
+      root.style.setProperty('--custom-main-bg', 'none');
+      root.style.setProperty('--custom-main-bg-size', 'auto');
+      root.style.setProperty('--custom-main-bg-pos', 'center');
+    }
   }, [customTheme, useCustomTheme]);
 
   useEffect(() => {
@@ -332,6 +450,12 @@ export default function App() {
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+
+  useEffect(() => {
+    const handleQuotaError = () => setIsQuotaExceeded(true);
+    window.addEventListener('firestore-quota-exceeded', handleQuotaError);
+    return () => window.removeEventListener('firestore-quota-exceeded', handleQuotaError);
+  }, []);
 
   const isAdmin = user?.email === 'markohoksen@gmail.com';
 
@@ -355,7 +479,7 @@ export default function App() {
   // Update Modal Check
   useEffect(() => {
     if (user && isWhitelisted) {
-      const hasSeenUpdate = localStorage.getItem('hasSeenUpdate1_5');
+      const hasSeenUpdate = localStorage.getItem('hasSeenUpdate1_6');
       if (!hasSeenUpdate) {
         setShowUpdateModal(true);
       }
@@ -366,10 +490,10 @@ export default function App() {
   useEffect(() => {
     async function testConnection() {
       try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
+        await supabase.from('profiles').select('id').limit(1);
       } catch (error) {
         if (error instanceof Error && error.message.includes('the client is offline')) {
-          setError("Firebase configuratiefout: De client is offline.");
+          setError("Supabase configuratiefout: De client is offline.");
         }
       }
     }
@@ -378,15 +502,39 @@ export default function App() {
 
   // Auth state listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user || null;
       setUser(currentUser);
-      if (!currentUser) {
+      
+      if (currentUser) {
+        // Initial profile fetch
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', currentUser.id)
+            .single();
+            
+          if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
+            handleSupabaseError(error, 'profiel ophalen');
+          } else if (data) {
+            setProfile(data);
+            localStorage.setItem('cached_profile', JSON.stringify(data));
+          }
+        } catch (err) {
+          console.error('Initial profile fetch error:', err);
+        }
+      } else {
         setProfile(null);
         setIsWhitelisted(null);
+        localStorage.removeItem('cached_profile');
+        localStorage.removeItem('cached_isWhitelisted');
+        localStorage.removeItem('cached_conversations');
         setLoading(false);
       }
     });
-    return () => unsubscribe();
+
+    return () => subscription.unsubscribe();
   }, []);
 
   // Whitelist check
@@ -394,25 +542,38 @@ export default function App() {
     if (!user) return;
 
     const checkWhitelist = async () => {
-      const whitelistRef = doc(db, 'whitelist', user.email!);
       try {
-        const snap = await getDoc(whitelistRef);
-        const exists = snap.exists();
-        
+        const { data, error } = await supabase
+          .from('whitelist')
+          .select('*')
+          .eq('email', user.email)
+          .single();
+          
+        const exists = !!data;
+        let whitelisted = exists || isAdmin;
+
         if (isAdmin && !exists) {
           // Seed admin into whitelist
-          await setDoc(whitelistRef, {
-            email: user.email,
-            addedAt: new Date().toISOString(),
-            addedBy: 'system'
-          });
-          setIsWhitelisted(true);
-        } else {
-          setIsWhitelisted(exists || isAdmin);
+          try {
+            await supabase.from('whitelist').insert({
+              email: user.email,
+              added_at: new Date().toISOString(),
+              added_by: 'system'
+            });
+            whitelisted = true;
+          } catch (e) {
+            console.warn('Admin seeding failed, but bypassing locally:', e);
+          }
         }
+        
+        setIsWhitelisted(whitelisted);
+        localStorage.setItem('cached_isWhitelisted', JSON.stringify(whitelisted));
       } catch (err) {
-        console.error('Whitelist check failed:', err);
-        setIsWhitelisted(isAdmin); // Admins bypass local check if it fails
+        handleSupabaseError(err, 'whitelist check');
+        setIsWhitelisted(isAdmin);
+        localStorage.setItem('cached_isWhitelisted', JSON.stringify(isAdmin));
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -423,164 +584,197 @@ export default function App() {
   useEffect(() => {
     if (!user || isWhitelisted === false) return;
 
-    const userDocRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as UserProfile;
+    const channel = supabase
+      .channel(`profile:${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'profiles',
+        filter: `id=eq.${user.id}`
+      }, (payload) => {
+        const data = payload.new as UserProfile;
         setProfile(data);
+        localStorage.setItem('cached_profile', JSON.stringify(data));
         setBioInput(data.bio || '');
-        setDisplayNameInput(data.displayName || '');
-        setPhotoURLInput(data.photoURL || '');
-        if (data.notificationSettings) {
-          setNotificationSettings(data.notificationSettings);
+        setDisplayNameInput(data.display_name || '');
+        setPhotoURLInput(data.photo_url || '');
+        if (data.notification_settings) {
+          setNotificationSettings(data.notification_settings);
         }
-        if (data.customTheme) {
-          setCustomTheme(data.customTheme);
+        if (!isSavingThemeRef.current && !(view === 'settings' && settingsTab === 'theme')) {
+          if (data.custom_theme) {
+            setCustomTheme(prev => ({
+              ...prev,
+              ...data.custom_theme
+            }));
+          }
+          if (data.use_custom_theme !== undefined) {
+            setUseCustomTheme(data.use_custom_theme);
+          }
         }
-        if (data.useCustomTheme !== undefined) {
-          setUseCustomTheme(data.useCustomTheme);
-        }
-      } else if (isWhitelisted) {
-        const newProfile: UserProfile = {
-          uid: user.uid,
-          displayName: user.displayName || 'Anoniem',
-          email: user.email || '',
-          photoURL: user.photoURL || undefined,
-          useCustomTheme: false,
-          notificationSettings: {
-            enableSounds: true,
-            notifyNewPosts: true,
-            notifyNewMessages: true,
-            messageSound: SOUND_OPTIONS[0].url,
-            postSound: SOUND_OPTIONS[1].url
-          },
-          customTheme: {
-            wallpaper: '',
-            primaryColor: '#18181b',
-            accentColor: '#18181b',
-            textColor: '#18181b',
-            cardBgColor: '#ffffff',
-            sidebarBgColor: '#ffffff',
-            headerBgColor: '#ffffff',
-            bodyBgColor: '#f4f4f5',
-            glassEffect: false,
-            blurAmount: 10,
-            opacity: 100,
-            wallpaperX: 50,
-            wallpaperY: 50
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        
-        setDoc(userDocRef, newProfile).catch(err => {
-          handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`);
-        });
-      }
-    }, (err) => {
-      if (isWhitelisted) handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
-    });
+      })
+      .subscribe();
 
-    return () => unsubscribe();
+    // Create profile if it doesn't exist
+    const ensureProfile = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      if (error && error.code === 'PGRST116' && isWhitelisted) {
+        const newProfile: any = {
+          id: user.id,
+          display_name: user.user_metadata?.full_name || 'Anoniem',
+          email: user.email || '',
+          photo_url: user.user_metadata?.avatar_url || undefined,
+          use_custom_theme: useCustomTheme,
+          notification_settings: notificationSettings,
+          custom_theme: customTheme,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        await supabase.from('profiles').insert(newProfile);
+      }
+    };
+    ensureProfile();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, isWhitelisted]);
 
   // Real-time whitelist sync for admin
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || settingsTab !== 'admin' || view !== 'settings') return;
 
-    const whitelistQuery = query(collection(db, 'whitelist'), orderBy('addedAt', 'desc'));
-    const unsubscribeWhitelist = onSnapshot(whitelistQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        email: doc.id,
-        ...doc.data()
-      })) as {email: string, addedAt: string}[];
-      setWhitelist(data);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'whitelist');
-    });
+    const whitelistChannel = supabase
+      .channel('whitelist_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whitelist' }, async () => {
+        const { data } = await supabase.from('whitelist').select('*').order('added_at', { ascending: false });
+        if (data) {
+          setWhitelist(data);
+          localStorage.setItem('cached_whitelist', JSON.stringify(data));
+        }
+      })
+      .subscribe();
 
-    const reportsQuery = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
-    const unsubscribeReports = onSnapshot(reportsQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Report[];
-      setReports(data);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'reports');
-    });
+    const reportsChannel = supabase
+      .channel('reports_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, async () => {
+        const { data } = await supabase.from('reports').select('*').order('created_at', { ascending: false });
+        if (data) {
+          setReports(data);
+          localStorage.setItem('cached_reports', JSON.stringify(data));
+        }
+      })
+      .subscribe();
+
+    // Initial fetch
+    const fetchAdminData = async () => {
+      const { data: wData } = await supabase.from('whitelist').select('*').order('added_at', { ascending: false });
+      if (wData) setWhitelist(wData);
+      
+      const { data: rData } = await supabase.from('reports').select('*').order('created_at', { ascending: false });
+      if (rData) setReports(rData);
+    };
+    fetchAdminData();
 
     return () => {
-      unsubscribeWhitelist();
-      unsubscribeReports();
+      supabase.removeChannel(whitelistChannel);
+      supabase.removeChannel(reportsChannel);
     };
-  }, [isAdmin]);
+  }, [isAdmin, settingsTab, view]);
 
-  // Real-time website status
+  // Website status
   useEffect(() => {
-    const statusRef = doc(db, 'settings', 'websiteStatus');
-    const unsubscribe = onSnapshot(statusRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        setWebsiteStatus(data.status || 'Online');
-        setStatusInput(data.status || 'Online');
+    const fetchStatus = async () => {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'websiteStatus')
+        .single();
+        
+      if (data) {
+        const status = data.value?.status || 'Online';
+        setWebsiteStatus(status);
+        setStatusInput(status);
+        localStorage.setItem('cached_websiteStatus', status);
       }
-    }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'settings/websiteStatus');
-    });
-    return () => unsubscribe();
+    };
+    fetchStatus();
   }, []);
 
   // Real-time conversations sync
   useEffect(() => {
-    if (!user || !isWhitelisted) return;
+    if (!user || !isWhitelisted || view !== 'messages') return;
 
-    const convQuery = query(
-      collection(db, 'conversations'),
-      where('participants', 'array-contains', user.uid),
-      orderBy('updatedAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(convQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Conversation[];
-
-      // Notification logic for new messages
-      data.forEach(conv => {
-        const prevUpdate = lastConversationUpdates.current[conv.id];
-        if (prevUpdate && conv.updatedAt > prevUpdate && 
-            conv.lastMessageSenderUid !== user.uid && 
-            conv.updatedAt > initialLoadTime.current) {
+    const channel = supabase
+      .channel(`conversations:${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'conversations',
+        filter: `participants=cs.{${user.id}}`
+      }, async () => {
+        const { data } = await supabase
+          .from('conversations')
+          .select('*')
+          .contains('participants', [user.id]);
           
-          const otherParticipantUid = conv.participants.find(uid => uid !== user.uid);
-          const senderName = otherParticipantUid ? conv.participantNames[otherParticipantUid] : 'Iemand';
-          
-          if (notificationSettingsRef.current.notifyNewMessages && (activeConversationRef.current?.id !== conv.id || viewRef.current !== 'messages')) {
-            toast.success(`Nieuw bericht van ${senderName}`, {
-              description: conv.lastMessage?.substring(0, 50) + (conv.lastMessage && conv.lastMessage.length > 50 ? '...' : ''),
-              action: {
-                label: 'Beantwoorden',
-                onClick: () => {
-                  setActiveConversation(conv);
-                  setView('messages');
-                }
+        if (data) {
+          // Notification logic for new messages
+          data.forEach(conv => {
+            const prevUpdate = lastConversationUpdates.current[conv.id];
+            if (prevUpdate && conv.updated_at > prevUpdate && 
+                conv.last_message_sender_id !== user.id && 
+                conv.updated_at > initialLoadTime.current) {
+              
+              const otherParticipantUid = conv.participants.find((uid: string) => uid !== user.id);
+              const senderName = otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Iemand';
+              
+              if (notificationSettingsRef.current.notify_new_messages && (activeConversationRef.current?.id !== conv.id || viewRef.current !== 'messages')) {
+                toast.success(`Nieuw bericht van ${senderName}`, {
+                  description: conv.last_message?.substring(0, 50) + (conv.last_message && conv.last_message.length > 50 ? '...' : ''),
+                  action: {
+                    label: 'Beantwoorden',
+                    onClick: () => {
+                      setActiveConversation(conv);
+                      setView('messages');
+                    }
+                  }
+                });
+                playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds);
               }
-            });
-            playSound(notificationSettingsRef.current.messageSound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enableSounds);
-          }
+            }
+            lastConversationUpdates.current[conv.id] = conv.updated_at;
+          });
+
+          setConversations(data.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')));
+          localStorage.setItem('cached_conversations', JSON.stringify(data));
         }
-        lastConversationUpdates.current[conv.id] = conv.updatedAt;
-      });
+      })
+      .subscribe();
 
-      setConversations(data);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'conversations');
-    });
+    // Initial fetch
+    const fetchConversations = async () => {
+      const { data } = await supabase
+        .from('conversations')
+        .select('*')
+        .contains('participants', [user.id]);
+      if (data) {
+        setConversations(data.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')));
+        localStorage.setItem('cached_conversations', JSON.stringify(data));
+      }
+      setLoading(false);
+    };
+    fetchConversations();
 
-    return () => unsubscribe();
-  }, [user, isWhitelisted]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, isWhitelisted, view]);
 
   // Real-time messages sync
   useEffect(() => {
@@ -589,167 +783,197 @@ export default function App() {
       return;
     }
 
-    const msgQuery = query(
-      collection(db, 'conversations', activeConversation.id, 'messages'),
-      orderBy('createdAt', 'desc'),
-      limit(100)
-    );
+    const channel = supabase
+      .channel(`messages:${activeConversation.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${activeConversation.id}`
+      }, (payload) => {
+        setMessages(prev => [...prev, payload.new as DirectMessage]);
+      })
+      .subscribe();
 
-    const unsubscribe = onSnapshot(msgQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as DirectMessage[];
-      setMessages(data.reverse());
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, `conversations/${activeConversation.id}/messages`);
-    });
+    // Initial fetch
+    const fetchMessages = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', activeConversation.id)
+        .order('created_at', { ascending: true })
+        .limit(50);
+      if (data) setMessages(data);
+    };
+    fetchMessages();
 
-    return () => unsubscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, activeConversation]);
 
   // Cleanup typing status on unmount or conversation change
   useEffect(() => {
     return () => {
       if (user && typingInId && isTyping) {
-        const typingRef = doc(db, 'typing', `${typingInId}_${user.uid}`);
-        updateDoc(typingRef, {
-          isTyping: false,
-          lastUpdated: new Date().toISOString()
-        }).catch(() => {});
+        supabase
+          .from('typing')
+          .update({
+            is_typing: false,
+            last_updated: new Date().toISOString()
+          })
+          .eq('id', `${typingInId}_${user.id}`);
       }
     };
   }, [typingInId, user, isTyping]);
 
-  // Real-time typing indicators sync for all conversations
+  // Real-time typing indicators sync
   useEffect(() => {
-    if (!user) {
+    if (!user || (view !== 'forum' && view !== 'messages')) {
       setTypingStatuses({});
       return;
     }
 
-    // Listen to all typing statuses
-    const typingQuery = query(
-      collection(db, 'typing'),
-      where('isTyping', '==', true)
-    );
-
-    const unsubscribe = onSnapshot(typingQuery, (snapshot) => {
-      const newStatuses: Record<string, string[]> = {};
-      
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        const convId = data.conversationId;
-        const userId = data.userId;
-        const userName = data.userName || 'Iemand';
-        
-        if (userId !== user.uid && (Date.now() - new Date(data.lastUpdated).getTime()) < 10000) {
-          if (convId === 'forum') {
-            if (!newStatuses[convId]) newStatuses[convId] = [];
-            if (!newStatuses[convId].includes(userName)) newStatuses[convId].push(userName);
-          } else {
-            const conv = conversations.find(c => c.id === convId);
-            if (conv) {
+    const channel = supabase
+      .channel('typing_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'typing',
+        filter: 'is_typing=eq.true'
+      }, async () => {
+        const { data } = await supabase
+          .from('typing')
+          .select('*')
+          .eq('is_typing', true);
+          
+        if (data) {
+          const newStatuses: Record<string, string[]> = {};
+          data.forEach(row => {
+            const convId = row.conversation_id;
+            const userId = row.user_id;
+            const userName = row.user_name || 'Iemand';
+            
+            if (userId !== user.id && (Date.now() - new Date(row.last_updated).getTime()) < 10000) {
               if (!newStatuses[convId]) newStatuses[convId] = [];
               if (!newStatuses[convId].includes(userName)) newStatuses[convId].push(userName);
             }
-          }
+          });
+          setTypingStatuses(newStatuses);
         }
-      });
-      
-      setTypingStatuses(newStatuses);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'typing');
-    });
+      })
+      .subscribe();
 
-    return () => unsubscribe();
-  }, [user, conversations]);
-
-  // Scroll to bottom of messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, view]);
 
   // Fetch all users for starting new conversations
   useEffect(() => {
-    if (!user || !isWhitelisted || view !== 'messages') return;
+    if (!user || !isWhitelisted || view !== 'messages' || !showUserSearch) return;
 
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const data = snapshot.docs
-        .map(doc => doc.data() as UserProfile)
-        .filter(u => u.uid !== user.uid);
-      setUsers(data);
-    }, (err) => {
-      if (isWhitelisted) handleFirestoreError(err, OperationType.LIST, 'users');
-    });
-
-    return () => unsubscribe();
-  }, [user, isWhitelisted, view]);
+    const fetchUsers = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .neq('id', user.id);
+      if (data) setUsers(data);
+    };
+    fetchUsers();
+  }, [user, isWhitelisted, view, showUserSearch]);
 
   // Real-time posts feed
   useEffect(() => {
-    if (!user || !isWhitelisted) return;
+    if (!user || !isWhitelisted || view !== 'forum') return;
 
-    const postsQuery = query(
-      collection(db, 'posts'),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
-
-    const unsubscribe = onSnapshot(postsQuery, (snapshot) => {
-      const postsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Post[];
-      
-      // Notification logic for new posts
-      if (postsData.length > 0) {
-        const latestPost = postsData[0];
-        if (lastPostId.current && latestPost.id !== lastPostId.current && 
-            latestPost.authorUid !== user.uid && 
-            latestPost.createdAt > initialLoadTime.current) {
-          if (notificationSettingsRef.current.notifyNewPosts) {
-            toast.info(`Nieuw bericht van ${latestPost.authorName}`, {
-              description: latestPost.content.substring(0, 50) + (latestPost.content.length > 50 ? '...' : ''),
-              action: {
-                label: 'Bekijken',
-                onClick: () => setView('forum')
-              }
-            });
-            playSound(notificationSettingsRef.current.postSound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enableSounds);
+    const channel = supabase
+      .channel('posts_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async () => {
+        const { data } = await supabase
+          .from('posts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+          
+        if (data) {
+          const latestPost = data[0];
+          if (lastPostId.current && latestPost.id !== lastPostId.current && 
+              latestPost.author_id !== user.id && 
+              latestPost.created_at > initialLoadTime.current) {
+            if (notificationSettingsRef.current.notify_new_posts) {
+              toast.info(`Nieuw bericht van ${latestPost.author_name}`, {
+                description: latestPost.content.substring(0, 50) + (latestPost.content.length > 50 ? '...' : ''),
+                action: {
+                  label: 'Bekijken',
+                  onClick: () => setView('forum')
+                }
+              });
+              playSound(notificationSettingsRef.current.post_sound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enable_sounds);
+            }
           }
+          lastPostId.current = latestPost.id;
+          setPosts(data);
+          localStorage.setItem('cached_posts', JSON.stringify(data));
         }
-        lastPostId.current = latestPost.id;
+      })
+      .subscribe();
+
+    // Initial fetch
+    const fetchPosts = async () => {
+      const { data } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (data) {
+        setPosts(data);
+        localStorage.setItem('cached_posts', JSON.stringify(data));
       }
-
-      setPosts(postsData);
       setLoading(false);
-    }, (err) => {
-      if (isWhitelisted) handleFirestoreError(err, OperationType.LIST, 'posts');
-    });
+    };
+    fetchPosts();
 
-    return () => unsubscribe();
-  }, [user, isWhitelisted]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, isWhitelisted, view]);
 
   const handleLogin = async () => {
+    setLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
     } catch (err) {
-      setError('Google inloggen mislukt.');
+      handleSupabaseError(err, 'Google inloggen');
+      setLoading(false);
     }
   };
 
   const handleMicrosoftLogin = async () => {
+    setLoading(true);
     try {
-      await signInWithPopup(auth, microsoftProvider);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
     } catch (err) {
-      setError('Microsoft inloggen mislukt.');
+      handleSupabaseError(err, 'Microsoft inloggen');
+      setLoading(false);
     }
   };
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
     } catch (err) {
       console.error('Logout error:', err);
     }
@@ -761,18 +985,24 @@ export default function App() {
     setSaving(true);
     setError(null);
 
+    const updatedData = {
+      display_name: displayNameInput.trim() || user.user_metadata?.full_name || 'Anoniem',
+      photo_url: photoURLInput.trim() || user.user_metadata?.avatar_url || undefined,
+      bio: bioInput.trim(),
+      notification_settings: notificationSettings,
+      updated_at: new Date().toISOString()
+    };
+
     try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        displayName: displayNameInput.trim() || user.displayName || 'Anoniem',
-        photoURL: photoURLInput.trim() || user.photoURL || undefined,
-        bio: bioInput.trim(),
-        notificationSettings,
-        updatedAt: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('profiles')
+        .update(updatedData)
+        .eq('id', user.id);
+        
+      if (error) throw error;
       toast.success('Profiel bijgewerkt');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      handleSupabaseError(err, 'profiel bijwerken');
     } finally {
       setSaving(false);
     }
@@ -785,20 +1015,21 @@ export default function App() {
     setSending(true);
 
     try {
-      await addDoc(collection(db, 'reports'), {
-        reporterUid: user.uid,
-        reportedUid: reportingUser.uid,
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: user.id,
+        reported_id: reportingUser.id,
         reason: reportReason.trim(),
         details: reportDetails.trim(),
-        createdAt: new Date().toISOString(),
+        created_at: new Date().toISOString(),
         status: 'pending'
       });
+      if (error) throw error;
       toast.success('Rapport ingediend. Bedankt voor je hulp.');
       setReportingUser(null);
       setReportReason('');
       setReportDetails('');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'reports');
+      handleSupabaseError(err, 'rapport indienen');
     } finally {
       setSending(false);
     }
@@ -837,32 +1068,37 @@ export default function App() {
     
     if (!checkRateLimit()) return;
     
+    const content = postInput.trim();
+    setPostInput('');
     setSending(true);
     setError(null);
 
     try {
-      await addDoc(collection(db, 'posts'), {
-        authorUid: user.uid,
-        authorName: profile?.displayName || user.displayName || 'Anoniem',
-        authorPhoto: profile?.photoURL || user.photoURL || undefined,
-        content: postInput.trim(),
-        createdAt: new Date().toISOString()
+      const { error } = await supabase.from('posts').insert({
+        author_id: user.id,
+        author_name: profile?.display_name || user.user_metadata?.full_name || 'Anoniem',
+        author_photo: profile?.photo_url || user.user_metadata?.avatar_url || undefined,
+        content: content,
+        created_at: new Date().toISOString()
       });
-      setPostInput('');
+
+      if (error) throw error;
 
       // Clear typing status
       if (isTyping && typingInId === 'forum') {
         setIsTyping(false);
         setTypingInId(null);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        const typingRef = doc(db, 'typing', `forum_${user.uid}`);
-        updateDoc(typingRef, {
-          isTyping: false,
-          lastUpdated: new Date().toISOString()
-        }).catch(() => {});
+        await supabase
+          .from('typing')
+          .update({
+            is_typing: false,
+            last_updated: new Date().toISOString()
+          })
+          .eq('id', `forum_${user.id}`);
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'posts');
+      handleSupabaseError(err, 'bericht plaatsen');
     } finally {
       setSending(false);
     }
@@ -871,9 +1107,10 @@ export default function App() {
   const handleDeletePost = async (postId: string) => {
     if (!checkRateLimit()) return;
     try {
-      await deleteDoc(doc(db, 'posts', postId));
+      const { error } = await supabase.from('posts').delete().eq('id', postId);
+      if (error) throw error;
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `posts/${postId}`);
+      handleSupabaseError(err, 'bericht verwijderen');
     }
   };
 
@@ -882,14 +1119,18 @@ export default function App() {
     if (!checkRateLimit()) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'posts', postId), {
-        content: editPostInput.trim(),
-        updatedAt: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('posts')
+        .update({
+          content: editPostInput.trim(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', postId);
+      if (error) throw error;
       setEditingPostId(null);
       toast.success('Bericht bijgewerkt');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `posts/${postId}`);
+      handleSupabaseError(err, 'bericht bijwerken');
     } finally {
       setSaving(false);
     }
@@ -900,15 +1141,18 @@ export default function App() {
     if (!checkRateLimit()) return;
     setSaving(true);
     try {
-      const msgRef = doc(db, 'conversations', activeConversation.id, 'messages', messageId);
-      await updateDoc(msgRef, {
-        text: editMessageInput.trim(),
-        updatedAt: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('messages')
+        .update({
+          text: editMessageInput.trim(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', messageId);
+      if (error) throw error;
       setEditingMessageId(null);
       toast.success('Bericht bijgewerkt');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `conversations/${activeConversation.id}/messages/${messageId}`);
+      handleSupabaseError(err, 'bericht bijwerken');
     } finally {
       setSaving(false);
     }
@@ -921,14 +1165,15 @@ export default function App() {
     const email = whitelistInput.trim().toLowerCase();
     
     try {
-      await setDoc(doc(db, 'whitelist', email), {
+      const { error } = await supabase.from('whitelist').insert({
         email,
-        addedAt: new Date().toISOString(),
-        addedBy: user?.email
+        added_at: new Date().toISOString(),
+        added_by: user?.email
       });
+      if (error) throw error;
       setWhitelistInput('');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `whitelist/${email}`);
+      handleSupabaseError(err, 'whitelist toevoegen');
     }
   };
 
@@ -936,9 +1181,10 @@ export default function App() {
     if (!isAdmin || email === user?.email) return;
     if (!checkRateLimit()) return;
     try {
-      await deleteDoc(doc(db, 'whitelist', email));
+      const { error } = await supabase.from('whitelist').delete().eq('email', email);
+      if (error) throw error;
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `whitelist/${email}`);
+      handleSupabaseError(err, 'whitelist verwijderen');
     }
   };
 
@@ -947,60 +1193,61 @@ export default function App() {
     if (!isAdmin) return;
     if (!checkRateLimit()) return;
     try {
-      await setDoc(doc(db, 'settings', 'websiteStatus'), { status: statusInput });
+      const { error } = await supabase
+        .from('settings')
+        .upsert({ key: 'websiteStatus', value: { status: statusInput } });
+      if (error) throw error;
       toast.success('Website status bijgewerkt');
     } catch (err) {
-      toast.error('Fout bij bijwerken status');
-      handleFirestoreError(err, OperationType.UPDATE, 'settings/websiteStatus');
+      handleSupabaseError(err, 'status bijwerken');
     }
   };
 
   const handleUpdateTheme = async () => {
-    if (!user) {
-      toast.error('Je moet ingelogd zijn om je thema op te slaan.');
-      return;
-    }
-    
-    if (!checkRateLimit()) return;
-    
     setSaving(true);
+    isSavingThemeRef.current = true;
     setError(null);
 
     try {
-      // Sanitize customTheme to ensure only allowed fields are sent
       const sanitizedTheme = {
         wallpaper: customTheme.wallpaper || '',
         pattern: customTheme.pattern || 'none',
-        primaryColor: customTheme.primaryColor || '#18181b',
-        secondaryColor: customTheme.secondaryColor || '#27272a',
-        accentColor: customTheme.accentColor || '#18181b',
-        textColor: customTheme.textColor || '#18181b',
-        cardBgColor: customTheme.cardBgColor || '#ffffff',
-        sidebarBgColor: customTheme.sidebarBgColor || '#ffffff',
-        headerBgColor: customTheme.headerBgColor || '#ffffff',
-        bodyBgColor: customTheme.bodyBgColor || '#f4f4f5',
-        glassEffect: !!customTheme.glassEffect,
-        blurAmount: customTheme.blurAmount ?? 10,
+        primary_color: customTheme.primary_color || '#18181b',
+        secondary_color: customTheme.secondary_color || '#27272a',
+        accent_color: customTheme.accent_color || '#18181b',
+        text_color: customTheme.text_color || '#18181b',
+        card_bg_color: customTheme.card_bg_color || '#ffffff',
+        sidebar_bg_color: customTheme.sidebar_bg_color || '#ffffff',
+        header_bg_color: customTheme.header_bg_color || '#ffffff',
+        body_bg_color: customTheme.body_bg_color || '#f4f4f5',
+        glass_effect: !!customTheme.glass_effect,
+        blur_amount: customTheme.blur_amount ?? 10,
         opacity: customTheme.opacity ?? 100,
-        wallpaperX: customTheme.wallpaperX ?? 50,
-        wallpaperY: customTheme.wallpaperY ?? 50
+        wallpaper_x: customTheme.wallpaper_x ?? 50,
+        wallpaper_y: customTheme.wallpaper_y ?? 50
       };
 
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        customTheme: sanitizedTheme,
-        useCustomTheme,
-        updatedAt: new Date().toISOString()
-      });
-      toast.success('Thema succesvol opgeslagen!', {
-        description: 'Je persoonlijke instellingen zijn nu overal beschikbaar.'
-      });
+      localStorage.setItem('cached_customTheme', JSON.stringify(sanitizedTheme));
+      localStorage.setItem('cached_useCustomTheme', useCustomTheme.toString());
+
+      if (user) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            custom_theme: sanitizedTheme,
+            use_custom_theme: useCustomTheme,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+          
+        if (error) throw error;
+        toast.success('Thema succesvol opgeslagen!');
+      }
     } catch (err) {
-      console.error('Thema opslaan mislukt:', err);
-      toast.error('Opslaan mislukt. Probeer het later opnieuw.');
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      handleSupabaseError(err, 'thema opslaan');
     } finally {
       setSaving(false);
+      isSavingThemeRef.current = false;
     }
   };
 
@@ -1043,10 +1290,11 @@ export default function App() {
     if (!isAdmin) return;
     if (!checkRateLimit()) return;
     try {
-      await updateDoc(doc(db, 'reports', reportId), { status: 'resolved' });
+      const { error } = await supabase.from('reports').update({ status: 'resolved' }).eq('id', reportId);
+      if (error) throw error;
       toast.success('Rapport gemarkeerd als opgelost');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `reports/${reportId}`);
+      handleSupabaseError(err, 'rapport oplossen');
     }
   };
 
@@ -1054,18 +1302,19 @@ export default function App() {
     if (!isAdmin) return;
     if (!checkRateLimit()) return;
     try {
-      await deleteDoc(doc(db, 'reports', reportId));
+      const { error } = await supabase.from('reports').delete().eq('id', reportId);
+      if (error) throw error;
       toast.success('Rapport verwijderd');
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `reports/${reportId}`);
+      handleSupabaseError(err, 'rapport verwijderen');
     }
   };
 
-  const handleStartConversation = async (targetUser: UserProfile | {uid: string, displayName: string}) => {
+  const handleStartConversation = async (targetUser: UserProfile | {id: string, display_name: string}) => {
     if (!user) return;
     
     // Check if conversation already exists
-    const existing = conversations.find(c => c.participants.includes(targetUser.uid));
+    const existing = conversations.find(c => c.participants.includes(targetUser.id));
     if (existing) {
       setActiveConversation(existing);
       setView('messages');
@@ -1074,68 +1323,76 @@ export default function App() {
 
     if (!checkRateLimit()) return;
 
-    const newConv: Omit<Conversation, 'id'> = {
-      participants: [user.uid, targetUser.uid],
-      participantNames: {
-        [user.uid]: user.displayName || 'Me',
-        [targetUser.uid]: targetUser.displayName
+    const newConv = {
+      participants: [user.id, targetUser.id],
+      participant_names: {
+        [user.id]: user.user_metadata?.full_name || 'Me',
+        [targetUser.id]: targetUser.display_name
       },
-      updatedAt: new Date().toISOString()
+      updated_at: new Date().toISOString()
     };
 
     try {
-      const docRef = await addDoc(collection(db, 'conversations'), newConv);
-      setActiveConversation({ id: docRef.id, ...newConv });
+      const { data, error } = await supabase
+        .from('conversations')
+        .insert(newConv)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      setActiveConversation(data);
       setView('messages');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'conversations');
+      handleSupabaseError(err, 'gesprek starten');
     }
   };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!user || !messageInput.trim()) return;
+    if (!user || !messageInput.trim() || !activeConversation) return;
     
     if (!checkRateLimit()) return;
     
     const text = messageInput.trim();
     setMessageInput('');
 
-    if (!activeConversation) return;
-
     try {
-      const msgRef = collection(db, 'conversations', activeConversation.id, 'messages');
-      await addDoc(msgRef, {
-        senderUid: user.uid,
+      const { error: msgError } = await supabase.from('messages').insert({
+        conversation_id: activeConversation.id,
+        sender_id: user.id,
         text,
-        createdAt: new Date().toISOString()
+        created_at: new Date().toISOString()
       });
       
+      if (msgError) throw msgError;
+      
+      // Update conversation metadata
+      const { error: convError } = await supabase
+        .from('conversations')
+        .update({
+          last_message: text,
+          last_message_sender_id: user.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', activeConversation.id);
+        
+      if (convError) throw convError;
+
       // Clear typing status
       if (isTyping && typingInId === activeConversation.id) {
         setIsTyping(false);
         setTypingInId(null);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        const typingRef = doc(db, 'typing', `${activeConversation.id}_${user.uid}`);
-        updateDoc(typingRef, {
-          isTyping: false,
-          lastUpdated: new Date().toISOString()
-        }).catch(() => {});
+        await supabase
+          .from('typing')
+          .update({
+            is_typing: false,
+            last_updated: new Date().toISOString()
+          })
+          .eq('id', `${activeConversation.id}_${user.id}`);
       }
     } catch (err) {
-      setMessageInput(text); // Restore input on failure
-      handleFirestoreError(err, OperationType.CREATE, `conversations/${activeConversation.id}/messages`);
-      return;
-    }
-
-    try {
-      await updateDoc(doc(db, 'conversations', activeConversation.id), {
-        lastMessage: text,
-        lastMessageSenderUid: user.uid,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `conversations/${activeConversation.id}`);
+      handleSupabaseError(err, 'bericht verzenden');
     }
   };
 
@@ -1148,36 +1405,54 @@ export default function App() {
 
     if (!user) return;
 
-    if (!isTyping || typingInId !== conversationId) {
+    const now = Date.now();
+    
+    if (!isTyping || typingInId !== conversationId || (now - lastTypingUpdateRef.current > 10000)) {
       setIsTyping(true);
       setTypingInId(conversationId);
-    }
+      lastTypingUpdateRef.current = now;
 
-    const typingRef = doc(db, 'typing', `${conversationId}_${user.uid}`);
-    setDoc(typingRef, {
-      conversationId,
-      userId: user.uid,
-      userName: profile?.displayName || user.displayName || 'Iemand',
-      isTyping: true,
-      lastUpdated: new Date().toISOString()
-    }).catch(() => {});
+      supabase
+        .from('typing')
+        .upsert({
+          id: `${conversationId}_${user.id}`,
+          conversation_id: conversationId,
+          user_id: user.id,
+          user_name: profile?.display_name || user.user_metadata?.full_name || 'Iemand',
+          is_typing: true,
+          last_updated: new Date().toISOString()
+        });
+    }
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false);
       setTypingInId(null);
-      const typingRef = doc(db, 'typing', `${conversationId}_${user.uid}`);
-      updateDoc(typingRef, {
-        isTyping: false,
-        lastUpdated: new Date().toISOString()
-      }).catch(() => {});
+      supabase
+        .from('typing')
+        .update({
+          is_typing: false,
+          last_updated: new Date().toISOString()
+        })
+        .eq('id', `${conversationId}_${user.id}`);
     }, 3000);
   };
 
   const filteredUsers = users.filter(u => 
-    u.displayName.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+    u.display_name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
     u.email.toLowerCase().includes(userSearchQuery.toLowerCase())
   );
+
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-zinc-400 mx-auto mb-4" />
+          <p className="text-zinc-500 text-sm font-medium">Laden...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (user && isWhitelisted === null) {
     return (
@@ -1191,21 +1466,50 @@ export default function App() {
   }
 
   return (
-    <div 
-      className="min-h-screen transition-all duration-500 relative" 
-      style={{ 
-        backgroundColor: customTheme.bodyBgColor,
-        backgroundImage: 'var(--custom-main-bg)',
-        backgroundSize: 'var(--custom-main-bg-size)',
-        backgroundPosition: `center, ${customTheme.wallpaperX}% ${customTheme.wallpaperY}%`,
-        backgroundAttachment: 'fixed'
-      }}
-    >
+    <div className="min-h-screen relative overflow-x-hidden">
+      {isQuotaExceeded && (
+        <div className="bg-red-500 text-white px-4 py-2 text-center text-sm font-medium sticky top-0 z-[100] flex items-center justify-center gap-4 shadow-lg">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span>Firebase Quota Overschreden. Sommige functies zijn tijdelijk beperkt.</span>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded text-xs transition-colors flex items-center gap-1"
+          >
+            <Zap className="w-3 h-3" />
+            Verversen
+          </button>
+        </div>
+      )}
+      {/* Global Custom Wallpaper Layer */}
+      {useCustomTheme && customTheme.wallpaper && (
+        <div 
+          className="fixed inset-0 -z-50 bg-cover bg-no-repeat transition-all duration-700 custom-wallpaper"
+          style={{ 
+            backgroundImage: `url(${customTheme.wallpaper})`,
+            filter: `blur(${customTheme.blur_amount || 0}px)`,
+            opacity: (customTheme.opacity || 100) / 100,
+            backgroundPosition: `${customTheme.wallpaper_x || 50}% ${customTheme.wallpaper_y || 50}%`
+          }}
+        />
+      )}
+
+      <div 
+        className="min-h-screen transition-all duration-500 relative" 
+        style={useCustomTheme ? { 
+          backgroundColor: customTheme.wallpaper ? 'transparent' : customTheme.body_bg_color,
+          backgroundImage: 'var(--custom-pattern)',
+          backgroundSize: 'var(--custom-pattern-size)',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed'
+        } : {}}
+      >
       <nav 
-        className={`border-b border-zinc-200 sticky top-0 z-10 transition-all duration-500 ${customTheme.glassEffect ? 'custom-glass' : ''}`}
-        style={{ 
-          backgroundColor: customTheme.glassEffect ? undefined : customTheme.headerBgColor,
-        }}
+        className={`border-b border-zinc-200 sticky top-0 z-10 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+        style={useCustomTheme ? { 
+          backgroundColor: customTheme.glass_effect ? undefined : customTheme.header_bg_color,
+        } : {}}
       >
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -1261,13 +1565,13 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-3 pr-4 border-r border-zinc-200">
                   <div className="text-right hidden sm:block">
-                    <p className="text-sm font-medium leading-none">{user.displayName}</p>
+                    <p className="text-sm font-medium leading-none">{profile?.display_name || user.user_metadata?.full_name || 'Anoniem'}</p>
                     <p className="text-xs text-zinc-500 mt-1">{user.email}</p>
                   </div>
-                  {user.photoURL ? (
+                  {(profile?.photo_url || user.user_metadata?.avatar_url) ? (
                     <img 
-                      src={user.photoURL} 
-                      alt={user.displayName || ''} 
+                      src={profile?.photo_url || user.user_metadata?.avatar_url} 
+                      alt={profile?.display_name || user.user_metadata?.full_name || ''} 
                       className="w-8 h-8 rounded-full border border-zinc-200"
                       referrerPolicy="no-referrer"
                     />
@@ -1411,32 +1715,22 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="w-full relative"
             >
-              {customTheme.wallpaper && (
-                <div 
-                  className="fixed inset-0 -z-20 bg-cover bg-center bg-no-repeat transition-all duration-700 custom-wallpaper"
-                  style={{ 
-                    backgroundImage: `url(${customTheme.wallpaper})`,
-                    filter: `blur(${customTheme.blurAmount}px)`,
-                    opacity: customTheme.opacity / 100
-                  }}
-                />
-              )}
               {view === 'forum' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-1 space-y-6">
                     <div 
-                      className={`bg-white rounded-3xl p-8 border border-zinc-200 shadow-sm sticky top-24 transition-all duration-500 ${customTheme.glassEffect ? 'custom-glass' : ''}`}
-                      style={{ 
-                        backgroundColor: customTheme.glassEffect ? undefined : customTheme.cardBgColor,
-                        color: customTheme.textColor
-                      }}
+                      className={`bg-white rounded-3xl p-8 border border-zinc-200 shadow-sm sticky top-24 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      style={useCustomTheme ? { 
+                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
+                        color: customTheme.text_color
+                      } : {}}
                     >
                       <div className="flex flex-col items-center text-center">
                         <div className="relative mb-6">
-                          {user.photoURL ? (
+                          {(profile?.photo_url || user.user_metadata?.avatar_url) ? (
                             <img 
-                              src={user.photoURL} 
-                              alt={user.displayName || ''} 
+                              src={profile?.photo_url || user.user_metadata?.avatar_url} 
+                              alt={profile?.display_name || user.user_metadata?.full_name || ''} 
                               className="w-24 h-24 rounded-3xl border-4 border-white shadow-md"
                               referrerPolicy="no-referrer"
                             />
@@ -1446,14 +1740,14 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                        <h2 className="text-2xl font-bold text-zinc-900">{user.displayName}</h2>
+                        <h2 className="text-2xl font-bold text-zinc-900">{profile?.display_name || user.user_metadata?.full_name || 'Anoniem'}</h2>
                         <p className="text-zinc-500 text-sm mt-1">{user.email}</p>
                         
                         <div className="mt-8 w-full pt-8 border-t border-zinc-100 space-y-4">
                           <div className="flex justify-between text-sm">
                             <span className="text-zinc-400">Lid sinds</span>
                             <span className="text-zinc-600 font-medium">
-                              {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
+                              {profile ? new Date(profile.created_at).toLocaleDateString() : '...'}
                             </span>
                           </div>
                           <div className="flex justify-between text-sm">
@@ -1479,11 +1773,11 @@ export default function App() {
 
                   <div className="lg:col-span-2 space-y-6">
                     <div 
-                      className={`bg-white rounded-3xl p-8 border border-zinc-200 shadow-sm transition-all duration-500 ${customTheme.glassEffect ? 'custom-glass' : ''}`}
-                      style={{ 
-                        backgroundColor: customTheme.glassEffect ? undefined : customTheme.cardBgColor,
-                        color: customTheme.textColor
-                      }}
+                      className={`bg-white rounded-3xl p-8 border border-zinc-200 shadow-sm transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      style={useCustomTheme ? { 
+                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
+                        color: customTheme.text_color
+                      } : {}}
                     >
                       <div className="flex items-center gap-2 mb-8">
                         <MessageSquare className="w-6 h-6 text-zinc-900" />
@@ -1544,10 +1838,10 @@ export default function App() {
                               key={post.id}
                               className="flex gap-4 group bg-white p-6 rounded-2xl border border-zinc-100 shadow-sm hover:shadow-md transition-all"
                             >
-                              {post.authorPhoto ? (
+                              {post.author_photo ? (
                                 <img 
-                                  src={post.authorPhoto} 
-                                  alt={post.authorName} 
+                                  src={post.author_photo} 
+                                  alt={post.author_name} 
                                   className="w-12 h-12 rounded-full flex-shrink-0 border border-zinc-200 object-cover"
                                   referrerPolicy="no-referrer"
                                 />
@@ -1559,22 +1853,22 @@ export default function App() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-2 mb-2">
                                   <div className="flex items-center gap-3 min-w-0">
-                                    <span className="font-bold text-base text-zinc-900 truncate">{post.authorName}</span>
+                                    <span className="font-bold text-base text-zinc-900 truncate">{post.author_name}</span>
                                     <span className="text-xs text-zinc-400 font-medium">
-                                      {new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} om {new Date(post.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {new Date(post.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} om {new Date(post.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {user.uid !== post.authorUid && (
+                                    {user.id !== post.author_id && (
                                       <button 
-                                        onClick={() => setReportingUser({ uid: post.authorUid, displayName: post.authorName, email: '', createdAt: '', updatedAt: '' })}
+                                        onClick={() => setReportingUser({ id: post.author_id, display_name: post.author_name, email: '', created_at: '', updated_at: '' })}
                                         className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                                         title="Rapporteer gebruiker"
                                       >
                                         <Flag className="w-4 h-4" />
                                       </button>
                                     )}
-                                    {(user.uid === post.authorUid || isAdmin) && (
+                                    {(user.id === post.author_id || isAdmin) && (
                                       <>
                                         <button 
                                           onClick={() => {
@@ -1595,9 +1889,9 @@ export default function App() {
                                         </button>
                                       </>
                                     )}
-                                    {user.uid !== post.authorUid && (
+                                    {user.id !== post.author_id && (
                                       <button 
-                                        onClick={() => handleStartConversation({ uid: post.authorUid, displayName: post.authorName })}
+                                        onClick={() => handleStartConversation({ id: post.author_id, display_name: post.author_name })}
                                         className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition-all"
                                         title="Stuur bericht"
                                       >
@@ -1646,10 +1940,10 @@ export default function App() {
 
               {view === 'messages' && (
                 <div 
-                  className={`bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden h-[calc(100vh-12rem)] flex transition-all duration-500 ${customTheme.glassEffect ? 'custom-glass' : ''}`}
+                  className={`bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden h-[calc(100vh-12rem)] flex transition-all duration-500 ${customTheme.glass_effect ? 'custom-glass' : ''}`}
                   style={{ 
-                    backgroundColor: customTheme.glassEffect ? undefined : customTheme.cardBgColor,
-                    color: customTheme.textColor
+                    backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
+                    color: customTheme.text_color
                   }}
                 >
                   {/* Conversations List */}
@@ -1665,8 +1959,8 @@ export default function App() {
                     </div>
                     <div className="flex-grow overflow-y-auto p-2 space-y-1">
                       {conversations.map(conv => {
-                        const otherParticipantUid = conv.participants.find(uid => uid !== user.uid);
-                        const otherParticipantName = otherParticipantUid ? conv.participantNames[otherParticipantUid] : 'Onbekend';
+                        const otherParticipantUid = conv.participants.find(uid => uid !== user.id);
+                        const otherParticipantName = otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend';
                         const isActive = activeConversation?.id === conv.id;
                         return (
                           <button
@@ -1683,7 +1977,7 @@ export default function App() {
                               <div className="flex justify-between items-start mb-1">
                                 <p className="font-bold text-sm truncate">{otherParticipantName}</p>
                                 <p className={`text-[10px] ${isActive ? 'text-zinc-400' : 'text-zinc-400'}`}>
-                                  {new Date(conv.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                  {new Date(conv.updated_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                 </p>
                               </div>
                               {typingStatuses[conv.id]?.length > 0 ? (
@@ -1696,7 +1990,7 @@ export default function App() {
                                   <p className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-white' : 'text-zinc-400'}`}>Typen...</p>
                                 </div>
                               ) : (
-                                <p className={`text-xs truncate ${isActive ? 'text-zinc-300' : 'text-zinc-400'}`}>{conv.lastMessage || 'Geen berichten'}</p>
+                                <p className={`text-xs truncate ${isActive ? 'text-zinc-300' : 'text-zinc-400'}`}>{conv.last_message || 'Geen berichten'}</p>
                               )}
                             </div>
                           </button>
@@ -1714,31 +2008,31 @@ export default function App() {
                   {/* Active Conversation */}
                   <div 
                     className="flex-grow flex flex-col transition-all duration-500"
-                    style={{ backgroundColor: customTheme.bodyBgColor ? `${customTheme.bodyBgColor}80` : 'rgba(249, 250, 251, 0.5)' }}
+                    style={useCustomTheme ? { backgroundColor: customTheme.body_bg_color ? `${customTheme.body_bg_color}80` : 'rgba(249, 250, 251, 0.5)' } : {}}
                   >
                     {activeConversation ? (
                       <>
                         <div 
                           className="p-6 border-b flex items-center justify-between shadow-sm z-10 transition-all duration-500"
-                          style={{ 
-                            backgroundColor: customTheme.headerBgColor,
-                            borderColor: customTheme.cardBgColor ? `${customTheme.cardBgColor}20` : 'rgba(244, 244, 245, 1)'
-                          }}
+                          style={useCustomTheme ? { 
+                            backgroundColor: customTheme.header_bg_color,
+                            borderColor: customTheme.card_bg_color ? `${customTheme.card_bg_color}20` : 'rgba(244, 244, 245, 1)'
+                          } : {}}
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-500"
-                              style={{ 
-                                backgroundColor: customTheme.cardBgColor,
-                                borderColor: customTheme.accentColor ? `${customTheme.accentColor}20` : 'rgba(228, 228, 231, 1)'
-                              }}
+                              style={useCustomTheme ? { 
+                                backgroundColor: customTheme.card_bg_color,
+                                borderColor: customTheme.accent_color ? `${customTheme.accent_color}20` : 'rgba(228, 228, 231, 1)'
+                              } : {}}
                             >
-                              <UserIcon className="w-5 h-5" style={{ color: customTheme.textColor }} />
+                              <UserIcon className="w-5 h-5" style={useCustomTheme ? { color: customTheme.text_color } : {}} />
                             </div>
                             <div>
-                              <h4 className="font-bold" style={{ color: customTheme.textColor }}>
+                              <h4 className="font-bold" style={useCustomTheme ? { color: customTheme.text_color } : {}}>
                                 {(() => {
-                                  const otherUid = activeConversation?.participants.find(uid => uid !== user.uid);
-                                  return otherUid ? activeConversation?.participantNames[otherUid] : 'Onbekend';
+                                  const otherUid = activeConversation?.participants.find(uid => uid !== user.id);
+                                  return otherUid ? activeConversation?.participant_names[otherUid] : 'Onbekend';
                                 })()}
                               </h4>
                               <p className="text-xs font-medium text-emerald-500 flex items-center gap-1">
@@ -1751,7 +2045,7 @@ export default function App() {
                         
                         <div className="flex-grow overflow-y-auto p-6 space-y-4 custom-scrollbar">
                           {messages.map(msg => {
-                            const isMe = msg.senderUid === user.uid;
+                            const isMe = msg.sender_id === user.id;
                             return (
                               <div 
                                 key={msg.id}
@@ -1763,11 +2057,11 @@ export default function App() {
                                       ? 'rounded-br-sm' 
                                       : 'border rounded-bl-sm'
                                   }`}
-                                  style={{
-                                    backgroundColor: isMe ? customTheme.primaryColor : customTheme.cardBgColor,
-                                    color: isMe ? '#ffffff' : customTheme.textColor,
-                                    borderColor: isMe ? 'transparent' : customTheme.accentColor ? `${customTheme.accentColor}20` : 'rgba(228, 228, 231, 1)'
-                                  }}
+                                  style={useCustomTheme ? {
+                                    backgroundColor: isMe ? customTheme.primary_color : customTheme.card_bg_color,
+                                    color: isMe ? '#ffffff' : customTheme.text_color,
+                                    borderColor: isMe ? 'transparent' : customTheme.accent_color ? `${customTheme.accent_color}20` : 'rgba(228, 228, 231, 1)'
+                                  } : {}}
                                 >
                                   {editingMessageId === msg.id ? (
                                     <div className="space-y-2 min-w-[200px]">
@@ -1798,8 +2092,8 @@ export default function App() {
                                             isMe ? 'bg-white text-zinc-900 hover:bg-zinc-200' : 'bg-zinc-900 text-white hover:bg-zinc-800'
                                           }`}
                                           style={{
-                                            backgroundColor: isMe ? '#ffffff' : customTheme.primaryColor,
-                                            color: isMe ? customTheme.primaryColor : '#ffffff'
+                                            backgroundColor: isMe ? '#ffffff' : customTheme.primary_color,
+                                            color: isMe ? customTheme.primary_color : '#ffffff'
                                           }}
                                         >
                                           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
@@ -1811,7 +2105,7 @@ export default function App() {
                                       <RichContent content={msg.text} />
                                       <div className={`flex items-center justify-between mt-1.5 gap-4 ${isMe ? 'opacity-60' : 'opacity-40'}`}>
                                         <p className="text-[10px] font-medium">
-                                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </p>
                                         {isMe && (
                                           <button 
@@ -1837,10 +2131,10 @@ export default function App() {
  
                         <div 
                           className="p-6 border-t relative pt-12 transition-all duration-500"
-                          style={{ 
-                            backgroundColor: customTheme.headerBgColor,
-                            borderColor: customTheme.cardBgColor ? `${customTheme.cardBgColor}20` : 'rgba(244, 244, 245, 1)'
-                          }}
+                          style={useCustomTheme ? { 
+                            backgroundColor: customTheme.header_bg_color,
+                            borderColor: customTheme.card_bg_color ? `${customTheme.card_bg_color}20` : 'rgba(244, 244, 245, 1)'
+                          } : {}}
                         >
                           <AnimatePresence>
                             {activeConversation && typingStatuses[activeConversation.id]?.length > 0 && (
@@ -1870,16 +2164,16 @@ export default function App() {
                               disabled={cooldownRemaining > 0}
                               className="flex-grow p-4 border rounded-2xl transition-all outline-none disabled:opacity-50"
                               style={{ 
-                                backgroundColor: customTheme.cardBgColor,
-                                borderColor: customTheme.accentColor ? `${customTheme.accentColor}20` : 'rgba(228, 228, 231, 1)',
-                                color: customTheme.textColor
+                                backgroundColor: customTheme.card_bg_color,
+                                borderColor: customTheme.accent_color ? `${customTheme.accent_color}20` : 'rgba(228, 228, 231, 1)',
+                                color: customTheme.text_color
                               }}
                             />
                             <button 
                               type="submit"
                               disabled={!messageInput.trim() || cooldownRemaining > 0}
                               className="p-4 text-white rounded-2xl disabled:opacity-50 transition-all active:scale-95"
-                              style={{ backgroundColor: customTheme.primaryColor }}
+                              style={useCustomTheme ? { backgroundColor: customTheme.primary_color } : {}}
                             >
                               <Send className="w-5 h-5" />
                             </button>
@@ -1902,9 +2196,9 @@ export default function App() {
               {view === 'settings' && (
                 <div 
                   className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] transition-all duration-500"
-                  style={{ 
-                    color: customTheme.textColor
-                  }}
+                  style={useCustomTheme ? { 
+                    color: customTheme.text_color
+                  } : {}}
                 >
                   <div className="flex items-center justify-between mb-8">
                     <div>
@@ -1922,18 +2216,18 @@ export default function App() {
                     <div className="flex flex-col md:flex-row gap-8 h-full">
                     {/* Sidebar */}
                     <div 
-                      className={`w-full md:w-64 flex-shrink-0 space-y-1 p-2 rounded-2xl transition-all duration-500 ${customTheme.glassEffect ? 'custom-glass' : ''}`}
-                      style={{ 
-                        backgroundColor: customTheme.glassEffect ? undefined : customTheme.sidebarBgColor,
-                      }}
+                      className={`w-full md:w-64 flex-shrink-0 space-y-1 p-2 rounded-2xl transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      style={useCustomTheme ? { 
+                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.sidebar_bg_color,
+                      } : {}}
                     >
                       <button
                         onClick={() => setSettingsTab('profile')}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${settingsTab === 'profile' ? 'shadow-md' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'}`}
-                        style={{ 
-                          backgroundColor: settingsTab === 'profile' ? customTheme.primaryColor : 'transparent',
-                          color: settingsTab === 'profile' ? '#ffffff' : customTheme.textColor
-                        }}
+                        style={useCustomTheme ? { 
+                          backgroundColor: settingsTab === 'profile' ? customTheme.primary_color : 'transparent',
+                          color: settingsTab === 'profile' ? '#ffffff' : customTheme.text_color
+                        } : {}}
                       >
                         <UserCog className="w-5 h-5" />
                         Profiel
@@ -1941,10 +2235,10 @@ export default function App() {
                       <button
                         onClick={() => setSettingsTab('notifications')}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${settingsTab === 'notifications' ? 'shadow-md' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'}`}
-                        style={{ 
-                          backgroundColor: settingsTab === 'notifications' ? customTheme.primaryColor : 'transparent',
-                          color: settingsTab === 'notifications' ? '#ffffff' : customTheme.textColor
-                        }}
+                        style={useCustomTheme ? { 
+                          backgroundColor: settingsTab === 'notifications' ? customTheme.primary_color : 'transparent',
+                          color: settingsTab === 'notifications' ? '#ffffff' : customTheme.text_color
+                        } : {}}
                       >
                         <Bell className="w-5 h-5" />
                         Meldingen
@@ -1952,10 +2246,10 @@ export default function App() {
                       <button
                         onClick={() => setSettingsTab('theme')}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${settingsTab === 'theme' ? 'shadow-md' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'}`}
-                        style={{ 
-                          backgroundColor: settingsTab === 'theme' ? customTheme.primaryColor : 'transparent',
-                          color: settingsTab === 'theme' ? '#ffffff' : customTheme.textColor
-                        }}
+                        style={useCustomTheme ? { 
+                          backgroundColor: settingsTab === 'theme' ? customTheme.primary_color : 'transparent',
+                          color: settingsTab === 'theme' ? '#ffffff' : customTheme.text_color
+                        } : {}}
                       >
                         <Sparkles className="w-5 h-5" />
                         Custom Thema
@@ -1964,10 +2258,10 @@ export default function App() {
                         <button
                           onClick={() => setSettingsTab('admin')}
                           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${settingsTab === 'admin' ? 'shadow-md' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'}`}
-                          style={{ 
-                            backgroundColor: settingsTab === 'admin' ? customTheme.primaryColor : 'transparent',
-                            color: settingsTab === 'admin' ? '#ffffff' : customTheme.textColor
-                          }}
+                          style={useCustomTheme ? { 
+                            backgroundColor: settingsTab === 'admin' ? customTheme.primary_color : 'transparent',
+                            color: settingsTab === 'admin' ? '#ffffff' : customTheme.text_color
+                          } : {}}
                         >
                           <ShieldCheck className="w-5 h-5" />
                           Admin Paneel
@@ -1987,11 +2281,11 @@ export default function App() {
 
                     {/* Content Area */}
                     <div 
-                      className={`flex-1 bg-white rounded-[2rem] border border-zinc-200 shadow-sm overflow-hidden flex flex-col h-full max-h-[calc(100vh-16rem)] transition-all duration-500 ${customTheme.glassEffect ? 'custom-glass' : ''}`}
-                      style={{ 
-                        backgroundColor: customTheme.glassEffect ? undefined : customTheme.cardBgColor,
-                        color: customTheme.textColor
-                      }}
+                      className={`flex-1 bg-white rounded-[2rem] border border-zinc-200 shadow-sm overflow-hidden flex flex-col h-full max-h-[calc(100vh-16rem)] transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      style={useCustomTheme ? { 
+                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
+                        color: customTheme.text_color
+                      } : {}}
                     >
                       <div className="p-8 overflow-y-auto custom-scrollbar">
                         {settingsTab === 'profile' && (
@@ -2008,7 +2302,7 @@ export default function App() {
                                 <div className="relative group">
                                   <div className="w-24 h-24 rounded-3xl overflow-hidden border-4 border-white shadow-md">
                                     <img 
-                                      src={photoURLInput || profile?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.uid}`} 
+                                      src={photoURLInput || profile?.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.id}`} 
                                       alt="Profile" 
                                       className="w-full h-full object-cover"
                                       referrerPolicy="no-referrer"
@@ -2093,7 +2387,7 @@ export default function App() {
                               <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
                                 <div className="flex items-center gap-3">
                                   <div className="p-2 bg-white rounded-xl shadow-sm">
-                                    {notificationSettings.enableSounds ? <Volume2 className="w-4 h-4 text-zinc-900" /> : <VolumeX className="w-4 h-4 text-zinc-400" />}
+                                    {notificationSettings.enable_sounds ? <Volume2 className="w-4 h-4 text-zinc-900" /> : <VolumeX className="w-4 h-4 text-zinc-400" />}
                                   </div>
                                   <div>
                                     <p className="text-sm font-bold">Geluiden inschakelen</p>
@@ -2101,11 +2395,11 @@ export default function App() {
                                   </div>
                                 </div>
                                 <button 
-                                  onClick={() => setNotificationSettings(prev => ({ ...prev, enableSounds: !prev.enableSounds }))}
+                                  onClick={() => setNotificationSettings(prev => ({ ...prev, enable_sounds: !prev.enable_sounds }))}
                                   className="w-12 h-6 rounded-full transition-all relative"
-                                  style={{ backgroundColor: notificationSettings.enableSounds ? customTheme.accentColor : '#e4e4e7' }}
+                                  style={{ backgroundColor: notificationSettings.enable_sounds ? customTheme.accent_color : '#e4e4e7' }}
                                 >
-                                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notificationSettings.enableSounds ? 'left-7' : 'left-1'}`} />
+                                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notificationSettings.enable_sounds ? 'left-7' : 'left-1'}`} />
                                 </button>
                               </div>
 
@@ -2113,10 +2407,10 @@ export default function App() {
                                 <div className="space-y-2">
                                   <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Bericht Geluid</label>
                                   <select 
-                                    value={notificationSettings.messageSound}
+                                    value={notificationSettings.message_sound}
                                     onChange={(e) => {
                                       const soundUrl = e.target.value;
-                                      setNotificationSettings(prev => ({ ...prev, messageSound: soundUrl }));
+                                      setNotificationSettings(prev => ({ ...prev, message_sound: soundUrl }));
                                       playSound(soundUrl, true);
                                     }}
                                     className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 outline-none font-medium text-sm"
@@ -2129,10 +2423,10 @@ export default function App() {
                                 <div className="space-y-2">
                                   <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Post Geluid</label>
                                   <select 
-                                    value={notificationSettings.postSound}
+                                    value={notificationSettings.post_sound}
                                     onChange={(e) => {
                                       const soundUrl = e.target.value;
-                                      setNotificationSettings(prev => ({ ...prev, postSound: soundUrl }));
+                                      setNotificationSettings(prev => ({ ...prev, post_sound: soundUrl }));
                                       playSound(soundUrl, true);
                                     }}
                                     className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 outline-none font-medium text-sm"
@@ -2244,14 +2538,14 @@ export default function App() {
                                 <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Kleuren Aanpassen</label>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                   {[
-                                    { label: 'Primaire Kleur', key: 'primaryColor', default: '#18181b' },
-                                    { label: 'Secundaire Kleur', key: 'secondaryColor', default: '#27272a' },
-                                    { label: 'Accent Kleur', key: 'accentColor', default: '#18181b' },
-                                    { label: 'Tekst Kleur', key: 'textColor', default: '#18181b' },
-                                    { label: 'Kaart Achtergrond', key: 'cardBgColor', default: '#ffffff' },
-                                    { label: 'Sidebar Achtergrond', key: 'sidebarBgColor', default: '#ffffff' },
-                                    { label: 'Header Achtergrond', key: 'headerBgColor', default: '#ffffff' },
-                                    { label: 'Body Achtergrond', key: 'bodyBgColor', default: '#f4f4f5' },
+                                    { label: 'Primaire Kleur', key: 'primary_color', default: '#18181b' },
+                                    { label: 'Secundaire Kleur', key: 'secondary_color', default: '#27272a' },
+                                    { label: 'Accent Kleur', key: 'accent_color', default: '#18181b' },
+                                    { label: 'Tekst Kleur', key: 'text_color', default: '#18181b' },
+                                    { label: 'Kaart Achtergrond', key: 'card_bg_color', default: '#ffffff' },
+                                    { label: 'Sidebar Achtergrond', key: 'sidebar_bg_color', default: '#ffffff' },
+                                    { label: 'Header Achtergrond', key: 'header_bg_color', default: '#ffffff' },
+                                    { label: 'Body Achtergrond', key: 'body_bg_color', default: '#f4f4f5' },
                                   ].map((color) => (
                                     <div key={color.key}>
                                       <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">{color.label}</label>
@@ -2279,32 +2573,32 @@ export default function App() {
                                     <div className="space-y-4">
                                       <div className="flex items-center justify-between">
                                         <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Achtergrond Positie (X)</label>
-                                        <span className="text-xs font-mono bg-zinc-100 px-2 py-1 rounded">{customTheme.wallpaperX || 50}%</span>
+                                        <span className="text-xs font-mono bg-zinc-100 px-2 py-1 rounded">{customTheme.wallpaper_x || 50}%</span>
                                       </div>
                                       <input 
                                         type="range"
                                         min="0"
                                         max="100"
-                                        value={customTheme.wallpaperX || 50}
-                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaperX: parseInt(e.target.value) }))}
+                                        value={customTheme.wallpaper_x || 50}
+                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaper_x: parseInt(e.target.value) }))}
                                         className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
-                                        style={{ accentColor: customTheme.accentColor }}
+                                        style={{ accentColor: customTheme.accent_color }}
                                       />
                                     </div>
 
                                     <div className="space-y-4">
                                       <div className="flex items-center justify-between">
                                         <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Achtergrond Positie (Y)</label>
-                                        <span className="text-xs font-mono bg-zinc-100 px-2 py-1 rounded">{customTheme.wallpaperY || 50}%</span>
+                                        <span className="text-xs font-mono bg-zinc-100 px-2 py-1 rounded">{customTheme.wallpaper_y || 50}%</span>
                                       </div>
                                       <input 
                                         type="range"
                                         min="0"
                                         max="100"
-                                        value={customTheme.wallpaperY || 50}
-                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaperY: parseInt(e.target.value) }))}
+                                        value={customTheme.wallpaper_y || 50}
+                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaper_y: parseInt(e.target.value) }))}
                                         className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
-                                        style={{ accentColor: customTheme.accentColor }}
+                                        style={{ accentColor: customTheme.accent_color }}
                                       />
                                     </div>
                                   </div>
@@ -2318,27 +2612,27 @@ export default function App() {
                                     <p className="text-xs text-zinc-500">Maak kaarten semi-transparant</p>
                                   </div>
                                   <button 
-                                    onClick={() => setCustomTheme(prev => ({ ...prev, glassEffect: !prev.glassEffect }))}
+                                    onClick={() => setCustomTheme(prev => ({ ...prev, glass_effect: !prev.glass_effect }))}
                                     className="w-12 h-6 rounded-full transition-all relative"
-                                    style={{ backgroundColor: customTheme.glassEffect ? customTheme.accentColor : '#e4e4e7' }}
+                                    style={{ backgroundColor: customTheme.glass_effect ? customTheme.accent_color : '#e4e4e7' }}
                                   >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${customTheme.glassEffect ? 'left-7' : 'left-1'}`} />
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${customTheme.glass_effect ? 'left-7' : 'left-1'}`} />
                                   </button>
                                 </div>
 
-                                {customTheme.glassEffect && (
+                                {customTheme.glass_effect && (
                                   <div className="space-y-4 pt-4 border-t border-zinc-200">
                                     <div>
                                       <div className="flex justify-between mb-2">
                                         <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Blur Sterkte</label>
-                                        <span className="text-[10px] font-bold text-zinc-900">{customTheme.blurAmount}px</span>
+                                        <span className="text-[10px] font-bold text-zinc-900">{customTheme.blur_amount}px</span>
                                       </div>
                                       <input 
                                         type="range"
                                         min="0"
                                         max="40"
-                                        value={customTheme.blurAmount || 10}
-                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, blurAmount: parseInt(e.target.value) }))}
+                                        value={customTheme.blur_amount || 10}
+                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, blur_amount: parseInt(e.target.value) }))}
                                         className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-zinc-900"
                                       />
                                     </div>
@@ -2360,14 +2654,48 @@ export default function App() {
                                 )}
                               </div>
 
-                              <button 
-                                onClick={handleUpdateTheme}
-                                disabled={saving}
-                                className="w-full p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/10"
-                              >
-                                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                Thema Opslaan
-                              </button>
+                              <div className="flex flex-col sm:flex-row gap-4">
+                                <button 
+                                  onClick={handleUpdateTheme}
+                                  disabled={saving}
+                                  className="flex-1 p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/10"
+                                >
+                                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                                  Thema Opslaan
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    if (confirm('Weet je zeker dat je alle thema instellingen wilt resetten naar de standaard waarden?')) {
+                                      const defaultTheme = {
+                                        wallpaper: '',
+                                        pattern: 'none',
+                                        primary_color: '#18181b',
+                                        secondary_color: '#27272a',
+                                        accent_color: '#18181b',
+                                        text_color: '#18181b',
+                                        card_bg_color: '#ffffff',
+                                        sidebar_bg_color: '#ffffff',
+                                        header_bg_color: '#ffffff',
+                                        body_bg_color: '#f4f4f5',
+                                        glass_effect: false,
+                                        blur_amount: 10,
+                                        opacity: 100,
+                                        wallpaper_x: 50,
+                                        wallpaper_y: 50
+                                      };
+                                      setCustomTheme(defaultTheme);
+                                      setUseCustomTheme(false);
+                                      localStorage.setItem('cached_customTheme', JSON.stringify(defaultTheme));
+                                      localStorage.setItem('cached_useCustomTheme', 'false');
+                                      toast.success('Thema gereset naar standaard!');
+                                    }
+                                  }}
+                                  className="p-4 bg-zinc-100 text-zinc-500 rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                  Reset
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -2460,8 +2788,8 @@ export default function App() {
                                         </div>
                                         {report.details && <p className="text-sm text-zinc-600 mb-3 bg-white p-3 rounded-lg border border-zinc-100">"{report.details}"</p>}
                                         <div className="text-[10px] text-zinc-400 flex justify-between font-medium uppercase tracking-wider">
-                                          <span>Door: {report.reporterUid.substring(0, 8)}...</span>
-                                          <span>Over: {report.reportedUid.substring(0, 8)}...</span>
+                                          <span>Door: {report.reporter_id.substring(0, 8)}...</span>
+                                          <span>Over: {report.reported_id.substring(0, 8)}...</span>
                                         </div>
                                       </div>
                                     ))
@@ -2529,27 +2857,27 @@ export default function App() {
                   ) : (
                     filteredUsers.map(u => (
                       <button
-                        key={u.uid}
+                        key={u.id}
                         onClick={() => {
-                          handleStartConversation(u);
+                          handleStartConversation(u as UserProfile);
                           setShowUserSearch(false);
                           setUserSearchQuery('');
                         }}
                         className="w-full p-3 rounded-xl flex items-center gap-3 hover:bg-zinc-50 transition-all text-left group"
                       >
                         <div className="w-10 h-10 bg-zinc-100 rounded-xl flex items-center justify-center group-hover:bg-white transition-colors">
-                          {u.photoURL ? (
-                            <img src={u.photoURL} alt="" className="w-full h-full rounded-xl object-cover" referrerPolicy="no-referrer" />
+                          {u.photo_url ? (
+                            <img src={u.photo_url} alt="" className="w-full h-full rounded-xl object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <UserIcon className="w-5 h-5 text-zinc-400" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm truncate">{u.displayName}</p>
+                          <p className="font-semibold text-sm truncate">{u.display_name}</p>
                           <p className="text-xs text-zinc-400 truncate">{u.email}</p>
                         </div>
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {u.uid !== user.uid && (
+                          {u.id !== user.id && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2607,14 +2935,14 @@ export default function App() {
                   </div>
                   <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-red-100 shadow-sm">
                     <div className="w-12 h-12 rounded-xl bg-zinc-100 flex items-center justify-center overflow-hidden">
-                      {reportingUser.photoURL ? (
-                        <img src={reportingUser.photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      {reportingUser.photo_url ? (
+                        <img src={reportingUser.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
                         <UserIcon className="w-6 h-6 text-zinc-400" />
                       )}
                     </div>
                     <div>
-                      <p className="font-bold text-zinc-900">{reportingUser.displayName}</p>
+                      <p className="font-bold text-zinc-900">{reportingUser.display_name}</p>
                       <p className="text-xs text-zinc-400 font-medium">{reportingUser.email}</p>
                     </div>
                   </div>
@@ -2672,8 +3000,7 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
-
-        {/* Update 1.5 Modal */}
+        {/* Update 1.6 Modal */}
         <AnimatePresence>
           {showUpdateModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -2687,42 +3014,42 @@ export default function App() {
                   <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center mb-6">
                     <Sparkles className="w-6 h-6 text-emerald-600" />
                   </div>
-                  <h2 className="text-2xl font-bold text-zinc-900 mb-2">Nieuw in versie 1.5</h2>
-                  <p className="text-zinc-500 mb-6">We hebben de app verbeterd met nieuwe functies en een strakker design.</p>
+                  <h2 className="text-2xl font-bold text-zinc-900 mb-2">Nieuw in versie 1.6</h2>
+                  <p className="text-zinc-500 mb-6 font-medium">We hebben de app sneller en slimmer gemaakt door meer lokaal te doen.</p>
                   
                   <div className="space-y-4 mb-8">
                     <div className="flex gap-4">
                       <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
-                        <MessageSquare className="w-4 h-4 text-zinc-600" />
+                        <Zap className="w-4 h-4 text-zinc-600" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-zinc-900">Nieuwe Berichten UI</h4>
-                        <p className="text-xs text-zinc-500 mt-1">Een schoner, moderner design voor al je gesprekken, zonder afleidingen.</p>
+                        <h4 className="font-bold text-sm text-zinc-900">Bliksemsnel laden</h4>
+                        <p className="text-xs text-zinc-500 mt-1">Je profiel en berichten worden nu lokaal opgeslagen voor direct toegang.</p>
                       </div>
                     </div>
                     <div className="flex gap-4">
                       <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
-                        <Settings className="w-4 h-4 text-zinc-600" />
+                        <CloudOff className="w-4 h-4 text-zinc-600" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-zinc-900">Verbeterde Instellingen</h4>
-                        <p className="text-xs text-zinc-500 mt-1">Een nieuw zijpaneel voor instellingen, inclusief een admin paneel.</p>
+                        <h4 className="font-bold text-sm text-zinc-900">Minder Cloud, Meer Lokaal</h4>
+                        <p className="text-xs text-zinc-500 mt-1">Slimmere synchronisatie vermindert dataverbruik en verhoogt de snelheid.</p>
                       </div>
                     </div>
                     <div className="flex gap-4">
                       <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
-                        <ShieldCheck className="w-4 h-4 text-zinc-600" />
+                        <Palette className="w-4 h-4 text-zinc-600" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-zinc-900">Live Status</h4>
-                        <p className="text-xs text-zinc-500 mt-1">Bekijk de actuele website status direct in de navigatiebalk.</p>
+                        <h4 className="font-bold text-sm text-zinc-900">Thema Fixes</h4>
+                        <p className="text-xs text-zinc-500 mt-1">Achtergronden en thema's werken nu vlekkeloos in alle modi.</p>
                       </div>
                     </div>
                   </div>
 
                   <button 
                     onClick={() => {
-                      localStorage.setItem('hasSeenUpdate1_5', 'true');
+                      localStorage.setItem('hasSeenUpdate1_6', 'true');
                       setShowUpdateModal(false);
                     }}
                     className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98]"
@@ -2734,8 +3061,10 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
+
       </main>
       <Toaster position="top-right" richColors closeButton />
+      </div>
     </div>
   );
 }

@@ -1,104 +1,85 @@
 export interface NotificationSettings {
-  enableSounds: boolean;
-  notifyNewPosts: boolean;
-  notifyNewMessages: boolean;
-  messageSound: string;
-  postSound: string;
+  enable_sounds: boolean;
+  notify_new_posts: boolean;
+  notify_new_messages: boolean;
+  message_sound: string;
+  post_sound: string;
 }
 
 export interface Report {
   id: string;
-  reporterUid: string;
-  reportedUid: string;
+  reporter_id: string;
+  reported_id: string;
   reason: string;
   details?: string;
-  createdAt: string;
+  created_at: string;
   status: 'pending' | 'reviewed' | 'resolved';
 }
 
 export interface CustomTheme {
   wallpaper?: string;
   pattern?: string;
-  primaryColor?: string;
-  secondaryColor?: string;
-  accentColor?: string;
-  textColor?: string;
-  cardBgColor?: string;
-  sidebarBgColor?: string;
-  headerBgColor?: string;
-  bodyBgColor?: string;
-  glassEffect?: boolean;
-  blurAmount?: number;
+  primary_color?: string;
+  secondary_color?: string;
+  accent_color?: string;
+  text_color?: string;
+  card_bg_color?: string;
+  sidebar_bg_color?: string;
+  header_bg_color?: string;
+  body_bg_color?: string;
+  glass_effect?: boolean;
+  blur_amount?: number;
   opacity?: number;
-  wallpaperX?: number;
-  wallpaperY?: number;
+  wallpaper_x?: number;
+  wallpaper_y?: number;
 }
 
 export interface UserProfile {
-  uid: string;
-  displayName: string;
-  originalName?: string;
+  id: string;
+  display_name: string;
+  original_name?: string;
   email: string;
-  photoURL?: string;
+  photo_url?: string;
   bio?: string;
-  notificationSettings?: NotificationSettings;
-  customTheme?: CustomTheme;
-  useCustomTheme?: boolean;
-  nameChangeCount?: number;
-  lastNameChangeDate?: string;
-  createdAt: string;
-  updatedAt: string;
+  notification_settings?: NotificationSettings;
+  custom_theme?: CustomTheme;
+  use_custom_theme?: boolean;
+  name_change_count?: number;
+  last_name_change_date?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Post {
   id: string;
-  authorUid: string;
-  authorName: string;
-  authorPhoto?: string;
+  author_id: string;
+  author_name: string;
+  author_photo?: string;
   content: string;
-  createdAt: string;
+  created_at: string;
 }
 
 export interface Conversation {
   id: string;
   participants: string[];
-  participantNames: Record<string, string>;
-  lastMessage?: string;
-  lastMessageSenderUid?: string;
-  updatedAt: string;
+  participant_names: Record<string, string>;
+  last_message?: string;
+  last_message_sender_id?: string;
+  updated_at: string;
 }
 
 export interface DirectMessage {
   id: string;
-  senderUid: string;
+  sender_id: string;
   text: string;
-  createdAt: string;
+  created_at: string;
 }
 
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-export interface FirestoreErrorInfo {
+export interface SupabaseErrorInfo {
   error: string;
-  operationType: OperationType;
-  path: string | null;
+  operation: string;
   authInfo: {
     userId?: string;
     email?: string | null;
-    emailVerified?: boolean;
-    isAnonymous?: boolean;
-    tenantId?: string | null;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
   }
 }

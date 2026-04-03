@@ -13,14 +13,7 @@
   --card-border: var(--color-zinc-200);
   --muted: var(--color-zinc-500);
   
-  /* Custom Theme Overrides */
-  --custom-primary: #18181b;
-  --custom-accent: #18181b;
-  --custom-text: #18181b;
-  --custom-card-bg: #ffffff;
-  --custom-sidebar-bg: #ffffff;
-  --custom-header-bg: #ffffff;
-  --custom-body-bg: #f4f4f5;
+  /* Custom Theme Overrides - only used when useCustomTheme is true */
   --custom-blur: 0px;
   --custom-opacity: 1;
   --custom-pattern: none;
@@ -80,14 +73,6 @@
   --card-bg: var(--color-zinc-50);
   --card-border: var(--color-zinc-200);
   --muted: var(--color-zinc-400);
-
-  --custom-primary: var(--color-zinc-900);
-  --custom-accent: var(--color-zinc-800);
-  --custom-text: var(--color-zinc-900);
-  --custom-card-bg: var(--color-zinc-50);
-  --custom-sidebar-bg: var(--color-zinc-50);
-  --custom-header-bg: var(--color-zinc-50);
-  --custom-body-bg: var(--color-white);
 }
 
 [data-theme='enhanced'] {
