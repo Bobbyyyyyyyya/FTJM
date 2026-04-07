@@ -36,6 +36,21 @@
   transform: translateZ(0);
 }
 
+[data-custom-theme='true'] {
+  --color-zinc-900: var(--custom-primary, #18181b);
+  --color-zinc-800: var(--custom-secondary, #27272a);
+  --color-zinc-100: var(--custom-accent, #f4f4f5);
+  --color-zinc-50: var(--custom-card-bg, #ffffff);
+  --color-white: var(--custom-card-bg, #ffffff);
+  
+  --bg: var(--custom-body-bg, #f4f4f5);
+  --ink: var(--custom-text, #18181b);
+  --accent: var(--custom-accent, #18181b);
+  --card-bg: var(--custom-card-bg, #ffffff);
+  --card-border: var(--custom-accent, #e4e4e7);
+  --muted: var(--custom-text, #71717a);
+}
+
 [data-theme='dark'] {
   color-scheme: dark;
   --color-white: #09090b;

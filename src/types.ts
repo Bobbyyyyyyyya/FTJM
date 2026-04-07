@@ -10,6 +10,8 @@ export interface Report {
   id: string;
   reporter_id: string;
   reported_id: string;
+  target_type: 'user' | 'post' | 'message';
+  target_id?: string;
   reason: string;
   details?: string;
   created_at: string;
@@ -41,9 +43,11 @@ export interface UserProfile {
   email: string;
   photo_url?: string;
   bio?: string;
+  role?: 'user' | 'admin';
   notification_settings?: NotificationSettings;
   custom_theme?: CustomTheme;
   use_custom_theme?: boolean;
+  custom_sounds?: { name: string, url: string }[];
   name_change_count?: number;
   last_name_change_date?: string;
   created_at: string;
@@ -63,6 +67,7 @@ export interface Conversation {
   id: string;
   participants: string[];
   participant_names: Record<string, string>;
+  participant_photos: Record<string, string>;
   last_message?: string;
   last_message_sender_id?: string;
   updated_at: string;
