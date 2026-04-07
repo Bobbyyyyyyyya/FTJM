@@ -14,8 +14,15 @@ export const setSupabaseFirebaseUid = (uid: string | null) => {
   firebaseUid = uid;
 };
 
+const clientCache: Record<string, any> = {};
+
 export const createSupabaseClient = (uid: string | null = null) => {
-  return createClient(supabaseUrl || '', supabaseKey || '', {
+  const cacheKey = uid || 'default';
+  if (clientCache[cacheKey]) {
+    return clientCache[cacheKey];
+  }
+
+  const client = createClient(supabaseUrl || '', supabaseKey || '', {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -39,6 +46,16 @@ export const createSupabaseClient = (uid: string | null = null) => {
       headers: uid ? { 'x-firebase-uid': uid } : {}
     }
   });
+
+  clientCache[cacheKey] = client;
+  return client;
 };
 
-export const supabase = createSupabaseClient();
+let defaultSupabase: any = null;
+
+export const supabase = (() => {
+  if (!defaultSupabase) {
+    defaultSupabase = createSupabaseClient(null);
+  }
+  return defaultSupabase;
+})();

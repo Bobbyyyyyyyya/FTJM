@@ -69,22 +69,22 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
       </div>
 
       {/* Navigation */}
-      <nav className="w-full max-w-7xl mx-auto px-6 py-8 flex items-center justify-between relative z-10">
+      <nav className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between relative z-10">
         <div className="flex items-center gap-4 group cursor-pointer">
-          <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-500">
-            <Shield className="w-8 h-8 text-[#004276]" />
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-500">
+            <Shield className="w-6 h-6 text-[#004276]" />
           </div>
           <div className="flex flex-col">
-            <span className="text-2xl font-black tracking-tighter text-white leading-none">FTJM</span>
-            <span className="text-[10px] font-bold text-white/50 tracking-[0.3em] uppercase mt-1">Enterprise</span>
+            <span className="text-xl font-black tracking-tighter text-white leading-none">FTJM</span>
+            <span className="text-[8px] font-bold text-white/50 tracking-[0.3em] uppercase mt-1">Enterprise</span>
           </div>
         </div>
-        <div className="hidden md:flex items-center gap-10">
-          <a href="#features" className="text-[10px] font-black text-white/60 hover:text-white transition-colors uppercase tracking-[0.3em]">Features</a>
-          <a href="#about" className="text-[10px] font-black text-white/60 hover:text-white transition-colors uppercase tracking-[0.3em]">Over FTJM</a>
+        <div className="hidden md:flex items-center gap-8">
+          <a href="#features" className="text-[9px] font-black text-white/60 hover:text-white transition-colors uppercase tracking-[0.3em]">Features</a>
+          <a href="#about" className="text-[9px] font-black text-white/60 hover:text-white transition-colors uppercase tracking-[0.3em]">Over FTJM</a>
           <button 
             onClick={onLogin}
-            className="px-8 py-3 bg-white text-[#004276] rounded-xl font-black text-xs hover:bg-zinc-100 transition-all active:scale-95 shadow-2xl shadow-black/20 uppercase tracking-widest"
+            className="px-6 py-2.5 bg-white text-[#004276] rounded-lg font-black text-[10px] hover:bg-zinc-100 transition-all active:scale-95 shadow-2xl shadow-black/20 uppercase tracking-widest"
           >
             Inloggen
           </button>
@@ -92,100 +92,79 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
       </nav>
 
       {/* Hero Section */}
-      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center relative z-10 py-20">
+      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center relative z-10 py-12">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-          className="max-w-5xl"
+          className="max-w-4xl"
         >
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 }}
-            className="mb-12 inline-flex items-center gap-3 px-6 py-2.5 bg-white/5 backdrop-blur-xl rounded-full text-[10px] font-black text-white border border-white/10 uppercase tracking-[0.3em]"
+            className="mb-8 inline-flex items-center gap-3 px-5 py-2 bg-white/5 backdrop-blur-xl rounded-full text-[9px] font-black text-white border border-white/10 uppercase tracking-[0.3em]"
           >
-            <span className={`w-2 h-2 rounded-full ${websiteStatus.toLowerCase() === 'online' ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]' : 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.8)]'} animate-pulse`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${websiteStatus.toLowerCase() === 'online' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.8)]'} animate-pulse`} />
             Systeem Status: {websiteStatus}
           </motion.div>
           
-          <h1 className="text-6xl sm:text-8xl lg:text-9xl font-black tracking-tighter text-white mb-12 leading-[0.85] uppercase">
+          <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black tracking-tighter text-white mb-8 leading-[0.9] uppercase">
             Samen bouwen <br /> 
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-white/40 to-white/10">aan de toekomst</span>
           </h1>
           
-          <p className="text-lg sm:text-2xl text-white/50 mb-16 leading-relaxed max-w-2xl mx-auto font-medium">
+          <p className="text-base sm:text-xl text-white/50 mb-12 leading-relaxed max-w-xl mx-auto font-medium">
             Welkom bij het officiële FTJM Besloten Forum. <br className="hidden sm:block" /> 
             Een exclusieve omgeving voor professionele samenwerking.
           </p>
           
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
               onClick={onLogin}
-              className="group w-full sm:w-auto px-12 py-6 bg-white text-[#004276] rounded-2xl font-black text-lg hover:bg-zinc-100 transition-all active:scale-[0.98] shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex items-center justify-center gap-4"
+              className="group w-full sm:w-auto px-10 py-5 bg-white text-[#004276] rounded-xl font-black text-base hover:bg-zinc-100 transition-all active:scale-[0.98] shadow-[0_15px_40px_rgba(0,0,0,0.3)] flex items-center justify-center gap-3"
             >
-              <LogIn className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+              <LogIn className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               TOEGANG KRIJGEN
             </button>
             <a 
               href="#about"
-              className="w-full sm:w-auto px-12 py-6 bg-white/5 text-white border border-white/10 rounded-2xl font-black text-lg hover:bg-white/10 transition-all active:scale-[0.98] backdrop-blur-sm flex items-center justify-center gap-3"
+              className="w-full sm:w-auto px-10 py-5 bg-white/5 text-white border border-white/10 rounded-xl font-black text-base hover:bg-white/10 transition-all active:scale-[0.98] backdrop-blur-sm flex items-center justify-center gap-3"
             >
               ONTDEK MEER
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight className="w-4 h-4" />
             </a>
           </div>
         </motion.div>
-
-        {/* Floating Elements */}
-        <div className="absolute top-1/2 left-10 -translate-y-1/2 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-10 right-10 w-96 h-96 bg-[#005696] rounded-full blur-3xl pointer-events-none opacity-50" />
       </main>
 
-      {/* Stats/Trust Bar */}
-      <div className="w-full bg-black/20 backdrop-blur-md border-y border-white/5 py-12 relative z-10">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-12">
-          {[
-            { label: 'Actieve Leden', value: '500+' },
-            { label: 'Projecten', value: '120+' },
-            { label: 'Uptime', value: '99.9%' },
-            { label: 'Beveiliging', value: 'SSL+' }
-          ].map((stat, i) => (
-            <div key={i} className="text-center">
-              <p className="text-3xl font-black text-white mb-1">{stat.value}</p>
-              <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em]">{stat.label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Features Section */}
-      <section id="features" className="py-40 bg-zinc-50 relative z-10">
+      <section id="features" className="py-24 bg-zinc-50 relative z-10">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-24">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
             <div className="max-w-2xl">
-              <h2 className="text-5xl sm:text-6xl font-black tracking-tighter text-zinc-900 mb-8 uppercase leading-none">
+              <h2 className="text-4xl sm:text-5xl font-black tracking-tighter text-zinc-900 mb-6 uppercase leading-none">
                 Ontworpen voor <br /> <span className="text-[#004276]">Professionals</span>
               </h2>
-              <p className="text-xl text-zinc-500 font-medium leading-relaxed">
+              <p className="text-lg text-zinc-500 font-medium leading-relaxed">
                 Ons platform biedt de tools die nodig zijn voor effectieve communicatie binnen een beveiligde bedrijfsomgeving.
               </p>
             </div>
-            <div className="hidden md:block h-px flex-1 bg-zinc-200 mx-12 mb-6" />
+            <div className="hidden md:block h-px flex-1 bg-zinc-200 mx-12 mb-4" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
               { icon: Shield, title: 'BEVEILIGD', desc: 'End-to-end encryptie en strikte whitelist-gebaseerde toegang voor alle leden.' },
               { icon: MessageSquare, title: 'REAL-TIME', desc: 'Directe interactie met collega\'s via ons geoptimaliseerde forum en DM-systeem.' },
               { icon: Zap, title: 'EFFICIËNT', desc: 'Snel informatie delen en beslissingen nemen in een gestroomlijnde omgeving.' }
             ].map((f, i) => (
-              <div key={i} className="group p-12 rounded-[2.5rem] bg-white border border-zinc-100 hover:shadow-[0_40px_80px_rgba(0,0,0,0.06)] transition-all duration-500">
-                <div className="w-16 h-16 bg-zinc-50 rounded-2xl flex items-center justify-center mb-10 group-hover:bg-[#004276] group-hover:text-white transition-colors duration-500">
-                  <f.icon className="w-8 h-8" />
+              <div key={i} className="group p-10 rounded-[2rem] bg-white border border-zinc-100 hover:shadow-[0_30px_60px_rgba(0,0,0,0.06)] transition-all duration-500">
+                <div className="w-14 h-14 bg-zinc-50 rounded-xl flex items-center justify-center mb-8 group-hover:bg-[#004276] group-hover:text-white transition-colors duration-500">
+                  <f.icon className="w-7 h-7" />
                 </div>
-                <h3 className="text-2xl font-black text-zinc-900 mb-6 tracking-tight uppercase">{f.title}</h3>
-                <p className="text-zinc-500 leading-relaxed font-medium">{f.desc}</p>
+                <h3 className="text-xl font-black text-zinc-900 mb-4 tracking-tight uppercase">{f.title}</h3>
+                <p className="text-sm text-zinc-500 leading-relaxed font-medium">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -193,38 +172,38 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
       </section>
 
       {/* Director Section */}
-      <section id="about" className="py-40 bg-white relative z-10 border-t border-zinc-100">
+      <section id="about" className="py-24 bg-white relative z-10 border-t border-zinc-100">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="bg-[#004276] rounded-[4rem] p-12 sm:p-24 relative overflow-hidden shadow-2xl">
+          <div className="bg-[#004276] rounded-[3rem] p-10 sm:p-20 relative overflow-hidden shadow-2xl">
             <div className="absolute top-0 right-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 pointer-events-none" />
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center relative z-10">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative z-10">
               <div>
-                <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/10 rounded-full text-[10px] font-black text-white border border-white/10 uppercase tracking-[0.3em] mb-12">
+                <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/10 rounded-full text-[9px] font-black text-white border border-white/10 uppercase tracking-[0.3em] mb-8">
                   Leiderschap
                 </div>
-                <h2 className="text-5xl sm:text-7xl font-black tracking-tighter text-white mb-10 uppercase leading-none">
+                <h2 className="text-4xl sm:text-6xl font-black tracking-tighter text-white mb-8 uppercase leading-none">
                   Visie van de <br /> <span className="text-white/40">Directeur</span>
                 </h2>
-                <p className="text-xl sm:text-2xl text-white/70 mb-12 leading-relaxed font-medium">
+                <p className="text-lg sm:text-xl text-white/70 mb-10 leading-relaxed font-medium">
                   "Bij FTJM streven we naar een cultuur van openheid en innovatie. Dit forum is het hart van onze interne community."
                 </p>
                 <div className="flex items-center gap-6">
-                  <div className="w-20 h-20 rounded-2xl overflow-hidden border-4 border-white/20 shadow-2xl">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-white/20 shadow-2xl">
                     <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Marko&backgroundColor=004276" alt="Marko Hoksen" className="w-full h-full object-cover" />
                   </div>
                   <div>
-                    <h4 className="text-2xl font-black text-white tracking-tight">Marko Hoksen</h4>
-                    <p className="text-white/40 font-bold uppercase tracking-[0.3em] text-[10px] mt-1">Directeur FTJM</p>
+                    <h4 className="text-xl font-black text-white tracking-tight">Marko Hoksen</h4>
+                    <p className="text-white/40 font-bold uppercase tracking-[0.3em] text-[8px] mt-1">Directeur FTJM</p>
                   </div>
                 </div>
               </div>
               <div className="relative">
-                <div className="aspect-[4/3] rounded-[3rem] bg-white/5 border border-white/10 backdrop-blur-xl flex items-center justify-center p-12 shadow-2xl">
-                  <Shield className="w-40 h-40 text-white/10 animate-pulse" />
+                <div className="aspect-[4/3] rounded-[2.5rem] bg-white/5 border border-white/10 backdrop-blur-xl flex items-center justify-center p-10 shadow-2xl">
+                  <Shield className="w-32 h-32 text-white/10 animate-pulse" />
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center">
-                      <p className="text-8xl font-black text-white/5 tracking-tighter uppercase">FTJM</p>
+                      <p className="text-7xl font-black text-white/5 tracking-tighter uppercase">FTJM</p>
                     </div>
                   </div>
                 </div>
@@ -235,23 +214,23 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
       </section>
 
       {/* Footer */}
-      <footer className="py-20 bg-zinc-50 border-t border-zinc-200 relative z-10">
+      <footer className="py-12 bg-zinc-50 border-t border-zinc-200 relative z-10">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-12 mb-16">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-12">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-[#004276] rounded-xl flex items-center justify-center shadow-xl">
-                <Shield className="w-6 h-6 text-white" />
+              <div className="w-8 h-8 bg-[#004276] rounded-lg flex items-center justify-center shadow-xl">
+                <Shield className="w-5 h-5 text-white" />
               </div>
-              <span className="text-xl font-black tracking-tighter text-[#004276]">FTJM</span>
+              <span className="text-lg font-black tracking-tighter text-[#004276]">FTJM</span>
             </div>
-            <div className="flex items-center gap-12">
-              <a href="#" className="text-[10px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Privacy</a>
-              <a href="#" className="text-[10px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Voorwaarden</a>
-              <a href="#" className="text-[10px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Contact</a>
+            <div className="flex items-center gap-10">
+              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Privacy</a>
+              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Voorwaarden</a>
+              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Contact</a>
             </div>
           </div>
-          <div className="pt-12 border-t border-zinc-200 flex flex-col md:flex-row items-center justify-between gap-6">
-            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em]">© 2026 FTJM Enterprise. Alle rechten voorbehouden.</p>
+          <div className="pt-8 border-t border-zinc-200 flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">© 2026 FTJM Enterprise. Alle rechten voorbehouden.</p>
             <div className="flex items-center gap-4">
               <div className="w-8 h-8 rounded-lg bg-zinc-200 flex items-center justify-center text-zinc-400 hover:bg-[#004276] hover:text-white transition-all cursor-pointer">
                 <span className="text-[10px] font-black">LN</span>
@@ -617,7 +596,10 @@ export default function App() {
   const notificationSettingsRef = useRef(notificationSettings);
   const activeConversationRef = useRef(activeConversation);
   const viewRef = useRef(view);
+  const typingChannelRef = useRef<any>(null);
 
+  const [newSoundName, setNewSoundName] = useState('');
+  const [newSoundUrl, setNewSoundUrl] = useState('');
   const [supabaseClient, setSupabaseClient] = useState(supabase);
 
   useEffect(() => {
@@ -1291,9 +1273,13 @@ export default function App() {
             return [...prev, payload.new as DirectMessage];
           });
         } else if (payload.eventType === 'UPDATE') {
-          setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new as DirectMessage : m));
+          const updated = payload.new as DirectMessage;
+          setMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
         } else if (payload.eventType === 'DELETE') {
-          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setMessages(prev => prev.filter(m => m.id !== deletedId));
+          }
         }
       })
       .on('broadcast', { event: 'new_message' }, (payload) => {
@@ -1303,6 +1289,16 @@ export default function App() {
           if (prev.some(m => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
+      })
+      .on('broadcast', { event: 'update_message' }, (payload) => {
+        console.log('Broadcast update message received:', payload);
+        const update = payload.payload;
+        setMessages(prev => prev.map(m => m.id === update.id ? { ...m, ...update } : m));
+      })
+      .on('broadcast', { event: 'delete_message' }, (payload) => {
+        console.log('Broadcast delete message received:', payload);
+        const { id } = payload.payload;
+        setMessages(prev => prev.filter(m => m.id !== id));
       })
       .subscribe((status) => {
         console.log(`Messages subscription status for ${activeConversation.id}:`, status);
@@ -1325,29 +1321,18 @@ export default function App() {
     };
   }, [user, activeConversation, supabaseClient]);
 
-  // Cleanup typing status on unmount or conversation change
-  useEffect(() => {
-    return () => {
-      if (user && typingInId && isTyping) {
-        supabaseClient
-          .from('typing')
-          .update({
-            is_typing: false,
-            last_updated: new Date().toISOString()
-          })
-          .eq('id', `${typingInId}_${user.uid}`);
-      }
-    };
-  }, [typingInId, user, isTyping, supabaseClient]);
+  const [isTypingSubscribed, setIsTypingSubscribed] = useState(false);
 
-  // Real-time typing indicators sync
+  // Real-time typing indicators sync via Presence
   useEffect(() => {
-    if (!user) {
+    if (!user || !supabaseClient) {
       setTypingStatuses({});
+      setIsTypingSubscribed(false);
       return;
     }
 
     const channel = supabaseClient.channel('typing_presence');
+    typingChannelRef.current = channel;
     
     channel
       .on('presence', { event: 'sync' }, () => {
@@ -1366,51 +1351,46 @@ export default function App() {
         });
         setTypingStatuses(newStatuses);
       })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('Presence join:', key, newPresences);
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('Presence leave:', key, leftPresences);
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'typing'
-      }, async (payload) => {
-        // Use payload for real-time updates instead of refetching
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const row = payload.new as any;
-          if (row.user_id !== user.uid) {
-            setTypingStatuses(prev => {
-              const newStatuses = { ...prev };
-              const convId = row.conversation_id;
-              const userName = row.user_name || 'Iemand';
-              
-              if (row.is_typing && (Date.now() - new Date(row.last_updated).getTime()) < 10000) {
-                if (!newStatuses[convId]) newStatuses[convId] = [];
-                if (!newStatuses[convId].includes(userName)) newStatuses[convId].push(userName);
-              } else {
-                if (newStatuses[convId]) {
-                  newStatuses[convId] = newStatuses[convId].filter(name => name !== userName);
-                  if (newStatuses[convId].length === 0) delete newStatuses[convId];
-                }
-              }
-              return newStatuses;
-            });
-          }
-        }
-      })
       .subscribe((status) => {
-        console.log('Typing subscription status:', status);
         if (status === 'SUBSCRIBED') {
-          console.log('Successfully subscribed to typing presence');
+          setIsTypingSubscribed(true);
+        } else {
+          setIsTypingSubscribed(false);
         }
       });
 
     return () => {
       supabaseClient.removeChannel(channel);
+      typingChannelRef.current = null;
+      setIsTypingSubscribed(false);
     };
   }, [user, supabaseClient]);
+
+  // Track typing status via Presence
+  useEffect(() => {
+    if (!user || !isTyping || !typingInId || !typingChannelRef.current || !isTypingSubscribed) return;
+
+    const trackTyping = async () => {
+      try {
+        await typingChannelRef.current.track({
+          user_id: user.uid,
+          user_name: profile?.display_name || user.displayName || 'Iemand',
+          is_typing: true,
+          conversation_id: typingInId
+        });
+      } catch (err) {
+        console.error('Error tracking typing presence:', err);
+      }
+    };
+
+    trackTyping();
+
+    return () => {
+      if (typingChannelRef.current && isTypingSubscribed) {
+        typingChannelRef.current.untrack();
+      }
+    };
+  }, [isTyping, typingInId, user, profile, isTypingSubscribed]);
 
   // Fetch all users for starting new conversations
   useEffect(() => {
@@ -1466,17 +1446,21 @@ export default function App() {
             return newPosts;
           });
         } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as Post;
           setPosts(prev => {
-            const newPosts = prev.map(p => p.id === payload.new.id ? payload.new as Post : p);
+            const newPosts = prev.map(p => p.id === updated.id ? updated : p);
             localStorage.setItem('cached_posts', JSON.stringify(newPosts));
             return newPosts;
           });
         } else if (payload.eventType === 'DELETE') {
-          setPosts(prev => {
-            const newPosts = prev.filter(p => p.id !== payload.old.id);
-            localStorage.setItem('cached_posts', JSON.stringify(newPosts));
-            return newPosts;
-          });
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setPosts(prev => {
+              const newPosts = prev.filter(p => p.id !== deletedId);
+              localStorage.setItem('cached_posts', JSON.stringify(newPosts));
+              return newPosts;
+            });
+          }
         }
       })
       .on('broadcast', { event: 'new_post' }, (payload) => {
@@ -1504,6 +1488,24 @@ export default function App() {
           const newPosts = [latestPost, ...prev].sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           ).slice(0, 20);
+          localStorage.setItem('cached_posts', JSON.stringify(newPosts));
+          return newPosts;
+        });
+      })
+      .on('broadcast', { event: 'update_post' }, (payload) => {
+        console.log('Broadcast update post received:', payload);
+        const update = payload.payload;
+        setPosts(prev => {
+          const newPosts = prev.map(p => p.id === update.id ? { ...p, ...update } : p);
+          localStorage.setItem('cached_posts', JSON.stringify(newPosts));
+          return newPosts;
+        });
+      })
+      .on('broadcast', { event: 'delete_post' }, (payload) => {
+        console.log('Broadcast delete post received:', payload);
+        const { id } = payload.payload;
+        setPosts(prev => {
+          const newPosts = prev.filter(p => p.id !== id);
           localStorage.setItem('cached_posts', JSON.stringify(newPosts));
           return newPosts;
         });
@@ -1594,49 +1596,33 @@ export default function App() {
     }
   };
 
-  const handleSoundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user || !supabaseClient) return;
-
-    if (!file.type.startsWith('audio/')) {
-      toast.error('Alleen audiobestanden zijn toegestaan');
+  const handleAddCustomSound = async () => {
+    if (!newSoundName || !newSoundUrl || !user || !supabaseClient) {
+      toast.error('Vul zowel een naam als een URL in');
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Bestand is te groot (max 2MB)');
+    if (!newSoundUrl.startsWith('http')) {
+      toast.error('Ongeldige URL');
       return;
     }
 
     setUploadingSound(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.uid}/${Date.now()}.${fileExt}`;
-      const filePath = `sounds/${fileName}`;
-
-      const { error: uploadError } = await supabaseClient.storage
-        .from('public')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabaseClient.storage
-        .from('public')
-        .getPublicUrl(filePath);
-
-      const newSound = { name: file.name.split('.')[0], url: publicUrl };
+      const newSound = { name: newSoundName, url: newSoundUrl };
       const updatedSounds = [...customSounds, newSound];
       setCustomSounds(updatedSounds);
       
-      // Update profile immediately
       await supabaseClient
         .from('profiles')
         .update({ custom_sounds: updatedSounds })
         .eq('id', user.uid);
 
-      toast.success('Geluid geüpload!');
+      setNewSoundName('');
+      setNewSoundUrl('');
+      toast.success('Geluid toegevoegd!');
     } catch (err) {
-      handleSupabaseError(err, 'geluid uploaden');
+      handleSupabaseError(err, 'geluid toevoegen');
     } finally {
       setUploadingSound(false);
     }
@@ -1781,34 +1767,15 @@ export default function App() {
         });
         
         // Broadcast new post to others
-        console.log('Broadcasting new post:', insertData);
         const channel = supabaseClient.channel('posts_changes');
         channel.send({
           type: 'broadcast',
           event: 'new_post',
           payload: insertData
-        }).then(status => console.log('Post broadcast status:', status));
+        });
       }
 
-      // We still do a background refetch just in case, but we don't block on it
-      // and we handle the isPostingRef carefully
-      setTimeout(async () => {
-        try {
-          const { data: refetchData } = await supabaseClient
-            .from('posts')
-            .select('id, content, author_id, author_name, author_photo, created_at, updated_at')
-            .order('created_at', { ascending: false })
-            .limit(20);
-          
-          if (refetchData) {
-            setPosts(refetchData);
-            localStorage.setItem('cached_posts', JSON.stringify(refetchData));
-          }
-        } finally {
-          isPostingRef.current = false;
-        }
-      }, 1000);
-
+      isPostingRef.current = false;
       return insertData;
     })();
 
@@ -1846,29 +1813,17 @@ export default function App() {
     isPostingRef.current = true;
     const deletePromise = (async () => {
       console.log('Attempting to delete post:', postId);
-      console.log('Current User UID:', user.uid);
-      console.log('Is Admin:', isAdmin);
       
-      // DIAGNOSE: Check wie de auteur is in de DB voordat we verwijderen
-      const { data: checkData } = await supabaseClient
-        .from('posts')
-        .select('author_id')
-        .eq('id', postId)
-        .single();
-      
-      console.log('Post author in database:', checkData?.author_id);
-
       let query = supabaseClient
         .from('posts')
         .delete()
         .eq('id', postId);
       
-      // Alleen filteren op author_id als je GEEN admin bent
       if (!isAdmin) {
         query = query.eq('author_id', user.uid);
       }
 
-      const { data, error } = await query.select();
+      const { error } = await query;
 
       if (error) {
         console.error('Delete post error details:', error);
@@ -1876,14 +1831,14 @@ export default function App() {
         throw error;
       }
 
-      console.log('Delete response data:', data);
+      // Broadcast delete to others
+      const channel = supabaseClient.channel('posts_changes');
+      channel.send({
+        type: 'broadcast',
+        event: 'delete_post',
+        payload: { id: postId }
+      });
 
-      if (!data || data.length === 0) {
-        isPostingRef.current = false;
-        // If data is empty, it means either the post doesn't exist or RLS blocked it
-        throw new Error('Verwijderen mislukt. Controleer of je de auteur bent en of RLS-rechten goed staan.');
-      }
-      
       // Update local state immediately for better UX
       setPosts(prev => {
         const newPosts = prev.filter(p => p.id !== postId);
@@ -1891,24 +1846,7 @@ export default function App() {
         return newPosts;
       });
       
-      // Background refetch
-      setTimeout(async () => {
-        try {
-          const { data: refetchedData } = await supabaseClient
-            .from('posts')
-            .select('id, content, author_id, author_name, author_photo, created_at, updated_at')
-            .order('created_at', { ascending: false })
-            .limit(20);
-          if (refetchedData) {
-            setPosts(refetchedData);
-            localStorage.setItem('cached_posts', JSON.stringify(refetchedData));
-          }
-        } finally {
-          isPostingRef.current = false;
-        }
-      }, 1000);
-
-      return data;
+      isPostingRef.current = false;
     })();
 
     toast.promise(deletePromise, {
@@ -1932,8 +1870,6 @@ export default function App() {
     isPostingRef.current = true;
     const updatePromise = (async () => {
       console.log('Attempting to update post:', postId);
-      console.log('Current User UID:', user.uid);
-      console.log('Is Admin:', isAdmin);
       
       let query = supabaseClient
         .from('posts')
@@ -1943,12 +1879,11 @@ export default function App() {
         })
         .eq('id', postId);
       
-      // Alleen filteren op author_id als je GEEN admin bent
       if (!isAdmin) {
         query = query.eq('author_id', user.uid);
       }
 
-      const { data, error } = await query.select();
+      const { error } = await query;
       
       if (error) {
         console.error('Update post error details:', error);
@@ -1956,41 +1891,28 @@ export default function App() {
         throw error;
       }
 
-      console.log('Update response data:', data);
+      // Broadcast update to others
+      const channel = supabaseClient.channel('posts_changes');
+      channel.send({
+        type: 'broadcast',
+        event: 'update_post',
+        payload: { 
+          id: postId, 
+          content: editPostInput.trim(),
+          updated_at: new Date().toISOString()
+        }
+      });
 
-      if (!data || data.length === 0) {
-        isPostingRef.current = false;
-        throw new Error('Bijwerken mislukt. Controleer of je de auteur bent en of RLS-rechten goed staan.');
-      }
-      
-      // Update local state immediately
-      const updatedPost = data[0] as Post;
+      // Update local state immediately for better UX
       setPosts(prev => {
-        const newPosts = prev.map(p => p.id === postId ? updatedPost : p);
+        const newPosts = prev.map(p => p.id === postId ? { ...p, content: editPostInput.trim(), updated_at: new Date().toISOString() } : p);
         localStorage.setItem('cached_posts', JSON.stringify(newPosts));
         return newPosts;
       });
       
-      // Background refetch
-      setTimeout(async () => {
-        try {
-          const { data: refetchedData } = await supabaseClient
-            .from('posts')
-            .select('id, content, author_id, author_name, author_photo, created_at, updated_at')
-            .order('created_at', { ascending: false })
-            .limit(20);
-          if (refetchedData) {
-            setPosts(refetchedData);
-            localStorage.setItem('cached_posts', JSON.stringify(refetchedData));
-          }
-        } finally {
-          isPostingRef.current = false;
-        }
-      }, 1000);
-
+      isPostingRef.current = false;
       setEditingPostId(null);
       setEditPostInput('');
-      return data;
     })();
 
     toast.promise(updatePromise, {
@@ -2027,46 +1949,50 @@ export default function App() {
         query = query.eq('sender_id', user.uid);
       }
 
-      const { data, error } = await query.select();
+      const { error } = await query;
       
       if (error) {
         console.error('Update message error:', error);
         throw error;
       }
 
-      if (!data || data.length === 0) {
-        throw new Error('Bijwerken mislukt. Controleer of je de auteur bent.');
-      }
-      
+      // Broadcast update to others
+      const channel = supabaseClient.channel(`messages:${activeConversation.id}`);
+      channel.send({
+        type: 'broadcast',
+        event: 'update_message',
+        payload: { 
+          id: messageId, 
+          text: editMessageInput.trim(),
+          updated_at: new Date().toISOString()
+        }
+      });
+
+      // Update local state immediately for better UX
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, text: editMessageInput.trim(), updated_at: new Date().toISOString() } : m));
+
       // Update conversation last_message if this was the last message
-      const { data: latestMsg } = await supabaseClient
+      // We do this in the background
+      supabaseClient
         .from('messages')
         .select('id')
         .eq('conversation_id', activeConversation.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle();
-      
-      if (latestMsg && latestMsg.id === messageId) {
-        await supabaseClient
-          .from('conversations')
-          .update({ 
-            last_message: editMessageInput.trim(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', activeConversation.id);
-      }
+        .maybeSingle()
+        .then(({ data: latestMsg }) => {
+          if (latestMsg && latestMsg.id === messageId) {
+            supabaseClient
+              .from('conversations')
+              .update({ 
+                last_message: editMessageInput.trim(),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', activeConversation.id);
+          }
+        });
 
       setEditingMessageId(null);
-
-      // Manual refetch
-      const { data: newMsgs } = await supabaseClient
-        .from('messages')
-        .select('id, conversation_id, sender_id, text, created_at, updated_at')
-        .eq('conversation_id', activeConversation.id)
-        .order('created_at', { ascending: true })
-        .limit(50);
-      if (newMsgs) setMessages(newMsgs);
     })();
 
     toast.promise(updatePromise, {
@@ -2099,46 +2025,42 @@ export default function App() {
         query = query.eq('sender_id', user.uid);
       }
 
-      const { data, error } = await query.select();
+      const { error } = await query;
 
       if (error) {
         console.error('Delete message error:', error);
         throw error;
       }
 
-      if (!data || data.length === 0) {
-        throw new Error('Verwijderen mislukt. Controleer of je de auteur bent.');
-      }
-      
-      // Update local state immediately
+      // Broadcast delete to others
+      const channel = supabaseClient.channel(`messages:${activeConversation.id}`);
+      channel.send({
+        type: 'broadcast',
+        event: 'delete_message',
+        payload: { id: messageId }
+      });
+
+      // Update local state immediately for better UX
       setMessages(prev => prev.filter(m => m.id !== messageId));
 
-      // Find new last message
-      const { data: newLastMsg } = await supabaseClient
+      // Find new last message and update conversation in background
+      supabaseClient
         .from('messages')
         .select('text, sender_id')
         .eq('conversation_id', activeConversation.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle();
-      
-      await supabaseClient
-        .from('conversations')
-        .update({
-          last_message: newLastMsg ? newLastMsg.text : null,
-          last_message_sender_id: newLastMsg ? newLastMsg.sender_id : null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', activeConversation.id);
-
-      // Manual refetch
-      const { data: newMsgs } = await supabaseClient
-        .from('messages')
-        .select('id, conversation_id, sender_id, text, created_at, updated_at')
-        .eq('conversation_id', activeConversation.id)
-        .order('created_at', { ascending: true })
-        .limit(50);
-      if (newMsgs) setMessages(newMsgs);
+        .maybeSingle()
+        .then(({ data: newLastMsg }) => {
+          supabaseClient
+            .from('conversations')
+            .update({
+              last_message: newLastMsg ? newLastMsg.text : null,
+              last_message_sender_id: newLastMsg ? newLastMsg.sender_id : null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', activeConversation.id);
+        });
     })();
 
     toast.promise(deletePromise, {
@@ -2326,9 +2248,8 @@ export default function App() {
       console.log('Message sent successfully');
       setMessageInput('');
 
-      // Update conversation metadata
-      console.log('Updating conversation metadata...');
-      const { error: convError } = await supabaseClient
+      // Update conversation metadata in background
+      supabaseClient
         .from('conversations')
         .update({
           last_message: text,
@@ -2336,11 +2257,6 @@ export default function App() {
           updated_at: new Date().toISOString()
         })
         .eq('id', activeConversation.id);
-        
-      if (convError) {
-        console.error('Update conversation error:', convError);
-        throw convError;
-      }
 
       // Broadcast conversation update to others
       const convChannel = supabaseClient.channel(`conversations:${user.uid}`);
@@ -2355,59 +2271,19 @@ export default function App() {
         }
       });
 
-      // Manual refetch/update in case real-time is slow/disabled
-      console.log('Refetching messages...');
-      const { data: newMsgs, error: msgsFetchError } = await supabaseClient
-        .from('messages')
-        .select('id, conversation_id, sender_id, text, created_at, updated_at')
-        .eq('conversation_id', activeConversation.id)
-        .order('created_at', { ascending: true })
-        .limit(50);
-      
-      if (msgsFetchError) {
-        console.error('Refetch messages error:', msgsFetchError);
-      }
-
-      if (newMsgs) {
-        console.log('Refetched messages:', newMsgs);
-        setMessages(newMsgs);
-        
-        // Broadcast new message to others in the channel
-        const channel = supabaseClient.channel(`messages:${activeConversation.id}`);
-        channel.send({
-          type: 'broadcast',
-          event: 'new_message',
-          payload: newMsgs[newMsgs.length - 1]
-        });
-      }
-
       // Clear typing status
       if (isTyping && typingInId === activeConversation.id) {
         setIsTyping(false);
         setTypingInId(null);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        await supabaseClient
-          .from('typing')
-          .update({
-            is_typing: false,
-            last_updated: new Date().toISOString()
-          })
-          .eq('id', `${activeConversation.id}_${user.uid}`);
+        if (typingChannelRef.current) {
+          typingChannelRef.current.untrack();
+        }
       }
     } catch (err) {
       handleSupabaseError(err, 'bericht verzenden', user);
     }
   };
-
-  const typingChannelRef = useRef<any>(null);
-
-  // Clear typing channel ref when client changes
-  useEffect(() => {
-    if (typingChannelRef.current) {
-      supabaseClient.removeChannel(typingChannelRef.current);
-      typingChannelRef.current = null;
-    }
-  }, [supabaseClient]);
 
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement>, conversationId: string) => {
     if (conversationId === 'forum') {
@@ -2424,61 +2300,12 @@ export default function App() {
       setIsTyping(true);
       setTypingInId(conversationId);
       lastTypingUpdateRef.current = now;
-
-      // Ensure we have a valid channel and it's subscribed
-      if (!typingChannelRef.current) {
-        const channel = supabaseClient.channel('typing_presence');
-        typingChannelRef.current = channel;
-        channel.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await channel.track({
-              user_id: user.uid,
-              user_name: profile?.display_name || user.displayName || 'Iemand',
-              is_typing: true,
-              conversation_id: conversationId
-            });
-          }
-        });
-      } else {
-        typingChannelRef.current.track({
-          user_id: user.uid,
-          user_name: profile?.display_name || user.displayName || 'Iemand',
-          is_typing: true,
-          conversation_id: conversationId
-        });
-      }
-
-      // Legacy DB update for backward compatibility - only if needed
-      supabaseClient
-        .from('typing')
-        .upsert({
-          id: `${conversationId}_${user.uid}`,
-          conversation_id: conversationId,
-          user_id: user.uid,
-          user_name: profile?.display_name || user.displayName || 'Iemand',
-          is_typing: true,
-          last_updated: new Date().toISOString()
-        });
     }
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(async () => {
+    typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false);
       setTypingInId(null);
-      
-      // Untrack presence
-      if (typingChannelRef.current) {
-        await typingChannelRef.current.untrack();
-      }
-      
-      // Legacy DB update for cleanup
-      supabaseClient
-        .from('typing')
-        .update({
-          is_typing: false,
-          last_updated: new Date().toISOString()
-        })
-        .eq('id', `${conversationId}_${user.uid}`);
     }, 3000);
   };
 
@@ -2704,7 +2531,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12">
+      <main className={!user ? "" : "max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12"}>
         <AnimatePresence mode="wait">
           {!user ? (
             <LandingPage onLogin={handleLogin} websiteStatus={websiteStatus} />
@@ -3568,13 +3395,32 @@ export default function App() {
                               </div>
 
                               <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Custom Geluiden</label>
-                                  <label className="cursor-pointer px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2">
-                                    {uploadingSound ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                                    Uploaden
-                                    <input type="file" className="hidden" accept="audio/*" onChange={handleSoundUpload} disabled={uploadingSound} />
-                                  </label>
+                                <div className="space-y-3">
+                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Custom Geluid Toevoegen</label>
+                                  <div className="flex flex-col sm:flex-row gap-2">
+                                    <input 
+                                      type="text" 
+                                      placeholder="Naam (bv. Mijn Geluid)"
+                                      value={newSoundName}
+                                      onChange={(e) => setNewSoundName(e.target.value)}
+                                      className="flex-1 p-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-zinc-900"
+                                    />
+                                    <input 
+                                      type="text" 
+                                      placeholder="URL (mp3/wav)"
+                                      value={newSoundUrl}
+                                      onChange={(e) => setNewSoundUrl(e.target.value)}
+                                      className="flex-[2] p-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-zinc-900"
+                                    />
+                                    <button 
+                                      onClick={handleAddCustomSound}
+                                      disabled={uploadingSound}
+                                      className="px-4 py-2.5 bg-zinc-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                      {uploadingSound ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                                      Toevoegen
+                                    </button>
+                                  </div>
                                 </div>
                                 
                                 {customSounds.length > 0 && (
