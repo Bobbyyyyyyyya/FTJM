@@ -2,8 +2,23 @@ export interface NotificationSettings {
   enable_sounds: boolean;
   notify_new_posts: boolean;
   notify_new_messages: boolean;
+  notify_mentions: boolean;
   message_sound: string;
   post_sound: string;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  actor_id: string;
+  actor_name: string;
+  actor_photo?: string;
+  type: 'mention' | 'reply' | 'system' | 'message';
+  resource_id: string;
+  resource_type: 'post' | 'comment' | 'thread' | 'message';
+  content: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 export interface Report {
@@ -50,6 +65,10 @@ export interface UserProfile {
   custom_sounds?: { name: string, url: string }[];
   name_change_count?: number;
   last_name_change_date?: string;
+  is_blocked?: boolean;
+  name_locked_until?: string;
+  bio_locked_until?: string;
+  admin_notes?: string;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +80,31 @@ export interface Post {
   author_photo?: string;
   content: string;
   created_at: string;
+  parent_id?: string;
+  parent_author_name?: string;
+}
+
+export interface ForumThread {
+  id: string;
+  author_id: string;
+  author_name: string;
+  author_photo?: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  comment_count?: number;
+}
+
+export interface ForumComment {
+  id: string;
+  thread_id: string;
+  author_id: string;
+  author_name: string;
+  author_photo?: string;
+  content: string;
+  created_at: string;
+  parent_id?: string;
 }
 
 export interface Conversation {

@@ -3,13 +3,37 @@ import { createClient } from '@supabase/supabase-js';
 import { supabase, setSupabaseFirebaseUid, createSupabaseClient } from './utils/supabase';
 
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User } from './lib/firebase';
-import { UserProfile, Post, Conversation, DirectMessage, CustomTheme, SupabaseErrorInfo } from './types';
-import { LogIn, LogOut, User as UserIcon, Save, Loader2, AlertCircle, AlertTriangle, Send, Trash2, MessageSquare, ShieldCheck, UserPlus, X, Settings, Mail, ArrowLeft, Plus, Sparkles, Pencil, Check, Bell, Volume2, VolumeX, Camera, Flag, UserCog, Moon, Sun, Upload, Zap, CloudOff, Palette, ChevronLeft, Lock, Shield, ArrowRight } from 'lucide-react';
+import { UserProfile, Post, Conversation, DirectMessage, CustomTheme, SupabaseErrorInfo, ForumThread, ForumComment, AppNotification } from './types';
+import { LogIn, LogOut, User as UserIcon, Save, Loader2, AlertCircle, AlertTriangle, Send, Trash2, MessageSquare, ShieldCheck, UserPlus, X, Settings, Mail, ArrowLeft, Plus, Sparkles, Pencil, Check, Bell, Volume2, VolumeX, Camera, Flag, UserCog, Moon, Sun, Upload, Zap, CloudOff, Palette, ChevronLeft, Lock, Shield, ArrowRight, Newspaper, Layout, Clock, Play } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import { NotificationSettings, Report } from './types';
 
 // Sound URLs
+const NEWS_ITEMS = [
+  {
+    id: 1,
+    title: "FTJM Forum Update v2.0",
+    content: "We hebben zojuist een grote update uitgerold met een compleet nieuw thema-systeem en verbeterde real-time chat functionaliteiten.",
+    date: "2026-04-08",
+    category: "Update"
+  },
+  {
+    id: 2,
+    title: "Nieuwe Huisregels",
+    content: "Zorg ervoor dat je de bijgewerkte huisregels leest in de instellingen sectie om een veilige omgeving voor iedereen te behouden.",
+    date: "2026-04-07",
+    category: "Aankondiging"
+  },
+  {
+    id: 3,
+    title: "Community Spotlight",
+    content: "Deze week zetten we onze meest actieve forumleden in het zonnetje. Bedankt voor jullie waardevolle bijdragen!",
+    date: "2026-04-05",
+    category: "Community"
+  }
+];
+
 const SOUND_OPTIONS = [
   { name: 'Standaard (2354)', url: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3' },
   { name: 'Melding (2358)', url: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3' },
@@ -31,11 +55,36 @@ const PATTERNS = [
   { id: 'diagonal', name: 'Diagonaal', style: 'repeating-linear-gradient(45deg, transparent, transparent 10px, var(--custom-accent) 10px, var(--custom-accent) 11px)', size: 'auto' },
 ];
 
+const audioCache = new Map<string, HTMLAudioElement>();
+
 const playSound = (url: string, enabled: boolean) => {
   if (!enabled || !url) return;
-  const audio = new Audio(url);
-  audio.volume = 0.5;
-  audio.play().catch(e => console.log('Audio play failed (user interaction required?):', e));
+  
+  try {
+    let audio = audioCache.get(url);
+    if (!audio) {
+      audio = new Audio(url);
+      audio.preload = 'auto';
+      audioCache.set(url, audio);
+    }
+    
+    // Reset and play
+    audio.volume = 0.5;
+    audio.currentTime = 0;
+    
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(error => {
+        console.log('Audio play failed (interaction required?):', error);
+        // Fallback: try fresh instance if cached one fails
+        const fallback = new Audio(url);
+        fallback.volume = 0.5;
+        fallback.play().catch(() => {});
+      });
+    }
+  } catch (err) {
+    console.error('Error in playSound:', err);
+  }
 };
 
 const formatDate = (isoString: string | undefined | null) => {
@@ -139,18 +188,18 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
       </main>
 
       {/* Features Section */}
-      <section id="features" className="py-24 bg-zinc-50 relative z-10">
+      <section id="features" className="py-24 bg-app-bg relative z-10">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
             <div className="max-w-2xl">
-              <h2 className="text-4xl sm:text-5xl font-black tracking-tighter text-zinc-900 mb-6 uppercase leading-none">
+              <h2 className="text-4xl sm:text-5xl font-black tracking-tighter text-app-ink mb-6 uppercase leading-none">
                 Ontworpen voor <br /> <span className="text-[#004276]">Professionals</span>
               </h2>
-              <p className="text-lg text-zinc-500 font-medium leading-relaxed">
+              <p className="text-lg text-app-muted font-medium leading-relaxed">
                 Ons platform biedt de tools die nodig zijn voor effectieve communicatie binnen een beveiligde bedrijfsomgeving.
               </p>
             </div>
-            <div className="hidden md:block h-px flex-1 bg-zinc-200 mx-12 mb-4" />
+            <div className="hidden md:block h-px flex-1 bg-app-border mx-12 mb-4" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -159,12 +208,12 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
               { icon: MessageSquare, title: 'REAL-TIME', desc: 'Directe interactie met collega\'s via ons geoptimaliseerde forum en DM-systeem.' },
               { icon: Zap, title: 'EFFICIËNT', desc: 'Snel informatie delen en beslissingen nemen in een gestroomlijnde omgeving.' }
             ].map((f, i) => (
-              <div key={i} className="group p-10 rounded-[2rem] bg-white border border-zinc-100 hover:shadow-[0_30px_60px_rgba(0,0,0,0.06)] transition-all duration-500">
-                <div className="w-14 h-14 bg-zinc-50 rounded-xl flex items-center justify-center mb-8 group-hover:bg-[#004276] group-hover:text-white transition-colors duration-500">
+              <div key={i} className="group p-10 rounded-[2rem] bg-app-card border border-app-border hover:shadow-xl transition-all duration-500">
+                <div className="w-14 h-14 bg-app-accent rounded-xl flex items-center justify-center mb-8 group-hover:bg-[#004276] group-hover:text-white transition-colors duration-500">
                   <f.icon className="w-7 h-7" />
                 </div>
-                <h3 className="text-xl font-black text-zinc-900 mb-4 tracking-tight uppercase">{f.title}</h3>
-                <p className="text-sm text-zinc-500 leading-relaxed font-medium">{f.desc}</p>
+                <h3 className="text-xl font-black text-app-ink mb-4 tracking-tight uppercase">{f.title}</h3>
+                <p className="text-sm text-app-muted leading-relaxed font-medium">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -172,7 +221,7 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
       </section>
 
       {/* Director Section */}
-      <section id="about" className="py-24 bg-white relative z-10 border-t border-zinc-100">
+      <section id="about" className="py-24 bg-app-card relative z-10 border-t border-app-border">
         <div className="max-w-7xl mx-auto px-6">
           <div className="bg-[#004276] rounded-[3rem] p-10 sm:p-20 relative overflow-hidden shadow-2xl">
             <div className="absolute top-0 right-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 pointer-events-none" />
@@ -214,7 +263,7 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
       </section>
 
       {/* Footer */}
-      <footer className="py-12 bg-zinc-50 border-t border-zinc-200 relative z-10">
+      <footer className="py-12 bg-app-bg border-t border-app-border relative z-10">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-12">
             <div className="flex items-center gap-4">
@@ -224,18 +273,18 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
               <span className="text-lg font-black tracking-tighter text-[#004276]">FTJM</span>
             </div>
             <div className="flex items-center gap-10">
-              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Privacy</a>
-              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Voorwaarden</a>
-              <a href="#" className="text-[9px] font-black text-zinc-400 hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Contact</a>
+              <a href="#" className="text-[9px] font-black text-app-muted hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Privacy</a>
+              <a href="#" className="text-[9px] font-black text-app-muted hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Voorwaarden</a>
+              <a href="#" className="text-[9px] font-black text-app-muted hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Contact</a>
             </div>
           </div>
-          <div className="pt-8 border-t border-zinc-200 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">© 2026 FTJM Enterprise. Alle rechten voorbehouden.</p>
+          <div className="pt-8 border-t border-app-border flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-[9px] font-bold text-app-muted uppercase tracking-widest">© 2026 FTJM Enterprise. Alle rechten voorbehouden.</p>
             <div className="flex items-center gap-4">
-              <div className="w-8 h-8 rounded-lg bg-zinc-200 flex items-center justify-center text-zinc-400 hover:bg-[#004276] hover:text-white transition-all cursor-pointer">
+              <div className="w-8 h-8 rounded-lg bg-app-accent flex items-center justify-center text-app-muted hover:bg-[#004276] hover:text-white transition-all cursor-pointer">
                 <span className="text-[10px] font-black">LN</span>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-zinc-200 flex items-center justify-center text-zinc-400 hover:bg-[#004276] hover:text-white transition-all cursor-pointer">
+              <div className="w-8 h-8 rounded-lg bg-app-accent flex items-center justify-center text-app-muted hover:bg-[#004276] hover:text-white transition-all cursor-pointer">
                 <span className="text-[10px] font-black">TW</span>
               </div>
             </div>
@@ -248,7 +297,11 @@ const LandingPage = ({ onLogin, websiteStatus }: { onLogin: () => void, websiteS
 
 const RichContent = React.memo(({ content }: { content: string }) => {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = content.split(urlRegex);
+  const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
+  
+  // Combine regex to split by both URLs and mentions
+  const combinedRegex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_]+)/g;
+  const parts = content.split(combinedRegex);
 
   const getYoutubeId = (url: string) => {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -274,6 +327,13 @@ const RichContent = React.memo(({ content }: { content: string }) => {
             >
               {part}
             </a>
+          );
+        }
+        if (part.match(mentionRegex)) {
+          return (
+            <span key={i} className="px-1.5 py-0.5 bg-app-accent text-app-ink font-bold rounded-md border border-app-border/30 shadow-sm">
+              {part}
+            </span>
           );
         }
         return part;
@@ -403,68 +463,18 @@ export default function App() {
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [photoURLInput, setPhotoURLInput] = useState('');
   const [postInput, setPostInput] = useState('');
+  const [threadTitleInput, setThreadTitleInput] = useState('');
+  const [threadContentInput, setThreadContentInput] = useState('');
+  const [commentInput, setCommentInput] = useState('');
   const [whitelistInput, setWhitelistInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'forum' | 'messages' | 'settings' | 'todos'>('forum');
-  const [todoInput, setTodoInput] = useState('');
-  const [todos, setTodos] = useState<any[]>([]);
+  const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news'>('chat');
 
-  const handleAddTodo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!todoInput.trim() || !user) return;
-
-    try {
-      const { error } = await supabaseClient.from('todos').insert({
-        name: todoInput.trim(),
-        user_id: user.uid,
-        is_completed: false
-      });
-
-      if (error) {
-        handleSupabaseError(error, 'taak toevoegen');
-      } else {
-        setTodoInput('');
-        // Refresh todos
-        const { data } = await supabaseClient.from('todos').select('id, task, completed, created_at').eq('user_id', user.uid).order('created_at', { ascending: false });
-        if (data) setTodos(data);
-        toast.success('Taak toegevoegd!');
-      }
-    } catch (err) {
-      console.error('Add todo error:', err);
-    }
-  };
-
-  const toggleTodo = async (id: string, currentStatus: boolean) => {
-    try {
-      const { error } = await supabaseClient
-        .from('todos')
-        .update({ is_completed: !currentStatus })
-        .eq('id', id);
-
-      if (error) {
-        handleSupabaseError(error, 'taak bijwerken');
-      } else {
-        setTodos(prev => prev.map(t => t.id === id ? { ...t, is_completed: !currentStatus } : t));
-      }
-    } catch (err) {
-      console.error('Toggle todo error:', err);
-    }
-  };
-
-  const deleteTodo = async (id: string) => {
-    try {
-      const { error } = await supabaseClient.from('todos').delete().eq('id', id);
-      if (error) {
-        handleSupabaseError(error, 'taak verwijderen');
-      } else {
-        setTodos(prev => prev.filter(t => t.id !== id));
-        toast.success('Taak verwijderd');
-      }
-    } catch (err) {
-      console.error('Delete todo error:', err);
-    }
-  };
   const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin'>('profile');
+  const [threads, setThreads] = useState<ForumThread[]>([]);
+  const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
+  const [threadComments, setThreadComments] = useState<ForumComment[]>([]);
+  const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     try {
       const cached = localStorage.getItem('cached_conversations');
@@ -474,6 +484,10 @@ export default function App() {
       return [];
     }
   });
+  const conversationsRef = useRef<Conversation[]>(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -485,6 +499,8 @@ export default function App() {
   const [editPostInput, setEditPostInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editMessageInput, setEditMessageInput] = useState('');
+  const [replyingTo, setReplyingTo] = useState<Post | null>(null);
+  const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
     try {
       const cached = localStorage.getItem('cached_notifications');
@@ -492,6 +508,7 @@ export default function App() {
         enable_sounds: true,
         notify_new_posts: true,
         notify_new_messages: true,
+        notify_mentions: true,
         message_sound: SOUND_OPTIONS[0].url,
         post_sound: SOUND_OPTIONS[1].url
       };
@@ -501,6 +518,7 @@ export default function App() {
         enable_sounds: true,
         notify_new_posts: true,
         notify_new_messages: true,
+        notify_mentions: true,
         message_sound: SOUND_OPTIONS[0].url,
         post_sound: SOUND_OPTIONS[1].url
       };
@@ -561,6 +579,9 @@ export default function App() {
   const [reportDetails, setReportDetails] = useState('');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [showUserSearch, setShowUserSearch] = useState(false);
+  const [showNavDropdown, setShowNavDropdown] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [mobileChatView, setMobileChatView] = useState<'list' | 'chat'>('list');
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
@@ -584,9 +605,9 @@ export default function App() {
   const hasFetchedProfile = useRef(false);
   const hasFetchedWhitelist = useRef(false);
   const [typingStatuses, setTypingStatuses] = useState<Record<string, string[]>>({});
+  const [typingUsers, setTypingUsers] = useState<Record<string, Record<string, { name: string, lastSeen: number }>>>({});
   const [isTyping, setIsTyping] = useState(false);
   const [typingInId, setTypingInId] = useState<string | null>(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingUpdateRef = useRef<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -597,10 +618,50 @@ export default function App() {
   const activeConversationRef = useRef(activeConversation);
   const viewRef = useRef(view);
   const typingChannelRef = useRef<any>(null);
+  const messageChannelRef = useRef<any>(null);
+  const postsChannelRef = useRef<any>(null);
+  const conversationsChannelRef = useRef<any>(null);
 
   const [newSoundName, setNewSoundName] = useState('');
   const [newSoundUrl, setNewSoundUrl] = useState('');
   const [supabaseClient, setSupabaseClient] = useState(supabase);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+      silentAudio.play().then(() => {
+        console.log('Audio unlocked');
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+      }).catch(() => {});
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Preload standard sounds
+    SOUND_OPTIONS.forEach(opt => {
+      if (!audioCache.has(opt.url)) {
+        const audio = new Audio(opt.url);
+        audio.preload = 'auto';
+        audioCache.set(opt.url, audio);
+      }
+    });
+    
+    // Preload custom sounds
+    customSounds.forEach(sound => {
+      if (!audioCache.has(sound.url)) {
+        const audio = new Audio(sound.url);
+        audio.preload = 'auto';
+        audioCache.set(sound.url, audio);
+      }
+    });
+  }, [customSounds]);
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
@@ -611,12 +672,13 @@ export default function App() {
       document.documentElement.removeAttribute('data-custom-theme');
     }
 
+    // Always set data-theme
+    document.documentElement.setAttribute('data-theme', theme);
+
     if (theme === 'light') {
       document.documentElement.classList.remove('dark');
-      document.documentElement.removeAttribute('data-theme');
     } else {
       document.documentElement.classList.add('dark');
-      document.documentElement.setAttribute('data-theme', theme);
     }
   }, [theme, useCustomTheme]);
 
@@ -672,7 +734,23 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('cached_notifications', JSON.stringify(notificationSettings));
-  }, [notificationSettings]);
+    
+    if (user) {
+      const syncSettings = async () => {
+        try {
+          await supabaseClient
+            .from('profiles')
+            .update({ notification_settings: notificationSettings })
+            .eq('id', user.uid);
+        } catch (err) {
+          console.error('Failed to sync notification settings', err);
+        }
+      };
+      
+      const timer = setTimeout(syncSettings, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [notificationSettings, user]);
 
   useEffect(() => {
     localStorage.setItem('cached_customTheme', JSON.stringify(customTheme));
@@ -820,14 +898,75 @@ export default function App() {
     return () => clearInterval(interval);
   }, [cooldownUntil]);
 
-  // Update Modal Check
+  // Notifications Fetch & Realtime
   useEffect(() => {
-    if (user && isWhitelisted) {
-      const hasSeenUpdate = localStorage.getItem('hasSeenBugWarning_1');
-      if (!hasSeenUpdate) {
-        setShowUpdateModal(true);
+    if (!user || isWhitelisted !== true) return;
+
+    const fetchNotifications = async () => {
+      try {
+        const { data, error } = await supabaseClient
+          .from('notifications')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (error) throw error;
+        setNotifications(data || []);
+      } catch (err) {
+        console.error('Failed to fetch notifications', err);
       }
-    }
+    };
+
+    fetchNotifications();
+
+    const channel = supabaseClient
+      .channel(`notifications:${user.uid}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${user.uid}`
+      }, (payload) => {
+        const newNotif = payload.new as AppNotification;
+        setNotifications(prev => [newNotif, ...prev].slice(0, 20));
+        
+        // Use ref to avoid re-subscribing when settings change
+        const settings = notificationSettingsRef.current;
+        if (settings.enable_sounds) {
+          if (newNotif.type === 'message') {
+            playSound(settings.message_sound, true);
+          } else {
+            playSound(settings.post_sound, true);
+          }
+        }
+        
+        let title = 'Nieuwe melding';
+        if (newNotif.type === 'mention') title = `Nieuwe vermelding door ${newNotif.actor_name}`;
+        else if (newNotif.type === 'reply') title = `Nieuwe reactie van ${newNotif.actor_name}`;
+        else if (newNotif.type === 'message') title = `Nieuw bericht van ${newNotif.actor_name}`;
+        
+        toast.info(title, {
+          description: newNotif.content,
+          action: {
+            label: 'Bekijken',
+            onClick: () => {
+              if (newNotif.type === 'message') {
+                setView('messages');
+                setActiveConversation(conversationsRef.current.find(c => c.id === newNotif.resource_id) || null);
+              } else if (newNotif.resource_type === 'post') {
+                setView('chat');
+              } else {
+                setView('forum');
+              }
+            }
+          }
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabaseClient.removeChannel(channel);
+    };
   }, [user, isWhitelisted]);
 
   // Test connection on boot
@@ -843,16 +982,6 @@ export default function App() {
     }
     testConnection();
   }, [supabaseClient]);
-
-  useEffect(() => {
-    if (view === 'todos' && user) {
-      const getTodos = async () => {
-        const { data } = await supabaseClient.from('todos').select('id, task, completed, created_at').eq('user_id', user.uid).order('created_at', { ascending: false });
-        if (data) setTodos(data);
-      };
-      getTodos();
-    }
-  }, [view, user, supabaseClient]);
 
   // Auth state listener
   useEffect(() => {
@@ -1048,7 +1177,7 @@ export default function App() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, [user, isWhitelisted, supabaseClient]);
+  }, [user?.uid, isWhitelisted, supabaseClient]);
 
   // Real-time whitelist and reports sync for admin
   useEffect(() => {
@@ -1131,7 +1260,7 @@ export default function App() {
       supabaseClient.removeChannel(whitelistChannel);
       supabaseClient.removeChannel(reportsChannel);
     };
-  }, [isAdmin, user, supabaseClient, view, settingsTab]);
+  }, [isAdmin, user?.uid, supabaseClient, view, settingsTab]);
 
   // Website status
   useEffect(() => {
@@ -1225,9 +1354,20 @@ export default function App() {
           return newConvs.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
         });
       })
+      .on('broadcast', { event: 'new_conversation' }, (payload) => {
+        console.log('Broadcast new conversation received:', payload);
+        const newConv = payload.payload as Conversation;
+        setConversations(prev => {
+          if (prev.some(c => c.id === newConv.id)) return prev;
+          const newConvs = [newConv, ...prev];
+          return newConvs.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+        });
+      })
       .subscribe((status) => {
         console.log(`Conversations subscription status for ${user.uid}:`, status);
       });
+
+    conversationsChannelRef.current = channel;
 
     // Initial fetch if not already done
     if (!hasFetchedConversations.current || view === 'messages') {
@@ -1249,7 +1389,7 @@ export default function App() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, [user, isWhitelisted, supabaseClient, view]);
+  }, [user?.uid, isWhitelisted, supabaseClient, view]);
 
   // Real-time messages sync
   useEffect(() => {
@@ -1268,9 +1408,10 @@ export default function App() {
       }, (payload) => {
         console.log('Real-time message change:', payload);
         if (payload.eventType === 'INSERT') {
+          const msg = payload.new as DirectMessage;
           setMessages(prev => {
-            if (prev.some(m => m.id === payload.new.id)) return prev;
-            return [...prev, payload.new as DirectMessage];
+            if (prev.some(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
           });
         } else if (payload.eventType === 'UPDATE') {
           const updated = payload.new as DirectMessage;
@@ -1304,6 +1445,8 @@ export default function App() {
         console.log(`Messages subscription status for ${activeConversation.id}:`, status);
       });
 
+    messageChannelRef.current = channel;
+
     // Initial fetch
     const fetchMessages = async () => {
       const { data } = await supabaseClient
@@ -1319,37 +1462,55 @@ export default function App() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, [user, activeConversation, supabaseClient]);
+  }, [user?.uid, activeConversation?.id, supabaseClient]);
 
   const [isTypingSubscribed, setIsTypingSubscribed] = useState(false);
 
-  // Real-time typing indicators sync via Presence
+  // Real-time typing indicators sync via Broadcast
   useEffect(() => {
     if (!user || !supabaseClient) {
       setTypingStatuses({});
+      setTypingUsers({});
       setIsTypingSubscribed(false);
       return;
     }
 
-    const channel = supabaseClient.channel('typing_presence');
+    const channel = supabaseClient.channel('typing_broadcast');
     typingChannelRef.current = channel;
     
     channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const newStatuses: Record<string, string[]> = {};
-        
-        Object.values(state).forEach((presences: any) => {
-          presences.forEach((p: any) => {
-            if (p.user_id !== user.uid && p.is_typing) {
-              const convId = p.conversation_id;
-              const userName = p.user_name || 'Iemand';
-              if (!newStatuses[convId]) newStatuses[convId] = [];
-              if (!newStatuses[convId].includes(userName)) newStatuses[convId].push(userName);
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        const { user_id, user_name, conversation_id } = payload.payload;
+        if (user_id === user.uid) return;
+
+        setTypingUsers(prev => {
+          const next = { ...prev };
+          next[conversation_id] = {
+            ...(next[conversation_id] || {}),
+            [user_id]: {
+              name: user_name,
+              lastSeen: Date.now()
             }
-          });
+          };
+          return next;
         });
-        setTypingStatuses(newStatuses);
+      })
+      .on('broadcast', { event: 'stop_typing' }, (payload) => {
+        const { user_id, conversation_id } = payload.payload;
+        if (user_id === user.uid) return;
+
+        setTypingUsers(prev => {
+          if (!prev[conversation_id] || !prev[conversation_id][user_id]) return prev;
+          const next = { ...prev };
+          const users = { ...next[conversation_id] };
+          delete users[user_id];
+          if (Object.keys(users).length === 0) {
+            delete next[conversation_id];
+          } else {
+            next[conversation_id] = users;
+          }
+          return next;
+        });
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -1359,35 +1520,90 @@ export default function App() {
         }
       });
 
+    // Cleanup interval to remove stale typing statuses
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTypingUsers(prev => {
+        let changed = false;
+        const next = { ...prev };
+        
+        Object.keys(next).forEach(convId => {
+          const users = { ...next[convId] };
+          let usersChanged = false;
+          
+          Object.keys(users).forEach(uid => {
+            if (now - users[uid].lastSeen > 5000) {
+              delete users[uid];
+              usersChanged = true;
+              changed = true;
+            }
+          });
+          
+          if (usersChanged) {
+            if (Object.keys(users).length === 0) {
+              delete next[convId];
+            } else {
+              next[convId] = users;
+            }
+          }
+        });
+        
+        return changed ? next : prev;
+      });
+    }, 2000);
+
     return () => {
       supabaseClient.removeChannel(channel);
       typingChannelRef.current = null;
       setIsTypingSubscribed(false);
+      clearInterval(interval);
     };
-  }, [user, supabaseClient]);
+  }, [user?.uid, supabaseClient]);
 
-  // Track typing status via Presence
+  // Derive typingStatuses from typingUsers
+  useEffect(() => {
+    const newStatuses: Record<string, string[]> = {};
+    Object.keys(typingUsers).forEach(convId => {
+      newStatuses[convId] = Object.values(typingUsers[convId]).map(u => u.name);
+    });
+    setTypingStatuses(newStatuses);
+  }, [typingUsers]);
+
+  // Track typing status via Broadcast
   useEffect(() => {
     if (!user || !isTyping || !typingInId || !typingChannelRef.current || !isTypingSubscribed) return;
 
-    const trackTyping = async () => {
-      try {
-        await typingChannelRef.current.track({
-          user_id: user.uid,
-          user_name: profile?.display_name || user.displayName || 'Iemand',
-          is_typing: true,
-          conversation_id: typingInId
+    const sendTypingBroadcast = () => {
+      if (typingChannelRef.current && isTypingSubscribed) {
+        typingChannelRef.current.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: {
+            user_id: user.uid,
+            user_name: profile?.display_name || user.displayName || 'Iemand',
+            conversation_id: typingInId
+          }
         });
-      } catch (err) {
-        console.error('Error tracking typing presence:', err);
       }
     };
 
-    trackTyping();
+    // Send immediately
+    sendTypingBroadcast();
+
+    // Send periodically while typing
+    const interval = setInterval(sendTypingBroadcast, 2000);
 
     return () => {
+      clearInterval(interval);
       if (typingChannelRef.current && isTypingSubscribed) {
-        typingChannelRef.current.untrack();
+        typingChannelRef.current.send({
+          type: 'broadcast',
+          event: 'stop_typing',
+          payload: {
+            user_id: user.uid,
+            conversation_id: typingInId
+          }
+        });
       }
     };
   }, [isTyping, typingInId, user, profile, isTypingSubscribed]);
@@ -1514,13 +1730,15 @@ export default function App() {
         console.log('Posts subscription status:', status);
       });
 
+    postsChannelRef.current = channel;
+
     // Initial fetch
     const fetchPosts = async () => {
       if (isPostingRef.current || hasFetchedPosts.current) return;
       
       const { data, error } = await supabaseClient
         .from('posts')
-        .select('id, content, author_id, author_name, author_photo, created_at, updated_at')
+        .select('id, content, author_id, author_name, author_photo, created_at, updated_at, parent_id, parent_author_name')
         .order('created_at', { ascending: false })
         .limit(20);
       
@@ -1529,14 +1747,47 @@ export default function App() {
         localStorage.setItem('cached_posts', JSON.stringify(data));
         hasFetchedPosts.current = true;
       }
-      setLoading(false);
     };
+
+    const fetchThreads = async () => {
+      try {
+        const { data, error } = await supabaseClient
+          .from('forum_threads')
+          .select('*')
+          .order('updated_at', { ascending: false });
+        
+        if (data) setThreads(data);
+      } catch (err) {
+        console.error('Error fetching threads:', err);
+      }
+    };
+
     fetchPosts();
+    fetchThreads();
+    setLoading(false);
 
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, [user, isWhitelisted, supabaseClient]);
+  }, [user?.uid, isWhitelisted, supabaseClient]);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    }
+  };
+
+  useEffect(() => {
+    if (view === 'messages' && activeConversation && messages.length > 0) {
+      scrollToBottom('auto');
+    }
+  }, [activeConversation?.id, view]);
+
+  useEffect(() => {
+    if (view === 'messages' && activeConversation && messages.length > 0) {
+      scrollToBottom('smooth');
+    }
+  }, [messages.length]);
 
   const handleLogin = async () => {
     setLoading(true);
@@ -1603,12 +1854,20 @@ export default function App() {
     }
 
     if (!newSoundUrl.startsWith('http')) {
-      toast.error('Ongeldige URL');
+      toast.error('Ongeldige URL. Moet beginnen met http of https');
       return;
     }
 
     setUploadingSound(true);
     try {
+      // Test if the sound actually works before adding
+      const testAudio = new Audio(newSoundUrl);
+      await new Promise((resolve, reject) => {
+        testAudio.oncanplaythrough = resolve;
+        testAudio.onerror = () => reject(new Error('Audio kon niet worden geladen. Controleer de URL.'));
+        setTimeout(() => reject(new Error('Time-out bij laden audio')), 8000);
+      });
+
       const newSound = { name: newSoundName, url: newSoundUrl };
       const updatedSounds = [...customSounds, newSound];
       setCustomSounds(updatedSounds);
@@ -1622,7 +1881,8 @@ export default function App() {
       setNewSoundUrl('');
       toast.success('Geluid toegevoegd!');
     } catch (err) {
-      handleSupabaseError(err, 'geluid toevoegen');
+      console.error('Failed to add custom sound', err);
+      toast.error(err instanceof Error ? err.message : 'Kon geluid niet toevoegen');
     } finally {
       setUploadingSound(false);
     }
@@ -1718,6 +1978,43 @@ export default function App() {
     return true;
   };
 
+  const handleMentions = async (content: string, resourceId: string, resourceType: 'post' | 'comment' | 'thread') => {
+    if (!user || !users.length) return;
+
+    const mentionedUserIds = new Set<string>();
+    
+    users.forEach(u => {
+      if (u.id === user.uid) return;
+      // Use regex to match @name followed by non-word character or end of string
+      const mentionRegex = new RegExp(`@${u.display_name}(\\b|$)`, 'i');
+      if (mentionRegex.test(content)) {
+        mentionedUserIds.add(u.id);
+      }
+    });
+
+    for (const recipientId of mentionedUserIds) {
+      const recipient = users.find(u => u.id === recipientId);
+      if (recipient?.notification_settings?.notify_mentions === false) continue;
+
+      try {
+        await supabaseClient.from('notifications').insert({
+          user_id: recipientId,
+          actor_id: user.uid,
+          actor_name: profile?.display_name || user.displayName || 'Anoniem',
+          actor_photo: profile?.photo_url || user.photoURL || undefined,
+          type: 'mention',
+          resource_id: resourceId,
+          resource_type: resourceType,
+          content: content.substring(0, 100),
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Failed to send mention notification', err);
+      }
+    }
+  };
+
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('handleCreatePost triggered', { user: !!user, postInput: !!postInput.trim(), isWhitelisted });
@@ -1738,13 +2035,15 @@ export default function App() {
     setError(null);
 
     const postPromise = (async () => {
-      console.log('Attempting to insert post:', { content, author_id: user.uid });
+      console.log('Attempting to insert post:', { content, author_id: user.uid, parent_id: replyingTo?.id });
       const { data: insertData, error } = await supabaseClient.from('posts').insert({
         author_id: user.uid,
         author_name: profile?.display_name || user.displayName || 'Anoniem',
         author_photo: profile?.photo_url || user.photoURL || undefined,
         content: content,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        parent_id: replyingTo?.id || null,
+        parent_author_name: replyingTo?.author_name || null
       }).select().single();
 
       if (error) {
@@ -1755,9 +2054,11 @@ export default function App() {
 
       console.log('Post inserted successfully:', insertData);
       setPostInput('');
+      setReplyingTo(null);
 
       // Update state directly with the new post to avoid race conditions
       if (insertData) {
+        handleMentions(content, insertData.id, 'post');
         setPosts((prev) => {
           const alreadyExists = prev.some(p => p.id === insertData.id);
           if (alreadyExists) return prev;
@@ -1767,12 +2068,13 @@ export default function App() {
         });
         
         // Broadcast new post to others
-        const channel = supabaseClient.channel('posts_changes');
-        channel.send({
-          type: 'broadcast',
-          event: 'new_post',
-          payload: insertData
-        });
+        if (postsChannelRef.current) {
+          postsChannelRef.current.send({
+            type: 'broadcast',
+            event: 'new_post',
+            payload: insertData
+          });
+        }
       }
 
       isPostingRef.current = false;
@@ -1792,16 +2094,115 @@ export default function App() {
         setIsTyping(false);
         setTypingInId(null);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        await supabaseClient
-          .from('typing')
-          .update({
-            is_typing: false,
-            last_updated: new Date().toISOString()
-          })
-          .eq('id', `forum_${user.uid}`);
       }
     } catch (err) {
       handleSupabaseError(err, 'bericht plaatsen', user);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleCreateThread = async () => {
+    if (!user || !threadTitleInput.trim() || !threadContentInput.trim() || isWhitelisted !== true) return;
+    if (!checkRateLimit()) return;
+    
+    setSending(true);
+    const payload = {
+      author_id: user.uid,
+      author_name: profile?.display_name || user.displayName || 'Anoniem',
+      author_photo: profile?.photo_url || user.photoURL || undefined,
+      title: threadTitleInput.trim(),
+      content: threadContentInput.trim(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    console.log('Attempting to insert forum thread. Payload:', JSON.stringify(payload, null, 2));
+    
+    try {
+      const { data, error } = await supabaseClient.from('forum_threads').insert(payload).select().single();
+
+      if (error) throw error;
+      
+      setThreads(prev => [data, ...prev]);
+      setThreadTitleInput('');
+      setThreadContentInput('');
+      setIsCreatingThread(false);
+      setActiveThread(data);
+      toast.success('Topic succesvol geplaatst!');
+    } catch (err) {
+      handleSupabaseError(err, 'topic aanmaken', user);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleOpenThread = async (thread: ForumThread) => {
+    setActiveThread(thread);
+    setThreadComments([]);
+    setCommentInput('');
+    
+    try {
+      const { data, error } = await supabaseClient
+        .from('forum_comments')
+        .select('*')
+        .eq('thread_id', thread.id)
+        .order('created_at', { ascending: true });
+        
+      if (error) throw error;
+      setThreadComments(data || []);
+    } catch (err) {
+      handleSupabaseError(err, 'reacties ophalen', user);
+    }
+  };
+
+  const handleCreateComment = async (threadId: string) => {
+    if (!user || !commentInput.trim() || isWhitelisted !== true) return;
+    if (!checkRateLimit()) return;
+    
+    setSending(true);
+    try {
+      const { data, error } = await supabaseClient.from('forum_comments').insert({
+        thread_id: threadId,
+        author_id: user.uid,
+        author_name: profile?.display_name || user.displayName || 'Anoniem',
+        author_photo: profile?.photo_url || user.photoURL || undefined,
+        content: commentInput.trim(),
+        created_at: new Date().toISOString()
+      }).select().single();
+
+      if (error) throw error;
+      
+      setThreadComments(prev => [...prev, data]);
+      setCommentInput('');
+      
+      // Notify mentioned users
+      handleMentions(data.content, data.id, 'comment');
+      
+      // Notify thread author if they are not the commenter
+      if (activeThread && activeThread.author_id !== user.uid) {
+        supabaseClient.from('notifications').insert({
+          user_id: activeThread.author_id,
+          actor_id: user.uid,
+          actor_name: profile?.display_name || user.displayName || 'Anoniem',
+          actor_photo: profile?.photo_url || user.photoURL || undefined,
+          type: 'reply',
+          resource_id: activeThread.id,
+          resource_type: 'thread',
+          content: commentInput.trim().substring(0, 100),
+          is_read: false,
+          created_at: new Date().toISOString()
+        }).then(({ error }) => {
+          if (error) console.error('Failed to send thread reply notification', error);
+        });
+      }
+      
+      // Update comment count in thread (increment locally for now)
+      setThreads(prev => prev.map(t => t.id === threadId ? { ...t, comment_count: (t.comment_count || 0) + 1 } : t));
+      
+      toast.success('Reactie geplaatst!');
+    } catch (err) {
+      handleSupabaseError(err, 'reactie plaatsen', user);
     } finally {
       setSending(false);
     }
@@ -1832,12 +2233,13 @@ export default function App() {
       }
 
       // Broadcast delete to others
-      const channel = supabaseClient.channel('posts_changes');
-      channel.send({
-        type: 'broadcast',
-        event: 'delete_post',
-        payload: { id: postId }
-      });
+      if (postsChannelRef.current) {
+        postsChannelRef.current.send({
+          type: 'broadcast',
+          event: 'delete_post',
+          payload: { id: postId }
+        });
+      }
 
       // Update local state immediately for better UX
       setPosts(prev => {
@@ -1892,16 +2294,17 @@ export default function App() {
       }
 
       // Broadcast update to others
-      const channel = supabaseClient.channel('posts_changes');
-      channel.send({
-        type: 'broadcast',
-        event: 'update_post',
-        payload: { 
-          id: postId, 
-          content: editPostInput.trim(),
-          updated_at: new Date().toISOString()
-        }
-      });
+      if (postsChannelRef.current) {
+        postsChannelRef.current.send({
+          type: 'broadcast',
+          event: 'update_post',
+          payload: { 
+            id: postId, 
+            content: editPostInput.trim(),
+            updated_at: new Date().toISOString()
+          }
+        });
+      }
 
       // Update local state immediately for better UX
       setPosts(prev => {
@@ -1957,16 +2360,17 @@ export default function App() {
       }
 
       // Broadcast update to others
-      const channel = supabaseClient.channel(`messages:${activeConversation.id}`);
-      channel.send({
-        type: 'broadcast',
-        event: 'update_message',
-        payload: { 
-          id: messageId, 
-          text: editMessageInput.trim(),
-          updated_at: new Date().toISOString()
-        }
-      });
+      if (messageChannelRef.current) {
+        messageChannelRef.current.send({
+          type: 'broadcast',
+          event: 'update_message',
+          payload: { 
+            id: messageId, 
+            text: editMessageInput.trim(),
+            updated_at: new Date().toISOString()
+          }
+        });
+      }
 
       // Update local state immediately for better UX
       setMessages(prev => prev.map(m => m.id === messageId ? { ...m, text: editMessageInput.trim(), updated_at: new Date().toISOString() } : m));
@@ -2033,12 +2437,13 @@ export default function App() {
       }
 
       // Broadcast delete to others
-      const channel = supabaseClient.channel(`messages:${activeConversation.id}`);
-      channel.send({
-        type: 'broadcast',
-        event: 'delete_message',
-        payload: { id: messageId }
-      });
+      if (messageChannelRef.current) {
+        messageChannelRef.current.send({
+          type: 'broadcast',
+          event: 'delete_message',
+          payload: { id: messageId }
+        });
+      }
 
       // Update local state immediately for better UX
       setMessages(prev => prev.filter(m => m.id !== messageId));
@@ -2216,6 +2621,15 @@ export default function App() {
         
       if (error) throw error;
       setActiveConversation(data);
+      
+      // Broadcast new conversation to target user
+      const targetChannel = supabaseClient.channel(`conversations:${targetUser.id}`);
+      targetChannel.send({
+        type: 'broadcast',
+        event: 'new_conversation',
+        payload: data
+      });
+
       setMobileChatView('chat');
       setView('messages');
     } catch (err) {
@@ -2233,20 +2647,62 @@ export default function App() {
 
     try {
       console.log('Attempting to send message:', { text, conversation_id: activeConversation.id });
-      const { error: msgError } = await supabaseClient.from('messages').insert({
-        conversation_id: activeConversation.id,
-        sender_id: user.uid,
-        text,
-        created_at: new Date().toISOString()
-      });
+      const { data: insertedMsg, error: msgError } = await supabaseClient
+        .from('messages')
+        .insert({
+          conversation_id: activeConversation.id,
+          sender_id: user.uid,
+          text,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
       
       if (msgError) {
         console.error('Insert message error:', msgError);
         throw msgError;
       }
       
-      console.log('Message sent successfully');
+      console.log('Message sent successfully:', insertedMsg);
+      
+      // Update local state immediately for better UX
+      if (insertedMsg) {
+        setMessages(prev => {
+          if (prev.some(m => m.id === insertedMsg.id)) return prev;
+          return [...prev, insertedMsg];
+        });
+      }
+
+      // Broadcast new message to others
+      if (messageChannelRef.current) {
+        messageChannelRef.current.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: insertedMsg
+        });
+      }
+
       setMessageInput('');
+
+      // Send notifications to other participants
+      activeConversation.participants.forEach(participantId => {
+        if (participantId === user.uid) return;
+        
+        supabaseClient.from('notifications').insert({
+          user_id: participantId,
+          actor_id: user.uid,
+          actor_name: profile?.display_name || user.displayName || 'Anoniem',
+          actor_photo: profile?.photo_url || user.photoURL || undefined,
+          type: 'message',
+          resource_id: activeConversation.id,
+          resource_type: 'message',
+          content: text.substring(0, 100),
+          is_read: false,
+          created_at: new Date().toISOString()
+        }).then(({ error }) => {
+          if (error) console.error('Failed to send message notification', error);
+        });
+      });
 
       // Update conversation metadata in background
       supabaseClient
@@ -2259,26 +2715,24 @@ export default function App() {
         .eq('id', activeConversation.id);
 
       // Broadcast conversation update to others
-      const convChannel = supabaseClient.channel(`conversations:${user.uid}`);
-      convChannel.send({
-        type: 'broadcast',
-        event: 'conversation_update',
-        payload: {
-          id: activeConversation.id,
-          last_message: text,
-          last_message_sender_id: user.uid,
-          updated_at: new Date().toISOString()
-        }
-      });
+      if (conversationsChannelRef.current) {
+        conversationsChannelRef.current.send({
+          type: 'broadcast',
+          event: 'conversation_update',
+          payload: {
+            id: activeConversation.id,
+            last_message: text,
+            last_message_sender_id: user.uid,
+            updated_at: new Date().toISOString()
+          }
+        });
+      }
 
       // Clear typing status
       if (isTyping && typingInId === activeConversation.id) {
         setIsTyping(false);
         setTypingInId(null);
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        if (typingChannelRef.current) {
-          typingChannelRef.current.untrack();
-        }
       }
     } catch (err) {
       handleSupabaseError(err, 'bericht verzenden', user);
@@ -2378,21 +2832,21 @@ export default function App() {
       >
       {user && (
         <nav 
-          className={`border-b border-zinc-200 dark:border-zinc-800 sticky top-0 z-10 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : 'bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md'}`}
+          className={`border-b border-app-border sticky top-0 z-10 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : 'bg-app-card/80 backdrop-blur-md'}`}
           style={useCustomTheme ? { 
             backgroundColor: customTheme.glass_effect ? undefined : customTheme.header_bg_color,
           } : {}}
         >
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('forum')}>
-              <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-lg">F</span>
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('chat')}>
+              <div className="w-8 h-8 bg-app-ink rounded-lg flex items-center justify-center">
+                <span className="text-app-bg font-bold text-lg">F</span>
               </div>
-              <span className="font-semibold tracking-tight text-sm sm:text-base">FTJM Forum</span>
+              <span className="font-semibold tracking-tight text-sm sm:text-base text-app-ink">FTJM Forum</span>
             </div>
             {user && isWhitelisted && (
-              <div className="hidden md:flex items-center gap-2 px-2.5 py-1 bg-zinc-100 rounded-full text-[10px] sm:text-xs font-medium text-zinc-600">
+              <div className="hidden md:flex items-center gap-2 px-2.5 py-1 bg-app-accent rounded-full text-[10px] sm:text-xs font-medium text-app-muted">
                 <span className={`w-1.5 h-1.5 rounded-full ${websiteStatus.toLowerCase() === 'online' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                 {websiteStatus}
               </div>
@@ -2400,80 +2854,208 @@ export default function App() {
           </div>
           
           {user && isWhitelisted && (
-            <div className="hidden sm:flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
-              <button 
-                onClick={() => setView('forum')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'forum' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
-              >
-                <MessageSquare className="w-4 h-4" />
-                Forum
-              </button>
-              <button 
-                onClick={() => setView('messages')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'messages' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
-              >
-                <Mail className="w-4 h-4" />
-                Berichten
-              </button>
-              <button 
-                onClick={() => setView('settings')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'settings' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
-              >
-                <Settings className="w-4 h-4" />
-                Instellingen
-              </button>
-              <button 
-                onClick={() => setView('todos')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'todos' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}
-              >
-                <Check className="w-4 h-4" />
-                Todos
-              </button>
+            <div className="hidden sm:flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-app-accent p-1 rounded-xl">
+                <button 
+                  onClick={() => setView('chat')}
+                  className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'chat' ? 'bg-app-card text-app-ink shadow-sm' : 'text-app-muted hover:text-app-ink'}`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Chat
+                </button>
+                <button 
+                  onClick={() => setView('messages')}
+                  className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'messages' ? 'bg-app-card text-app-ink shadow-sm' : 'text-app-muted hover:text-app-ink'}`}
+                >
+                  <Mail className="w-4 h-4" />
+                  Berichten
+                </button>
+              </div>
+
+              <div className="relative">
+                <button 
+                  onClick={() => setShowNavDropdown(!showNavDropdown)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
+                >
+                  <Settings className={`w-4 h-4 ${showNavDropdown ? 'rotate-90' : ''} transition-transform`} />
+                  Menu
+                  <ChevronLeft className={`w-4 h-4 -rotate-90 transition-transform ${showNavDropdown ? 'rotate-90' : ''}`} />
+                </button>
+
+                <AnimatePresence>
+                  {showNavDropdown && (
+                    <>
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowNavDropdown(false)}
+                      />
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute right-0 mt-2 w-56 bg-app-card border border-app-border rounded-2xl shadow-2xl z-20 overflow-hidden p-2"
+                      >
+                        <div className="px-3 py-2 mb-1">
+                          <p className="text-[10px] font-black text-app-muted uppercase tracking-widest">Navigatie</p>
+                        </div>
+                        <button 
+                          onClick={() => { setView('forum'); setShowNavDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'forum' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
+                        >
+                          <Layout className="w-4 h-4" />
+                          Community Forum
+                        </button>
+                        <button 
+                          onClick={() => { setView('news'); setShowNavDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
+                        >
+                          <Newspaper className="w-4 h-4" />
+                          Laatste Nieuws
+                        </button>
+                        <div className="h-px bg-app-border my-2 mx-2" />
+                        <button 
+                          onClick={() => { setView('settings'); setShowNavDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'settings' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
+                        >
+                          <Settings className="w-4 h-4" />
+                          Instellingen
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           )}
 
           <div className="flex items-center gap-2 sm:gap-4">
+            {user && isWhitelisted && (
+              <div className="relative">
+                <button 
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink relative"
+                >
+                  <Bell className="w-5 h-5" />
+                  {notifications.some(n => !n.is_read) && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-app-card" />
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {showNotifications && (
+                    <>
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowNotifications(false)}
+                      />
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute right-0 mt-2 w-80 bg-app-card border border-app-border rounded-2xl shadow-2xl z-20 overflow-hidden"
+                      >
+                        <div className="p-4 border-b border-app-border flex items-center justify-between bg-app-accent/30">
+                          <h4 className="font-bold text-sm text-app-ink">Meldingen</h4>
+                          <button 
+                            onClick={async () => {
+                              const { error } = await supabaseClient.from('notifications').update({ is_read: true }).eq('user_id', user.uid);
+                              if (!error) setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                            }}
+                            className="text-[10px] font-bold text-app-ink hover:underline uppercase tracking-widest"
+                          >
+                            Markeer als gelezen
+                          </button>
+                        </div>
+                        <div className="max-h-96 overflow-y-auto">
+                          {notifications.length === 0 ? (
+                            <div className="p-8 text-center">
+                              <Bell className="w-8 h-8 text-app-muted mx-auto mb-2 opacity-20" />
+                              <p className="text-xs text-app-muted font-medium">Geen nieuwe meldingen</p>
+                            </div>
+                          ) : (
+                            notifications.map(notif => (
+                              <button 
+                                key={notif.id}
+                                onClick={() => {
+                                  if (notif.resource_type === 'post') setView('chat');
+                                  else setView('forum');
+                                  setShowNotifications(false);
+                                }}
+                                className={`w-full p-4 text-left border-b border-app-border last:border-0 hover:bg-app-accent/50 transition-colors flex gap-3 ${!notif.is_read ? 'bg-app-accent/20' : ''}`}
+                              >
+                                <div className="w-8 h-8 rounded-full bg-app-accent flex-shrink-0 overflow-hidden">
+                                  {notif.actor_photo ? (
+                                    <img src={notif.actor_photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-app-muted">
+                                      {notif.actor_name[0]}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs text-app-ink font-medium">
+                                    <span className="font-bold">{notif.actor_name}</span> heeft je genoemd
+                                  </p>
+                                  <p className="text-[10px] text-app-muted truncate mt-0.5 italic">"{notif.content}"</p>
+                                  <p className="text-[8px] text-app-muted mt-1 uppercase font-bold tracking-widest">{formatDate(notif.created_at)}</p>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
             <button 
               onClick={() => {
                 if (useCustomTheme) {
                   toast.error('Schakel eerst je Custom Thema uit om de standaard modus te wijzigen.');
                   return;
                 }
-                setTheme(theme === 'light' ? 'dark' : 'light');
+                setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'enhanced' : 'light');
               }}
-              className="p-2 hover:bg-zinc-100 rounded-full transition-colors text-zinc-500 hover:text-zinc-900 relative"
-              title={useCustomTheme ? 'Thema vergrendeld door Custom Thema' : (theme === 'light' ? 'Donkere modus' : 'Lichte modus')}
+              className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink relative"
+              title={useCustomTheme ? 'Thema vergrendeld door Custom Thema' : (theme === 'light' ? 'Donkere modus' : theme === 'dark' ? 'Enhanced modus' : 'Lichte modus')}
             >
-              {theme === 'light' ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
+              {theme === 'light' ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : theme === 'dark' ? <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
               {useCustomTheme && (
-                <div className="absolute -top-1 -right-1 bg-zinc-900 text-white p-0.5 rounded-full border border-white">
+                <div className="absolute -top-1 -right-1 bg-app-ink text-app-bg p-0.5 rounded-full border border-app-border">
                   <Lock className="w-2.5 h-2.5" />
                 </div>
               )}
             </button>
             {user ? (
               <div className="flex items-center gap-2 sm:gap-4">
-                <div className="flex items-center gap-2 sm:gap-3 pr-2 sm:pr-4 border-r border-zinc-200">
+                <div className="flex items-center gap-2 sm:gap-3 pr-2 sm:pr-4 border-r border-app-border">
                   <div className="text-right hidden lg:block">
-                    <p className="text-sm font-medium leading-none">{profile?.display_name || user.displayName || 'Anoniem'}</p>
-                    <p className="text-xs text-zinc-500 mt-1">{user.email}</p>
+                    <p className="text-sm font-medium leading-none text-app-ink">{profile?.display_name || user.displayName || 'Anoniem'}</p>
+                    <p className="text-xs text-app-muted mt-1">{user.email}</p>
                   </div>
                   {(profile?.photo_url || user.photoURL) ? (
                     <img 
                       src={profile?.photo_url || user.photoURL} 
                       alt={profile?.display_name || user.displayName || ''} 
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-zinc-200"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-app-border"
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-zinc-100 flex items-center justify-center border border-zinc-200">
-                      <UserIcon className="w-3 h-3 sm:w-4 sm:h-4 text-zinc-400" />
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
+                      <UserIcon className="w-3 h-3 sm:w-4 sm:h-4 text-app-muted" />
                     </div>
                   )}
                 </div>
                 <button 
                   onClick={handleLogout}
-                  className="p-2 hover:bg-zinc-100 rounded-full transition-colors text-zinc-500 hover:text-zinc-900"
+                  className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink"
                   title="Uitloggen"
                 >
                   <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -2496,12 +3078,19 @@ export default function App() {
 
       {/* Bottom Navigation for Mobile */}
       {user && isWhitelisted && (
-        <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 z-50 px-6 py-3 flex items-center justify-between shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-app-card border-t border-app-border z-50 px-4 py-3 flex items-center justify-between shadow-lg">
+          <button 
+            onClick={() => setView('chat')}
+            className={`flex flex-col items-center gap-1 transition-all ${view === 'chat' ? 'text-app-ink' : 'text-app-muted'}`}
+          >
+            <MessageSquare className={`w-6 h-6 ${view === 'chat' ? 'fill-zinc-900/10' : ''}`} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Chat</span>
+          </button>
           <button 
             onClick={() => setView('forum')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'forum' ? 'text-zinc-900' : 'text-zinc-400'}`}
+            className={`flex flex-col items-center gap-1 transition-all ${view === 'forum' ? 'text-app-ink' : 'text-app-muted'}`}
           >
-            <MessageSquare className={`w-6 h-6 ${view === 'forum' ? 'fill-zinc-900/10' : ''}`} />
+            <Layout className={`w-6 h-6 ${view === 'forum' ? 'fill-app-ink/10' : ''}`} />
             <span className="text-[10px] font-bold uppercase tracking-wider">Forum</span>
           </button>
           <button 
@@ -2509,23 +3098,23 @@ export default function App() {
               setView('messages');
               setMobileChatView('list');
             }}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'messages' ? 'text-zinc-900' : 'text-zinc-400'}`}
+            className={`flex flex-col items-center gap-1 transition-all ${view === 'messages' ? 'text-app-ink' : 'text-app-muted'}`}
           >
-            <Mail className={`w-6 h-6 ${view === 'messages' ? 'fill-zinc-900/10' : ''}`} />
+            <Mail className={`w-6 h-6 ${view === 'messages' ? 'fill-app-ink/10' : ''}`} />
             <span className="text-[10px] font-bold uppercase tracking-wider">Berichten</span>
           </button>
           <button 
-            onClick={() => setView('todos')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'todos' ? 'text-zinc-900' : 'text-zinc-400'}`}
+            onClick={() => setView('news')}
+            className={`flex flex-col items-center gap-1 transition-all ${view === 'news' ? 'text-app-ink' : 'text-app-muted'}`}
           >
-            <Check className={`w-6 h-6 ${view === 'todos' ? 'fill-zinc-900/10' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Todos</span>
+            <Newspaper className={`w-6 h-6 ${view === 'news' ? 'fill-app-ink/10' : ''}`} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Nieuws</span>
           </button>
           <button 
             onClick={() => setView('settings')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'settings' ? 'text-zinc-900' : 'text-zinc-400'}`}
+            className={`flex flex-col items-center gap-1 transition-all ${view === 'settings' ? 'text-app-ink' : 'text-app-muted'}`}
           >
-            <Settings className={`w-6 h-6 ${view === 'settings' ? 'fill-zinc-900/10' : ''}`} />
+            <Settings className={`w-6 h-6 ${view === 'settings' ? 'fill-app-ink/10' : ''}`} />
             <span className="text-[10px] font-bold uppercase tracking-wider">Instellingen</span>
           </button>
         </div>
@@ -2537,8 +3126,8 @@ export default function App() {
             <LandingPage onLogin={handleLogin} websiteStatus={websiteStatus} />
           ) : isWhitelisted === null ? (
             <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="w-12 h-12 text-zinc-900 animate-spin mb-4" />
-              <p className="text-zinc-500 font-medium">Toegang controleren...</p>
+              <Loader2 className="w-12 h-12 text-app-ink animate-spin mb-4" />
+              <p className="text-app-muted font-medium">Toegang controleren...</p>
             </div>
           ) : isWhitelisted === false ? (
             <motion.div 
@@ -2551,22 +3140,22 @@ export default function App() {
               <div className="w-24 h-24 bg-red-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-red-100 shadow-xl shadow-red-500/10">
                 <ShieldCheck className="w-12 h-12 text-red-500" />
               </div>
-              <h1 className="text-4xl font-black tracking-tighter text-zinc-900 mb-4">Geen Toegang</h1>
-              <div className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm mb-10">
-                <p className="text-zinc-500 leading-relaxed mb-4">
-                  Je account <span className="font-bold text-zinc-900">{user.email}</span> staat momenteel niet op de whitelist van het <span className="font-bold text-zinc-900">FTJM Besloten Forum</span>.
+              <h1 className="text-4xl font-black tracking-tighter text-app-ink mb-4">Geen Toegang</h1>
+              <div className="bg-app-card p-6 rounded-3xl border border-app-border shadow-sm mb-10">
+                <p className="text-app-muted leading-relaxed mb-4">
+                  Je account <span className="font-bold text-app-ink">{user.email}</span> staat momenteel niet op de whitelist van het <span className="font-bold text-app-ink">FTJM Besloten Forum</span>.
                 </p>
-                <div className="flex items-center gap-2 justify-center p-3 bg-zinc-50 rounded-xl text-xs font-bold text-zinc-400 uppercase tracking-widest">
+                <div className="flex items-center gap-2 justify-center p-3 bg-app-accent rounded-xl text-xs font-bold text-app-muted uppercase tracking-widest">
                   <AlertCircle className="w-4 h-4" />
                   Toegang vereist goedkeuring
                 </div>
               </div>
-              <p className="text-sm text-zinc-400 mb-8">
+              <p className="text-sm text-app-muted mb-8">
                 Neem contact op met de beheerder om toegang te krijgen.
               </p>
               <button 
                 onClick={handleLogout}
-                className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-900/20 active:scale-[0.98] flex items-center justify-center gap-3"
+                className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-3"
               >
                 <LogOut className="w-5 h-5" />
                 Uitloggen & Opnieuw Proberen
@@ -2583,19 +3172,19 @@ export default function App() {
               <div className="w-24 h-24 bg-amber-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-amber-100 shadow-xl shadow-amber-500/10">
                 <AlertCircle className="w-12 h-12 text-amber-500" />
               </div>
-              <h1 className="text-4xl font-black tracking-tighter text-zinc-900 mb-4">Onderhoud</h1>
-              <div className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm mb-10">
-                <p className="text-zinc-500 leading-relaxed mb-4">
-                  Het forum is momenteel in <span className="font-bold text-zinc-900">{websiteStatus}</span>.
+              <h1 className="text-4xl font-black tracking-tighter text-app-ink mb-4">Onderhoud</h1>
+              <div className="bg-app-card p-6 rounded-3xl border border-app-border shadow-sm mb-10">
+                <p className="text-app-muted leading-relaxed mb-4">
+                  Het forum is momenteel in <span className="font-bold text-app-ink">{websiteStatus}</span>.
                 </p>
-                <div className="flex items-center gap-2 justify-center p-3 bg-zinc-50 rounded-xl text-xs font-bold text-zinc-400 uppercase tracking-widest">
+                <div className="flex items-center gap-2 justify-center p-3 bg-app-accent rounded-xl text-xs font-bold text-app-muted uppercase tracking-widest">
                   <AlertCircle className="w-4 h-4" />
                   We zijn zo terug
                 </div>
               </div>
               <button 
                 onClick={handleLogout}
-                className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-900/20 active:scale-[0.98] flex items-center justify-center gap-3"
+                className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-3"
               >
                 <LogOut className="w-5 h-5" />
                 Uitloggen
@@ -2608,11 +3197,11 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="w-full relative"
             >
-              {view === 'forum' && (
+              {view === 'chat' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="hidden lg:block lg:col-span-1 space-y-6">
                     <div 
-                      className={`bg-white dark:bg-zinc-900 rounded-3xl p-8 border border-zinc-200 dark:border-zinc-800 shadow-sm sticky top-24 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      className={`bg-app-card rounded-3xl p-8 border border-app-border shadow-sm sticky top-24 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
                       style={useCustomTheme ? { 
                         backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
                         color: customTheme.text_color
@@ -2624,27 +3213,27 @@ export default function App() {
                             <img 
                               src={profile?.photo_url || user.photoURL} 
                               alt={profile?.display_name || user.displayName || ''} 
-                              className="w-24 h-24 rounded-3xl border-4 border-white shadow-md"
+                              className="w-24 h-24 rounded-3xl border-4 border-app-card shadow-md"
                               referrerPolicy="no-referrer"
                             />
                           ) : (
-                            <div className="w-24 h-24 rounded-3xl bg-zinc-100 flex items-center justify-center border border-zinc-200">
-                              <UserIcon className="w-10 h-10 text-zinc-400" />
+                            <div className="w-24 h-24 rounded-3xl bg-app-accent flex items-center justify-center border border-app-border">
+                              <UserIcon className="w-10 h-10 text-app-muted" />
                             </div>
                           )}
                         </div>
-                        <h2 className="text-2xl font-bold text-zinc-900">{profile?.display_name || user.displayName || 'Anoniem'}</h2>
-                        <p className="text-zinc-500 text-sm mt-1">{user.email}</p>
+                        <h2 className="text-2xl font-bold text-app-ink">{profile?.display_name || user.displayName || 'Anoniem'}</h2>
+                        <p className="text-app-muted text-sm mt-1">{user.email}</p>
                         
-                        <div className="mt-8 w-full pt-8 border-t border-zinc-100 space-y-4">
+                        <div className="mt-8 w-full pt-8 border-t border-app-border space-y-4">
                           <div className="flex justify-between text-sm">
-                            <span className="text-zinc-400">Lid sinds</span>
-                            <span className="text-zinc-600 font-medium">
+                            <span className="text-app-muted">Lid sinds</span>
+                            <span className="text-app-ink font-medium">
                               {profile ? formatDate(profile.created_at) : '...'}
                             </span>
                           </div>
                           <div className="flex justify-between text-sm">
-                            <span className="text-zinc-400">Status</span>
+                            <span className="text-app-muted">Status</span>
                             <span className="flex items-center gap-1.5 text-emerald-600 font-medium">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               Online
@@ -2652,8 +3241,8 @@ export default function App() {
                           </div>
                           {isAdmin && (
                             <div className="flex justify-between text-sm">
-                              <span className="text-zinc-400">Rol</span>
-                              <span className="flex items-center gap-1.5 text-zinc-900 font-bold">
+                              <span className="text-app-muted">Rol</span>
+                              <span className="flex items-center gap-1.5 text-app-ink font-bold">
                                 <ShieldCheck className="w-3.5 h-3.5" />
                                 Admin
                               </span>
@@ -2666,25 +3255,51 @@ export default function App() {
 
                   <div className="lg:col-span-2 space-y-6">
                     <div 
-                      className={`bg-white dark:bg-zinc-900 rounded-3xl p-4 sm:p-8 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      className={`bg-app-card rounded-3xl p-4 sm:p-8 border border-app-border shadow-sm transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
                       style={useCustomTheme ? { 
                         backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
                         color: customTheme.text_color
                       } : {}}
                     >
                       <div className="flex items-center gap-2 mb-6 sm:mb-8">
-                        <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-zinc-900" />
-                        <h3 className="text-lg sm:text-xl font-bold text-zinc-900">Forum Feed</h3>
+                        <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-app-ink" />
+                        <h3 className="text-lg sm:text-xl font-bold text-app-ink">General Chat</h3>
                       </div>
 
                       <form onSubmit={handleCreatePost} className="mb-6 sm:mb-10 relative pt-6 sm:pt-8">
                         <AnimatePresence>
+                          {replyingTo && (
+                            <motion.div 
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 10 }}
+                              className="mb-3 flex items-center justify-between bg-app-accent/50 border border-app-border p-3 rounded-xl backdrop-blur-sm"
+                            >
+                              <div className="flex items-center gap-2 overflow-hidden">
+                                <div className="w-1 h-8 bg-app-ink rounded-full flex-shrink-0" />
+                                <div className="overflow-hidden">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest">Reageren op {replyingTo.author_name}</p>
+                                    <span className="text-[10px] text-app-muted/40">•</span>
+                                    <p className="text-[10px] text-app-muted italic truncate max-w-[150px]">"{replyingTo.content}"</p>
+                                  </div>
+                                  <p className="text-xs text-app-ink font-medium">Typ je reactie hieronder...</p>
+                                </div>
+                              </div>
+                              <button 
+                                onClick={() => setReplyingTo(null)}
+                                className="p-1.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </motion.div>
+                          )}
                           {typingStatuses['forum']?.length > 0 && (
                             <motion.div 
                               initial={{ opacity: 0, y: 5 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 5 }}
-                              className="absolute top-0 left-0 flex items-center gap-2 text-[8px] sm:text-[10px] font-bold text-emerald-700 uppercase tracking-widest bg-emerald-100 border border-emerald-200 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-sm z-10"
+                              className="absolute top-0 left-0 flex items-center gap-2 text-[8px] sm:text-[10px] font-bold text-emerald-700 uppercase tracking-widest bg-emerald-100/80 border border-emerald-200 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-sm z-10 backdrop-blur-sm"
                             >
                               <div className="flex gap-0.5 sm:gap-1">
                                 <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-emerald-500 rounded-full" />
@@ -2704,13 +3319,13 @@ export default function App() {
                             onChange={(e) => handleTyping(e, 'forum')}
                             placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Deel een bericht..."}
                             disabled={cooldownRemaining > 0}
-                            className="w-full pl-4 sm:pl-6 pr-14 sm:pr-16 py-3 sm:py-4 bg-zinc-50 border border-zinc-200 rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base"
+                            className="w-full pl-4 sm:pl-6 pr-14 sm:pr-16 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
                             maxLength={1000}
                           />
                           <button 
                             type="submit"
                             disabled={sending || !postInput.trim() || cooldownRemaining > 0}
-                            className="absolute right-1.5 top-1.5 p-2 sm:p-2.5 bg-zinc-900 text-white rounded-lg sm:rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-all"
+                            className="absolute right-1.5 top-1.5 p-2 sm:p-2.5 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all"
                           >
                             {sending ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-4 h-4 sm:w-5 sm:h-5" />}
                           </button>
@@ -2720,7 +3335,7 @@ export default function App() {
                       <div className="space-y-4 sm:space-y-6">
                         {posts.length === 0 ? (
                           <div className="text-center py-10">
-                            <p className="text-zinc-400 text-xs sm:text-sm">Nog geen berichten. Deel als eerste iets!</p>
+                            <p className="text-app-muted text-xs sm:text-sm">Nog geen berichten. Deel als eerste iets!</p>
                           </div>
                         ) : (
                           posts.map((post) => (
@@ -2729,13 +3344,14 @@ export default function App() {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               key={post.id}
-                              className="flex gap-3 sm:gap-4 group bg-white p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-zinc-100 shadow-sm hover:shadow-md transition-all"
+                              id={`post-${post.id}`}
+                              className={`flex gap-3 sm:gap-4 group bg-app-card p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-app-border shadow-sm hover:shadow-md transition-all relative`}
                             >
                               <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0">
                                 {post.author_photo ? (
                                   <button 
                                     onClick={() => handleOpenProfile(post.author_id)}
-                                    className="w-full h-full rounded-full overflow-hidden border border-zinc-200 object-cover hover:ring-2 hover:ring-zinc-900 transition-all"
+                                    className="w-full h-full rounded-full overflow-hidden border border-app-border object-cover hover:ring-2 hover:ring-app-ink transition-all"
                                   >
                                     <img 
                                       src={post.author_photo} 
@@ -2747,9 +3363,9 @@ export default function App() {
                                 ) : (
                                   <button 
                                     onClick={() => handleOpenProfile(post.author_id)}
-                                    className="w-full h-full rounded-full bg-zinc-100 flex items-center justify-center border border-zinc-200 hover:ring-2 hover:ring-zinc-900 transition-all"
+                                    className="w-full h-full rounded-full bg-app-accent flex items-center justify-center border border-app-border hover:ring-2 hover:ring-app-ink transition-all"
                                   >
-                                    <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-zinc-400" />
+                                    <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-app-muted" />
                                   </button>
                                 )}
                               </div>
@@ -2758,19 +3374,26 @@ export default function App() {
                                   <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                                     <button 
                                       onClick={() => handleOpenProfile(post.author_id)}
-                                      className="font-bold text-sm sm:text-base text-zinc-900 truncate hover:underline text-left"
+                                      className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
                                     >
                                       {post.author_name}
                                     </button>
-                                    <span className="text-[10px] sm:text-xs text-zinc-400 font-medium whitespace-nowrap">
-                                      {formatDate(post.created_at)}
+                                    <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
+                                      {formatDate(post.created_at)} om {formatTime(post.created_at)}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                      onClick={() => setReplyingTo(post)}
+                                      className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
+                                      title="Reageren"
+                                    >
+                                      <MessageSquare className="w-4 h-4" />
+                                    </button>
                                     {user.uid !== post.author_id && (
                                       <button 
                                         onClick={() => handleOpenReport('post', post.id, post.author_id, post.author_name)}
-                                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                        className="p-2 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                                         title="Rapporteer post"
                                       >
                                         <Flag className="w-4 h-4" />
@@ -2783,14 +3406,14 @@ export default function App() {
                                             setEditingPostId(post.id);
                                             setEditPostInput(post.content);
                                           }}
-                                          className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition-all"
+                                          className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
                                           title="Bewerken"
                                         >
                                           <Pencil className="w-4 h-4" />
                                         </button>
                                         <button 
                                           onClick={() => handleDeletePost(post.id)}
-                                          className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                          className="p-2 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                                           title="Verwijderen"
                                         >
                                           <Trash2 className="w-4 h-4" />
@@ -2800,7 +3423,7 @@ export default function App() {
                                     {user.uid !== post.author_id && (
                                       <button 
                                         onClick={() => handleStartConversation({ id: post.author_id, display_name: post.author_name })}
-                                        className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition-all"
+                                        className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
                                         title="Stuur bericht"
                                       >
                                         <Mail className="w-4 h-4" />
@@ -2808,31 +3431,32 @@ export default function App() {
                                     )}
                                   </div>
                                 </div>
+                                
                                 {editingPostId === post.id ? (
                                   <div className="mt-3 flex gap-2">
                                     <input 
                                       type="text"
                                       value={editPostInput}
                                       onChange={(e) => setEditPostInput(e.target.value)}
-                                      className="flex-1 px-3 py-2 sm:px-4 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all text-sm"
+                                      className="flex-1 px-3 py-2 sm:px-4 sm:py-3 bg-app-bg border border-app-border rounded-lg sm:rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink"
                                       autoFocus
                                     />
                                     <button 
                                       onClick={() => handleUpdatePost(post.id)}
                                       disabled={saving || !editPostInput.trim()}
-                                      className="p-2 sm:p-3 bg-zinc-900 text-white rounded-lg sm:rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-all"
+                                      className="p-2 sm:p-3 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all"
                                     >
                                       {saving ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Check className="w-4 h-4 sm:w-5 sm:h-5" />}
                                     </button>
                                     <button 
                                       onClick={() => setEditingPostId(null)}
-                                      className="p-2 sm:p-3 bg-zinc-100 text-zinc-500 rounded-lg sm:rounded-xl hover:bg-zinc-200 transition-all"
+                                      className="p-2 sm:p-3 bg-app-accent text-app-muted rounded-lg sm:rounded-xl hover:opacity-90 transition-all"
                                     >
                                       <X className="w-4 h-4 sm:w-5 sm:h-5" />
                                     </button>
                                   </div>
                                 ) : (
-                                  <div className="text-zinc-700 text-sm sm:text-base leading-relaxed break-words">
+                                  <div className="text-app-ink text-sm sm:text-base leading-relaxed break-words">
                                     <RichContent content={post.content} />
                                   </div>
                                 )}
@@ -2842,25 +3466,240 @@ export default function App() {
                         )}
                       </div>
                     </div>
+                    
+                    {posts.length > 5 && (
+                      <button 
+                        onClick={() => {
+                          const forumContainer = document.querySelector('.forum-scroll-container');
+                          if (forumContainer) {
+                            forumContainer.scrollTo({ top: 0, behavior: 'smooth' });
+                          } else {
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }
+                        }}
+                        className="absolute bottom-8 right-8 p-3 bg-app-ink text-app-bg rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all z-40 border border-app-border/20"
+                        title="Terug naar boven"
+                      >
+                        <ChevronLeft className="w-5 h-5 rotate-90" />
+                      </button>
+                    )}
                   </div>
+                </div>
+              )}
+
+              {view === 'forum' && (
+                <div className="space-y-8">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl sm:text-3xl font-black text-app-ink tracking-tight">Community Forum</h2>
+                      <p className="text-app-muted text-sm mt-1">Deel je gedachten, stel vragen en help anderen.</p>
+                    </div>
+                    <button 
+                      onClick={() => setIsCreatingThread(true)}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-app-ink text-app-bg rounded-xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg"
+                    >
+                      <Plus className="w-5 h-5" />
+                      Nieuw Topic
+                    </button>
+                  </div>
+
+                  {activeThread ? (
+                    <div className="space-y-6">
+                      <button 
+                        onClick={() => setActiveThread(null)}
+                        className="flex items-center gap-2 text-app-muted hover:text-app-ink transition-colors font-bold text-sm uppercase tracking-wider"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        Terug naar overzicht
+                      </button>
+
+                      <div className="bg-app-card rounded-3xl border border-app-border shadow-sm overflow-hidden">
+                        <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5">
+                          <div className="flex items-center gap-3 mb-4">
+                            {(activeThread.author_photo) ? (
+                              <img src={activeThread.author_photo} alt="" className="w-8 h-8 rounded-full border border-app-border" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
+                                <UserIcon className="w-4 h-4 text-app-muted" />
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 text-xs text-app-muted">
+                              <span className="font-bold text-app-ink">{activeThread.author_name}</span>
+                              <span>•</span>
+                              <span>{formatDate(activeThread.created_at)}</span>
+                            </div>
+                          </div>
+                          <h1 className="text-2xl sm:text-3xl font-black text-app-ink mb-4 leading-tight">{activeThread.title}</h1>
+                          <div className="text-app-ink text-base sm:text-lg leading-relaxed whitespace-pre-wrap">
+                            <RichContent content={activeThread.content} />
+                          </div>
+                        </div>
+
+                        <div className="p-6 sm:p-8 space-y-8">
+                          <div className="space-y-4">
+                            <h3 className="font-bold text-app-ink flex items-center gap-2">
+                              <MessageSquare className="w-5 h-5" />
+                              Reacties ({threadComments.length})
+                            </h3>
+                            <div className="relative">
+                              <textarea 
+                                value={commentInput}
+                                onChange={(e) => setCommentInput(e.target.value)}
+                                placeholder="Wat vind jij hiervan?"
+                                className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[120px] resize-none"
+                              />
+                              <button 
+                                onClick={() => handleCreateComment(activeThread.id)}
+                                disabled={sending || !commentInput.trim()}
+                                className="absolute bottom-4 right-4 px-6 py-2 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all"
+                              >
+                                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Plaatsen'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-6">
+                            {threadComments.length === 0 ? (
+                              <div className="text-center py-12 bg-app-accent/5 rounded-2xl border border-dashed border-app-border">
+                                <p className="text-app-muted text-sm">Nog geen reacties. Wees de eerste!</p>
+                              </div>
+                            ) : (
+                              threadComments.map(comment => (
+                                <div key={comment.id} className="flex gap-4 group">
+                                  <div className="w-10 h-10 flex-shrink-0">
+                                    {comment.author_photo ? (
+                                      <img src={comment.author_photo} alt="" className="w-full h-full rounded-full border border-app-border object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full rounded-full bg-app-accent flex items-center justify-center border border-app-border">
+                                        <UserIcon className="w-5 h-5 text-app-muted" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex items-center gap-2 text-xs">
+                                      <span className="font-bold text-app-ink">{comment.author_name}</span>
+                                      <span className="text-app-muted">{formatDate(comment.created_at)}</span>
+                                    </div>
+                                    <div className="text-app-ink text-sm sm:text-base leading-relaxed bg-app-accent/5 p-4 rounded-2xl border border-app-border/50">
+                                      <RichContent content={comment.content} />
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {isCreatingThread && (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="bg-app-card rounded-3xl p-6 sm:p-8 border-2 border-app-ink shadow-xl space-y-6"
+                        >
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-black text-app-ink">Nieuw Topic Starten</h3>
+                            <button onClick={() => setIsCreatingThread(false)} className="p-2 hover:bg-app-accent rounded-full transition-colors">
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
+                          <div className="space-y-4">
+                            <input 
+                              type="text"
+                              value={threadTitleInput}
+                              onChange={(e) => setThreadTitleInput(e.target.value)}
+                              placeholder="Titel van je topic"
+                              className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all font-bold text-lg text-app-ink"
+                            />
+                            <textarea 
+                              value={threadContentInput}
+                              onChange={(e) => setThreadContentInput(e.target.value)}
+                              placeholder="Waar wil je het over hebben?"
+                              className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[200px] resize-none"
+                            />
+                            <div className="flex justify-end gap-3">
+                              <button 
+                                onClick={() => setIsCreatingThread(false)}
+                                className="px-6 py-2.5 bg-app-accent text-app-muted rounded-xl font-bold hover:bg-app-border transition-all"
+                              >
+                                Annuleren
+                              </button>
+                              <button 
+                                onClick={handleCreateThread}
+                                disabled={sending || !threadTitleInput.trim() || !threadContentInput.trim()}
+                                className="px-8 py-2.5 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg"
+                              >
+                                {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Topic Publiceren'}
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {threads.length === 0 ? (
+                        <div className="text-center py-20 bg-app-card rounded-3xl border border-dashed border-app-border">
+                          <Layout className="w-12 h-12 text-app-muted mx-auto mb-4 opacity-20" />
+                          <p className="text-app-muted font-medium">Nog geen topics gevonden. Start jij de eerste?</p>
+                        </div>
+                      ) : (
+                        threads.map(thread => (
+                          <motion.div 
+                            key={thread.id}
+                            layout
+                            onClick={() => handleOpenThread(thread)}
+                            className="bg-app-card p-6 sm:p-8 rounded-3xl border border-app-border shadow-sm hover:shadow-md hover:border-app-ink/20 transition-all cursor-pointer group"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="space-y-3 flex-1">
+                                <div className="flex items-center gap-2 text-xs text-app-muted">
+                                  <span className="font-bold text-app-ink">{thread.author_name}</span>
+                                  <span>•</span>
+                                  <span>{formatDate(thread.created_at)}</span>
+                                </div>
+                                <h3 className="text-xl font-black text-app-ink group-hover:text-app-ink/80 transition-colors leading-tight">{thread.title}</h3>
+                                <p className="text-app-muted text-sm line-clamp-2 leading-relaxed">{thread.content}</p>
+                                <div className="flex items-center gap-4 pt-2">
+                                  <div className="flex items-center gap-1.5 text-xs font-bold text-app-muted">
+                                    <MessageSquare className="w-4 h-4" />
+                                    {thread.comment_count || 0} reacties
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-xs font-bold text-app-muted">
+                                    <Clock className="w-4 h-4" />
+                                    Laatste update {formatDate(thread.updated_at)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="hidden sm:block">
+                                <div className="p-3 bg-app-accent rounded-2xl group-hover:bg-app-ink group-hover:text-app-bg transition-all">
+                                  <ChevronLeft className="w-5 h-5 rotate-180" />
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
               {view === 'messages' && (
                 <div 
-                  className={`bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden h-[calc(100vh-12rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                  className={`bg-app-card rounded-3xl border border-app-border shadow-sm overflow-hidden h-[calc(100vh-12rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
                   style={useCustomTheme ? { 
                     backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
                     color: customTheme.text_color
                   } : {}}
                 >
                   {/* Conversations List */}
-                  <div className={`${mobileChatView === 'chat' ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 border-r border-zinc-100 dark:border-zinc-800 flex-col bg-zinc-50/50 dark:bg-zinc-900/50`}>
-                    <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-                      <h3 className="font-bold text-lg dark:text-zinc-100">Berichten</h3>
+                  <div className={`${mobileChatView === 'chat' ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 border-r border-app-border flex-col bg-app-bg/50`}>
+                    <div className="p-6 border-b border-app-border flex items-center justify-between">
+                      <h3 className="font-bold text-lg text-app-ink">Berichten</h3>
                       <button 
                         onClick={() => setShowUserSearch(true)}
-                        className="p-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl hover:scale-105 transition-all active:scale-95"
+                        className="p-2 bg-app-ink text-app-bg rounded-xl hover:scale-105 transition-all active:scale-95"
                       >
                         <Plus className="w-4 h-4" />
                       </button>
@@ -2879,40 +3718,40 @@ export default function App() {
                             }}
                             className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all text-left group ${
                               isActive 
-                                ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-lg shadow-zinc-900/10 dark:shadow-white/5' 
-                                : 'hover:bg-white dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+                                ? 'bg-app-ink text-app-bg shadow-lg shadow-app-ink/10' 
+                                : 'hover:bg-app-accent text-app-muted hover:text-app-ink'
                             }`}
                           >
                             <div className="relative">
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all duration-300 ${isActive ? 'bg-white/20 scale-110' : 'bg-zinc-200 dark:bg-zinc-800 group-hover:scale-105'}`}>
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all duration-300 ${isActive ? 'bg-app-bg/20 scale-110' : 'bg-app-accent group-hover:scale-105'}`}>
                                 {conv.participant_photos[otherParticipantUid || ''] ? (
                                   <img src={conv.participant_photos[otherParticipantUid || '']} alt="" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />
                                 ) : (
-                                  <UserIcon className={`w-6 h-6 ${isActive ? 'text-white dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`} />
+                                  <UserIcon className={`w-6 h-6 ${isActive ? 'text-app-bg' : 'text-app-muted'}`} />
                                 )}
                               </div>
                               {otherParticipantUid && onlineUsers.has(otherParticipantUid) && (
-                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full shadow-sm" />
+                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-app-card rounded-full shadow-sm" />
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex justify-between items-start mb-1">
                                 <p className="font-bold text-sm truncate">{otherParticipantName}</p>
-                                <p className={`text-[10px] font-medium ${isActive ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-400'}`}>
+                                <p className={`text-[10px] font-medium ${isActive ? 'opacity-60' : 'text-app-muted'}`}>
                                   {formatDate(conv.updated_at)}
                                 </p>
                               </div>
                               {typingStatuses[conv.id]?.length > 0 ? (
                                 <div className="flex items-center gap-1.5">
                                   <div className="flex gap-0.5">
-                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-white dark:bg-zinc-900' : 'bg-emerald-500'}`} />
-                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-white dark:bg-zinc-900' : 'bg-emerald-500'}`} />
-                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-white dark:bg-zinc-900' : 'bg-emerald-500'}`} />
+                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-app-bg' : 'bg-emerald-500'}`} />
+                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-app-bg' : 'bg-emerald-500'}`} />
+                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-app-bg' : 'bg-emerald-500'}`} />
                                   </div>
-                                  <p className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-white dark:text-zinc-900' : 'text-emerald-500'}`}>Typen...</p>
+                                  <p className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-app-bg' : 'text-emerald-500'}`}>Typen...</p>
                                 </div>
                               ) : (
-                                <p className={`text-xs truncate ${isActive ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>{conv.last_message || 'Geen berichten'}</p>
+                                <p className={`text-xs truncate ${isActive ? 'opacity-70' : 'text-app-muted'}`}>{conv.last_message || 'Geen berichten'}</p>
                               )}
                             </div>
                           </button>
@@ -2920,11 +3759,11 @@ export default function App() {
                       })}
                       {conversations.length === 0 && (
                         <div className="p-12 text-center">
-                          <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-3xl flex items-center justify-center mx-auto mb-4">
-                            <Mail className="w-8 h-8 text-zinc-300 dark:text-zinc-600" />
+                          <div className="w-16 h-16 bg-app-accent rounded-3xl flex items-center justify-center mx-auto mb-4">
+                            <Mail className="w-8 h-8 text-app-muted" />
                           </div>
-                          <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-1">Geen gesprekken</p>
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400">Start een nieuw gesprek om te chatten.</p>
+                          <p className="text-sm font-bold text-app-ink mb-1">Geen gesprekken</p>
+                          <p className="text-xs text-app-muted">Start een nieuw gesprek om te chatten.</p>
                         </div>
                       )}
                     </div>
@@ -2932,13 +3771,13 @@ export default function App() {
 
                   {/* Active Conversation */}
                   <div 
-                    className={`${mobileChatView === 'chat' ? 'flex' : 'hidden sm:flex'} flex-grow flex-col transition-all duration-500 bg-zinc-50 dark:bg-zinc-950`}
+                    className={`${mobileChatView === 'chat' ? 'flex' : 'hidden sm:flex'} flex-grow flex-col transition-all duration-500 bg-app-bg/50`}
                     style={useCustomTheme ? { backgroundColor: customTheme.body_bg_color ? `${customTheme.body_bg_color}80` : 'rgba(249, 250, 251, 0.5)' } : {}}
                   >
                     {activeConversation ? (
                       <>
                         <div 
-                          className="p-4 sm:p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md sticky top-0 z-10 transition-all duration-500"
+                          className="p-4 sm:p-6 border-b border-app-border flex items-center justify-between bg-app-card/80 backdrop-blur-md sticky top-0 z-10 transition-all duration-500"
                           style={useCustomTheme ? { 
                             backgroundColor: customTheme.header_bg_color,
                             borderColor: customTheme.card_bg_color ? `${customTheme.card_bg_color}20` : 'rgba(244, 244, 245, 1)'
@@ -2947,11 +3786,11 @@ export default function App() {
                           <div className="flex items-center gap-3">
                             <button 
                               onClick={() => setMobileChatView('list')}
-                              className="sm:hidden p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors text-zinc-500"
+                              className="sm:hidden p-2 hover:bg-app-accent rounded-xl transition-colors text-app-muted"
                             >
                               <ChevronLeft className="w-6 h-6" />
                             </button>
-                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border border-zinc-200 dark:border-zinc-800 transition-all duration-500 overflow-hidden bg-white dark:bg-zinc-800"
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border border-app-border transition-all duration-500 overflow-hidden bg-app-card"
                               style={useCustomTheme ? { 
                                 backgroundColor: customTheme.card_bg_color,
                                 borderColor: customTheme.accent_color ? `${customTheme.accent_color}20` : 'rgba(228, 228, 231, 1)'
@@ -3023,8 +3862,8 @@ export default function App() {
                                 <div 
                                   className={`max-w-[80%] p-4 rounded-3xl text-[15px] leading-relaxed relative shadow-sm transition-all duration-500 ${
                                     isMe 
-                                      ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-br-lg' 
-                                      : 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 rounded-bl-lg'
+                                      ? 'bg-app-ink text-app-bg rounded-br-lg' 
+                                      : 'bg-app-card text-app-ink border border-app-border rounded-bl-lg'
                                   }`}
                                   style={useCustomTheme ? {
                                     backgroundColor: isMe ? customTheme.primary_color : customTheme.card_bg_color,
@@ -3040,7 +3879,7 @@ export default function App() {
                                         className={`w-full p-3 rounded-xl text-sm focus:ring-2 outline-none resize-none transition-all duration-500 ${
                                           isMe 
                                             ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/40 focus:ring-white/50' 
-                                            : 'bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:ring-zinc-200'
+                                            : 'bg-app-card border border-app-border text-app-ink focus:ring-app-ink'
                                         }`}
                                         rows={3}
                                         autoFocus
@@ -3049,7 +3888,7 @@ export default function App() {
                                         <button 
                                           onClick={() => setEditingMessageId(null)}
                                           className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
-                                            isMe ? 'hover:bg-white/10 text-white/70 hover:text-white' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+                                            isMe ? 'hover:bg-white/10 text-white/70 hover:text-white' : 'hover:bg-app-accent text-app-muted hover:text-app-ink'
                                           }`}
                                         >
                                           Annuleren
@@ -3058,7 +3897,7 @@ export default function App() {
                                           onClick={() => handleUpdateMessage(msg.id)}
                                           disabled={saving || !editMessageInput.trim()}
                                           className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
-                                            isMe ? 'bg-white text-zinc-900 hover:bg-zinc-200' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:opacity-90'
+                                            isMe ? 'bg-white text-app-ink hover:bg-zinc-200' : 'bg-app-ink text-app-bg hover:opacity-90'
                                           }`}
                                           style={useCustomTheme ? {
                                             backgroundColor: isMe ? '#ffffff' : customTheme.primary_color,
@@ -3108,7 +3947,7 @@ export default function App() {
                         </div>
  
                         <div 
-                          className="p-6 border-t border-zinc-200 dark:border-zinc-800 relative pt-14 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md transition-all duration-500"
+                          className="p-6 border-t border-app-border relative pt-14 bg-app-card/80 backdrop-blur-md transition-all duration-500"
                           style={useCustomTheme ? { 
                             backgroundColor: customTheme.header_bg_color,
                             borderColor: customTheme.card_bg_color ? `${customTheme.card_bg_color}20` : 'rgba(244, 244, 245, 1)'
@@ -3120,7 +3959,7 @@ export default function App() {
                                 initial={{ opacity: 0, y: 10, scale: 0.9 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                                className="absolute top-4 left-6 flex items-center gap-2.5 text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-[0.15em] bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/50 px-4 py-1.5 rounded-full shadow-sm z-10"
+                                className="absolute top-4 left-6 flex items-center gap-2.5 text-[10px] font-black text-emerald-700 uppercase tracking-[0.15em] bg-emerald-50/80 border border-emerald-200 px-4 py-1.5 rounded-full shadow-sm z-10 backdrop-blur-sm"
                               >
                                 <div className="flex gap-1">
                                   <motion.span animate={{ scale: [1, 1.4, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
@@ -3141,7 +3980,7 @@ export default function App() {
                                 onChange={(e) => handleTyping(e, activeConversation.id)}
                                 placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Typ een bericht..."}
                                 disabled={cooldownRemaining > 0}
-                                className="w-full p-4 pr-12 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl transition-all outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 focus:border-transparent disabled:opacity-50 shadow-sm dark:text-zinc-100"
+                                className="w-full p-4 pr-12 bg-app-bg border border-app-border rounded-2xl transition-all outline-none focus:ring-2 focus:ring-app-ink focus:border-transparent disabled:opacity-50 shadow-sm text-app-ink"
                                 style={useCustomTheme ? { 
                                   backgroundColor: customTheme.card_bg_color,
                                   borderColor: customTheme.accent_color ? `${customTheme.accent_color}20` : undefined,
@@ -3152,7 +3991,7 @@ export default function App() {
                             <button 
                               type="submit"
                               disabled={!messageInput.trim() || cooldownRemaining > 0}
-                              className="p-4 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl disabled:opacity-50 transition-all active:scale-90 hover:scale-105 shadow-lg shadow-zinc-900/10 dark:shadow-white/5"
+                              className="p-4 bg-app-ink text-app-bg rounded-2xl disabled:opacity-50 transition-all active:scale-90 hover:scale-105 shadow-lg"
                               style={useCustomTheme ? { backgroundColor: customTheme.primary_color } : {}}
                             >
                               <Send className="w-5 h-5" />
@@ -3263,7 +4102,7 @@ export default function App() {
 
                     {/* Content Area */}
                     <div 
-                      className={`flex-1 bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col h-full max-h-[calc(100vh-20rem)] sm:max-h-[calc(100vh-16rem)] transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      className={`flex-1 bg-app-card rounded-[2rem] border border-app-border shadow-sm overflow-hidden flex flex-col h-full max-h-[calc(100vh-20rem)] sm:max-h-[calc(100vh-16rem)] transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
                       style={useCustomTheme ? { 
                         backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
                         color: customTheme.text_color
@@ -3273,10 +4112,10 @@ export default function App() {
                         {settingsTab === 'profile' && (
                           <div className="space-y-8 max-w-2xl">
                             <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl">
-                                <UserCog className="w-6 h-6 text-zinc-900 dark:text-zinc-100" />
+                              <div className="p-3 bg-app-accent rounded-2xl">
+                                <UserCog className="w-6 h-6 text-app-ink" />
                               </div>
-                              <h3 className="text-xl font-bold dark:text-zinc-100">Profiel Aanpassen</h3>
+                              <h3 className="text-xl font-bold text-app-ink">Profiel Aanpassen</h3>
                             </div>
 
                             <div className="space-y-6">
@@ -3296,10 +4135,10 @@ export default function App() {
                                 </div>
                                 <div className="flex-1">
                                   <div className="flex items-center justify-between mb-2">
-                                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Nickname</label>
+                                    <label className="block text-xs font-bold text-app-muted uppercase tracking-widest">Nickname</label>
                                     <button 
                                       onClick={handleResetToGoogle}
-                                      className="text-[10px] font-bold text-zinc-900 uppercase tracking-widest hover:underline flex items-center gap-1"
+                                      className="text-[10px] font-bold text-app-ink uppercase tracking-widest hover:underline flex items-center gap-1"
                                     >
                                       <Sparkles className="w-3 h-3" />
                                       Reset naar Google
@@ -3310,15 +4149,15 @@ export default function App() {
                                     value={displayNameInput}
                                     onChange={(e) => setDisplayNameInput(e.target.value)}
                                     placeholder="Kies een bijnaam..."
-                                    className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all outline-none font-medium"
+                                    className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all outline-none font-medium text-app-ink"
                                   />
                                 </div>
                               </div>
 
                               <div>
                                 <div className="flex items-center justify-between mb-2 ml-1">
-                                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Profielfoto URL</label>
-                                  <label className="cursor-pointer text-[10px] font-bold text-zinc-900 uppercase tracking-widest hover:underline flex items-center gap-1">
+                                  <label className="block text-xs font-bold text-app-muted uppercase tracking-widest">Profielfoto URL</label>
+                                  <label className="cursor-pointer text-[10px] font-bold text-app-ink uppercase tracking-widest hover:underline flex items-center gap-1">
                                     <Upload className="w-3 h-3" />
                                     Upload Foto
                                     <input 
@@ -3334,22 +4173,22 @@ export default function App() {
                                   value={photoURLInput}
                                   onChange={(e) => setPhotoURLInput(e.target.value)}
                                   placeholder="https://example.com/photo.jpg"
-                                  className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all outline-none font-medium"
+                                  className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all outline-none font-medium text-app-ink"
                                 />
                               </div>
 
                               <div>
-                                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Over Mij (Bio)</label>
+                                <label className="block text-xs font-bold text-app-muted uppercase tracking-widest mb-2 ml-1">Over Mij (Bio)</label>
                                 <textarea 
                                   value={bioInput}
                                   onChange={(e) => setBioInput(e.target.value)}
                                   placeholder="Vertel iets over jezelf..."
                                   rows={4}
-                                  className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all outline-none font-medium resize-none"
+                                  className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all outline-none font-medium resize-none text-app-ink"
                                   maxLength={500}
                                 />
                                 <div className="flex justify-end mt-1">
-                                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-tighter">{bioInput.length}/500</span>
+                                  <span className="text-[10px] text-app-muted font-bold uppercase tracking-tighter">{bioInput.length}/500</span>
                                 </div>
                               </div>
 
@@ -3368,27 +4207,46 @@ export default function App() {
                         {settingsTab === 'notifications' && (
                           <div className="space-y-8 max-w-2xl">
                             <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-zinc-100 rounded-2xl">
-                                <Bell className="w-6 h-6 text-zinc-900" />
+                              <div className="p-3 bg-app-accent rounded-2xl">
+                                <Bell className="w-6 h-6 text-app-ink" />
                               </div>
-                              <h3 className="text-xl font-bold">Meldingen & Geluiden</h3>
+                              <h3 className="text-xl font-bold text-app-ink">Meldingen & Geluiden</h3>
                             </div>
 
                             <div className="space-y-6">
-                              <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                              <div className="flex items-center justify-between p-4 bg-app-bg rounded-2xl border border-app-border">
                                 <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-white rounded-xl shadow-sm">
-                                    {notificationSettings.enable_sounds ? <Volume2 className="w-4 h-4 text-zinc-900" /> : <VolumeX className="w-4 h-4 text-zinc-400" />}
+                                  <div className="p-2 bg-app-card rounded-xl shadow-sm">
+                                    <MessageSquare className="w-4 h-4 text-app-ink" />
                                   </div>
                                   <div>
-                                    <p className="text-sm font-bold">Geluiden inschakelen</p>
-                                    <p className="text-xs text-zinc-500">Speel een geluid af bij nieuwe meldingen</p>
+                                    <p className="text-sm font-bold text-app-ink">Vermeldingen</p>
+                                    <p className="text-xs text-app-muted">Ontvang meldingen wanneer je wordt genoemd (@naam)</p>
+                                  </div>
+                                </div>
+                                <button 
+                                  onClick={() => setNotificationSettings(prev => ({ ...prev, notify_mentions: !prev.notify_mentions }))}
+                                  className="w-12 h-6 rounded-full transition-all relative"
+                                  style={{ backgroundColor: notificationSettings.notify_mentions ? (customTheme.accent_color || 'var(--accent)') : 'var(--card-border)' }}
+                                >
+                                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notificationSettings.notify_mentions ? 'left-7' : 'left-1'}`} />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-between p-4 bg-app-bg rounded-2xl border border-app-border">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2 bg-app-card rounded-xl shadow-sm">
+                                    {notificationSettings.enable_sounds ? <Volume2 className="w-4 h-4 text-app-ink" /> : <VolumeX className="w-4 h-4 text-app-muted" />}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-app-ink">Geluiden inschakelen</p>
+                                    <p className="text-xs text-app-muted">Speel een geluid af bij nieuwe meldingen</p>
                                   </div>
                                 </div>
                                 <button 
                                   onClick={() => setNotificationSettings(prev => ({ ...prev, enable_sounds: !prev.enable_sounds }))}
                                   className="w-12 h-6 rounded-full transition-all relative"
-                                  style={{ backgroundColor: notificationSettings.enable_sounds ? customTheme.accent_color : '#e4e4e7' }}
+                                  style={{ backgroundColor: notificationSettings.enable_sounds ? (customTheme.accent_color || 'var(--accent)') : 'var(--card-border)' }}
                                 >
                                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notificationSettings.enable_sounds ? 'left-7' : 'left-1'}`} />
                                 </button>
@@ -3396,26 +4254,39 @@ export default function App() {
 
                               <div className="space-y-4">
                                 <div className="space-y-3">
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Custom Geluid Toevoegen</label>
+                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Custom Geluid Toevoegen</label>
                                   <div className="flex flex-col sm:flex-row gap-2">
                                     <input 
                                       type="text" 
                                       placeholder="Naam (bv. Mijn Geluid)"
                                       value={newSoundName}
                                       onChange={(e) => setNewSoundName(e.target.value)}
-                                      className="flex-1 p-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-zinc-900"
+                                      className="flex-1 p-2.5 bg-app-bg border border-app-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-app-ink text-app-ink"
                                     />
-                                    <input 
-                                      type="text" 
-                                      placeholder="URL (mp3/wav)"
-                                      value={newSoundUrl}
-                                      onChange={(e) => setNewSoundUrl(e.target.value)}
-                                      className="flex-[2] p-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-zinc-900"
-                                    />
+                                    <div className="flex-1 flex gap-2">
+                                      <input 
+                                        type="text" 
+                                        placeholder="URL (mp3/wav)"
+                                        value={newSoundUrl}
+                                        onChange={(e) => setNewSoundUrl(e.target.value)}
+                                        className="flex-1 p-2.5 bg-app-bg border border-app-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-app-ink text-app-ink"
+                                      />
+                                      <button 
+                                        onClick={() => {
+                                          if (!newSoundUrl) return toast.error('Vul eerst een URL in');
+                                          playSound(newSoundUrl, true);
+                                          toast.info('Geluid testen...');
+                                        }}
+                                        className="px-3 bg-app-card border border-app-border rounded-xl hover:bg-app-accent transition-colors"
+                                        title="Test geluid"
+                                      >
+                                        <Play className="w-3 h-3 text-app-ink" />
+                                      </button>
+                                    </div>
                                     <button 
                                       onClick={handleAddCustomSound}
                                       disabled={uploadingSound}
-                                      className="px-4 py-2.5 bg-zinc-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                      className="px-4 py-2.5 bg-app-ink text-app-bg rounded-xl font-bold text-[10px] uppercase tracking-widest hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
                                       {uploadingSound ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                                       Toevoegen
@@ -3426,14 +4297,14 @@ export default function App() {
                                 {customSounds.length > 0 && (
                                   <div className="flex flex-wrap gap-2">
                                     {customSounds.map((sound, idx) => (
-                                      <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl group">
+                                      <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-app-card border border-app-border rounded-xl group">
                                         <button 
                                           onClick={() => playSound(sound.url, true)}
-                                          className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                                          className="p-1 hover:bg-app-accent rounded-lg transition-colors"
                                         >
-                                          <Volume2 className="w-3 h-3" />
+                                          <Volume2 className="w-3 h-3 text-app-ink" />
                                         </button>
-                                        <span className="text-xs font-medium truncate max-w-[100px]">{sound.name}</span>
+                                        <span className="text-xs font-medium truncate max-w-[100px] text-app-ink">{sound.name}</span>
                                         <button 
                                           onClick={async () => {
                                             const updated = customSounds.filter((_, i) => i !== idx);
@@ -3441,7 +4312,7 @@ export default function App() {
                                             await supabaseClient.from('profiles').update({ custom_sounds: updated }).eq('id', user.uid);
                                             toast.info('Geluid verwijderd');
                                           }}
-                                          className="p-1 hover:bg-red-50 text-zinc-400 hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                          className="p-1 hover:bg-red-50 text-app-muted hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                                         >
                                           <X className="w-3 h-3" />
                                         </button>
@@ -3453,7 +4324,7 @@ export default function App() {
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Bericht Geluid</label>
+                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Bericht Geluid</label>
                                   <select 
                                     value={notificationSettings.message_sound}
                                     onChange={(e) => {
@@ -3461,7 +4332,7 @@ export default function App() {
                                       setNotificationSettings(prev => ({ ...prev, message_sound: soundUrl }));
                                       playSound(soundUrl, true);
                                     }}
-                                    className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 outline-none font-medium text-sm"
+                                    className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
                                   >
                                     <optgroup label="Standaard">
                                       {SOUND_OPTIONS.map(opt => (
@@ -3478,7 +4349,7 @@ export default function App() {
                                   </select>
                                 </div>
                                 <div className="space-y-2">
-                                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Post Geluid</label>
+                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Post Geluid</label>
                                   <select 
                                     value={notificationSettings.post_sound}
                                     onChange={(e) => {
@@ -3486,7 +4357,7 @@ export default function App() {
                                       setNotificationSettings(prev => ({ ...prev, post_sound: soundUrl }));
                                       playSound(soundUrl, true);
                                     }}
-                                    className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 outline-none font-medium text-sm"
+                                    className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
                                   >
                                     <optgroup label="Standaard">
                                       {SOUND_OPTIONS.map(opt => (
@@ -3507,7 +4378,7 @@ export default function App() {
                               <button 
                                 onClick={handleUpdateProfile}
                                 disabled={saving}
-                                className="w-full p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/10 mt-6"
+                                className="w-full p-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg mt-6"
                               >
                                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                                 Instellingen Opslaan
@@ -3518,21 +4389,21 @@ export default function App() {
 
                         {settingsTab === 'theme' && (
                           <div className="space-y-8 max-w-2xl">
-                            <div className="flex flex-col sm:flex-row items-center justify-between p-6 bg-zinc-50 rounded-[2rem] border border-zinc-200 mb-4 gap-4">
+                            <div className="flex flex-col sm:flex-row items-center justify-between p-6 bg-app-bg rounded-[2rem] border border-app-border mb-4 gap-4">
                               <div className="flex items-center gap-4">
-                                <div className={`p-3 rounded-2xl transition-all duration-300 ${useCustomTheme ? 'bg-zinc-900 text-white shadow-lg' : 'bg-zinc-200 text-zinc-500'}`}>
+                                <div className={`p-3 rounded-2xl transition-all duration-300 ${useCustomTheme ? 'bg-app-ink text-app-bg shadow-lg' : 'bg-app-accent text-app-muted'}`}>
                                   <Sparkles className="w-6 h-6" />
                                 </div>
                                 <div>
-                                  <p className="text-base font-bold">Custom Thema Inschakelen</p>
-                                  <p className="text-xs text-zinc-500 font-medium">Activeer je persoonlijke thema instellingen</p>
+                                  <p className="text-base font-bold text-app-ink">Custom Thema Inschakelen</p>
+                                  <p className="text-xs text-app-muted font-medium">Activeer je persoonlijke thema instellingen</p>
                                 </div>
                               </div>
                               <div className="flex items-center gap-4">
                                 {!useCustomTheme && (
                                   <button 
                                     onClick={() => {
-                                      const isDark = theme === 'dark';
+                                      const isDark = theme === 'dark' || theme === 'enhanced';
                                       const syncedTheme = {
                                         ...customTheme,
                                         primary_color: isDark ? '#fafafa' : '#18181b',
@@ -3548,14 +4419,14 @@ export default function App() {
                                       setUseCustomTheme(true);
                                       toast.success('Thema gesynchroniseerd met huidige modus!');
                                     }}
-                                    className="px-3 py-1.5 bg-white border border-zinc-200 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-zinc-50 transition-all"
+                                    className="px-3 py-1.5 bg-app-card border border-app-border rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-app-accent transition-all text-app-ink"
                                   >
                                     Sync met {theme === 'light' ? 'Licht' : 'Donker'}
                                   </button>
                                 )}
                                 <button 
                                   onClick={() => setUseCustomTheme(!useCustomTheme)}
-                                  className={`relative w-14 h-7 rounded-full transition-all duration-300 ${useCustomTheme ? 'bg-zinc-900' : 'bg-zinc-200'}`}
+                                  className={`relative w-14 h-7 rounded-full transition-all duration-300 ${useCustomTheme ? 'bg-app-ink' : 'bg-app-accent'}`}
                                 >
                                   <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-300 ${useCustomTheme ? 'left-8' : 'left-1'}`} />
                                 </button>
@@ -3577,10 +4448,10 @@ export default function App() {
                             )}
 
                             <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-zinc-100 rounded-2xl">
-                                <Sparkles className="w-6 h-6 text-zinc-900" />
+                              <div className="p-3 bg-app-accent rounded-2xl">
+                                <Sparkles className="w-6 h-6 text-app-ink" />
                               </div>
-                              <h3 className="text-xl font-bold">Custom Thema</h3>
+                              <h3 className="text-xl font-bold text-app-ink">Custom Thema</h3>
                             </div>
 
                             <div className="space-y-8">
@@ -3595,13 +4466,13 @@ export default function App() {
                                       value={customTheme.wallpaper || ''}
                                       onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaper: e.target.value }))}
                                       placeholder="https://example.com/wallpaper.jpg"
-                                      className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-zinc-900 outline-none font-medium text-sm"
+                                      className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
                                     />
                                   </div>
                                   <div className="space-y-2">
                                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Uploaden (Max 800KB)</p>
-                                    <label className="flex items-center justify-center w-full h-[54px] px-4 bg-zinc-50 border border-zinc-200 border-dashed rounded-2xl cursor-pointer hover:bg-zinc-100 transition-all">
-                                      <div className="flex items-center gap-2 text-zinc-500">
+                                    <label className="flex items-center justify-center w-full h-[54px] px-4 bg-app-bg border border-app-border border-dashed rounded-2xl cursor-pointer hover:bg-app-accent transition-all">
+                                      <div className="flex items-center gap-2 text-app-muted">
                                         <Camera className="w-5 h-5" />
                                         <span className="text-sm font-bold">Kies bestand</span>
                                       </div>
@@ -3632,14 +4503,14 @@ export default function App() {
                                     <button
                                       key={p.id}
                                       onClick={() => setCustomTheme(prev => ({ ...prev, pattern: p.id }))}
-                                      className={`aspect-square rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1 p-2 ${customTheme.pattern === p.id ? 'border-zinc-900 bg-zinc-900 text-white shadow-md' : 'border-zinc-100 bg-white text-zinc-500 hover:border-zinc-200'}`}
+                                      className={`aspect-square rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1 p-2 ${customTheme.pattern === p.id ? 'border-app-ink bg-app-ink text-app-bg shadow-md' : 'border-app-border bg-app-card text-app-muted hover:border-app-ink/20'}`}
                                     >
                                       <div 
-                                        className="w-full flex-1 rounded-md border border-zinc-100"
+                                        className="w-full flex-1 rounded-md border border-app-border"
                                         style={{ 
                                           backgroundImage: p.style,
                                           backgroundSize: p.size,
-                                          backgroundColor: customTheme.pattern === p.id ? 'transparent' : '#f4f4f5'
+                                          backgroundColor: customTheme.pattern === p.id ? 'transparent' : 'var(--bg)'
                                         }}
                                       />
                                       <span className="text-[8px] font-bold uppercase tracking-tighter">{p.name}</span>
@@ -3829,42 +4700,42 @@ export default function App() {
                         {settingsTab === 'admin' && isAdmin && (
                           <div className="space-y-8 max-w-2xl">
                             <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-zinc-900 rounded-2xl">
-                                <ShieldCheck className="w-6 h-6 text-white" />
+                              <div className="p-3 bg-app-ink rounded-2xl">
+                                <ShieldCheck className="w-6 h-6 text-app-bg" />
                               </div>
-                              <h3 className="text-xl font-bold">Admin Paneel</h3>
+                              <h3 className="text-xl font-bold text-app-ink">Admin Paneel</h3>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Website Status</label>
+                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Website Status</label>
                                 <form onSubmit={handleUpdateStatus} className="flex gap-2">
                                   <select 
                                     value={statusInput}
                                     onChange={(e) => setStatusInput(e.target.value)}
-                                    className="flex-grow p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 outline-none font-medium appearance-none"
+                                    className="flex-grow p-3 bg-app-bg border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink outline-none font-medium appearance-none text-app-ink"
                                   >
                                     <option value="Online">Online</option>
                                     <option value="Onderhoud">Onderhoud</option>
                                     <option value="Offline">Offline</option>
                                   </select>
-                                  <button type="submit" className="p-3 bg-zinc-900 text-white rounded-xl hover:bg-zinc-800 transition-all">
+                                  <button type="submit" className="p-3 bg-app-ink text-app-bg rounded-xl hover:opacity-90 transition-all">
                                     <Save className="w-5 h-5" />
                                   </button>
                                 </form>
                               </div>
 
                               <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Whitelist Toevoegen</label>
+                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Whitelist Toevoegen</label>
                                 <form onSubmit={handleAddToWhitelist} className="flex gap-2">
                                   <input 
                                     type="email"
                                     value={whitelistInput}
                                     onChange={(e) => setWhitelistInput(e.target.value)}
                                     placeholder="email@voorbeeld.com"
-                                    className="flex-grow p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 outline-none font-medium"
+                                    className="flex-grow p-3 bg-app-bg border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink outline-none font-medium text-app-ink"
                                   />
-                                  <button type="submit" className="p-3 bg-zinc-900 text-white rounded-xl hover:bg-zinc-800 transition-all">
+                                  <button type="submit" className="p-3 bg-app-ink text-app-bg rounded-xl hover:opacity-90 transition-all">
                                     <Plus className="w-5 h-5" />
                                   </button>
                                 </form>
@@ -3872,11 +4743,11 @@ export default function App() {
                             </div>
                             
                             <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Huidige Whitelist</label>
+                              <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Huidige Whitelist</label>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
                                 {whitelist.map(item => (
-                                  <div key={item.email} className="flex items-center justify-between p-3 bg-zinc-50 border border-zinc-100 rounded-xl">
-                                    <span className="text-sm font-medium text-zinc-700 truncate">{item.email}</span>
+                                  <div key={item.email} className="flex items-center justify-between p-3 bg-app-bg border border-app-border rounded-xl">
+                                    <span className="text-sm font-medium text-app-ink truncate">{item.email}</span>
                                     {item.email !== user.email && (
                                       <button onClick={() => handleRemoveFromWhitelist(item.email)} className="text-zinc-400 hover:text-red-500 transition-colors p-1">
                                         <X className="w-4 h-4" />
@@ -3888,19 +4759,19 @@ export default function App() {
                             </div>
 
                               <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Rapporten ({reports.filter(r => r.status === 'pending').length} open)</label>
+                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Rapporten ({reports.filter(r => r.status === 'pending').length} open)</label>
                                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                                   {reports.length === 0 ? (
-                                    <p className="text-sm text-zinc-500 p-4 bg-zinc-50 rounded-xl border border-zinc-100 text-center">Geen rapporten gevonden.</p>
+                                    <p className="text-sm text-app-muted p-4 bg-app-bg rounded-xl border border-app-border text-center">Geen rapporten gevonden.</p>
                                   ) : (
                                     reports.map(report => (
-                                      <div key={report.id} className={`p-4 rounded-xl border ${report.status === 'pending' ? 'bg-red-50 border-red-100' : 'bg-zinc-50 border-zinc-100'}`}>
+                                      <div key={report.id} className={`p-4 rounded-xl border ${report.status === 'pending' ? 'bg-red-50/10 border-red-100/20' : 'bg-app-bg border-app-border'}`}>
                                         <div className="flex items-start justify-between mb-3">
                                           <div>
                                             <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md ${report.status === 'pending' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                               {report.status}
                                             </span>
-                                            <p className="text-sm font-bold mt-2 text-zinc-900">Reden: {report.reason}</p>
+                                            <p className="text-sm font-bold mt-2 text-app-ink">Reden: {report.reason}</p>
                                           </div>
                                           <div className="flex gap-1">
                                             {report.status === 'pending' && (
@@ -3930,61 +4801,39 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {view === 'todos' && (
+              {view === 'news' && (
                 <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
                   <div className="mb-8">
-                    <h2 className="text-3xl font-black tracking-tighter mb-1">Takenlijst</h2>
-                    <p className="text-zinc-500 font-medium text-sm">Beheer je taken via Supabase</p>
+                    <h2 className="text-3xl font-black tracking-tighter mb-1 text-app-ink">Laatste Nieuws</h2>
+                    <p className="text-app-muted font-medium text-sm">Blijf op de hoogte van de laatste ontwikkelingen</p>
                   </div>
                   
-                  <div className="bg-white rounded-3xl border border-zinc-100 shadow-sm overflow-hidden">
-                    <div className="p-4 sm:p-6 border-b border-zinc-50">
-                      <form onSubmit={handleAddTodo} className="flex gap-2">
-                        <input 
-                          type="text"
-                          value={todoInput}
-                          onChange={(e) => setTodoInput(e.target.value)}
-                          placeholder="Nieuwe taak..."
-                          className="flex-grow p-3 sm:p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 outline-none font-medium"
-                        />
-                        <button type="submit" className="p-3 sm:p-4 bg-zinc-900 text-white rounded-xl hover:bg-zinc-800 transition-all active:scale-95">
-                          <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
-                        </button>
-                      </form>
-                    </div>
-
-                    {todos.length === 0 ? (
-                      <div className="p-8 sm:p-12 text-center">
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-zinc-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                          <Check className="w-6 h-6 sm:w-8 sm:h-8 text-zinc-300" />
+                  <div className="space-y-6">
+                    {NEWS_ITEMS.map((item) => (
+                      <motion.div 
+                        key={item.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        onClick={() => setExpandedNewsId(expandedNewsId === item.id ? null : item.id)}
+                        className={`bg-app-card rounded-3xl border border-app-border p-6 shadow-sm hover:shadow-md transition-all cursor-pointer ${expandedNewsId === item.id ? 'ring-2 ring-app-ink' : ''}`}
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <span className="px-3 py-1 bg-app-accent text-app-ink text-[10px] font-bold uppercase tracking-widest rounded-full">
+                            {item.category}
+                          </span>
+                          <span className="text-[10px] font-bold text-app-muted uppercase tracking-widest">
+                            {item.date}
+                          </span>
                         </div>
-                        <p className="text-zinc-500 font-medium text-sm sm:text-base">Geen taken gevonden.</p>
-                      </div>
-                    ) : (
-                      <ul className="divide-y divide-zinc-50">
-                        {todos.map((todo) => (
-                          <li key={todo.id} className="p-3 sm:p-4 hover:bg-zinc-50 transition-colors flex items-center justify-between group">
-                            <div className="flex items-center gap-3">
-                              <button 
-                                onClick={() => toggleTodo(todo.id, todo.is_completed)}
-                                className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${todo.is_completed ? 'bg-emerald-500 border-emerald-500' : 'border-zinc-200 hover:border-zinc-400'}`}
-                              >
-                                {todo.is_completed && <Check className="w-3 h-3 sm:w-4 sm:h-4 text-white" />}
-                              </button>
-                              <span className={`font-medium text-sm sm:text-base transition-all ${todo.is_completed ? 'text-zinc-400 line-through' : 'text-zinc-700'}`}>
-                                {todo.name || todo.title || 'Naamloze taak'}
-                              </span>
-                            </div>
-                            <button 
-                              onClick={() => deleteTodo(todo.id)}
-                              className="p-2 text-zinc-400 hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                        <h3 className="text-xl font-bold text-app-ink mb-2">{item.title}</h3>
+                        <p className={`text-app-muted leading-relaxed ${expandedNewsId === item.id ? '' : 'line-clamp-2'}`}>{item.content}</p>
+                        {expandedNewsId !== item.id && (
+                          <p className="mt-4 text-[10px] font-bold text-app-ink uppercase tracking-widest flex items-center gap-1">
+                            Klik om meer te lezen <ArrowRight className="w-3 h-3" />
+                          </p>
+                        )}
+                      </motion.div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -4298,67 +5147,6 @@ export default function App() {
                     </button>
                   </div>
                 </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-        {/* Bug Warning Modal */}
-        <AnimatePresence>
-          {showUpdateModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl"
-              >
-                <div className="p-8">
-                  <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center mb-6">
-                    <AlertTriangle className="w-6 h-6 text-amber-600" />
-                  </div>
-                  <h2 className="text-2xl font-bold text-zinc-900 mb-2">Belangrijke Update & Bug Warning</h2>
-                  <p className="text-zinc-500 mb-6 font-medium">We werken hard aan verbeteringen, maar let op de volgende punten:</p>
-                  
-                  <div className="space-y-4 mb-8">
-                    <div className="flex gap-4">
-                      <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
-                        <Zap className="w-4 h-4 text-zinc-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-zinc-900">Bliksemsnel laden</h4>
-                        <p className="text-xs text-zinc-500 mt-1">Je profiel en berichten worden nu lokaal opgeslagen voor direct toegang.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4">
-                      <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                        <AlertCircle className="w-4 h-4 text-red-500" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-red-600">Berichten Instellingen</h4>
-                        <p className="text-xs text-zinc-500 mt-1">De instellingen voor berichten (zoals meldingen en geluiden) werken momenteel nog niet.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4">
-                      <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
-                        <Palette className="w-4 h-4 text-zinc-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-zinc-900">Thema Fixes</h4>
-                        <p className="text-xs text-zinc-500 mt-1">Achtergronden en thema's werken nu vlekkeloos in alle modi.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={() => {
-                      localStorage.setItem('hasSeenBugWarning_1', 'true');
-                      setShowUpdateModal(false);
-                    }}
-                    className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98]"
-                  >
-                    Ik begrijp het, laten we gaan!
-                  </button>
-                </div>
               </motion.div>
             </div>
           )}
