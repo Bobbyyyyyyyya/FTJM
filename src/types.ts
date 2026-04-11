@@ -15,7 +15,7 @@ export interface AppNotification {
   actor_photo?: string;
   type: 'mention' | 'reply' | 'system' | 'message';
   resource_id: string;
-  resource_type: 'post' | 'comment' | 'thread' | 'message';
+  resource_type: 'post' | 'comment' | 'thread';
   content: string;
   is_read: boolean;
   created_at: string;
