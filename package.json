@@ -6,10 +6,9 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
-    "preview": "npm run build && wrangler dev",
+    "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit",
-    "deploy": "npm run build && wrangler deploy"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1029.0",
@@ -28,7 +27,6 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.31.2",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.14",
@@ -37,7 +35,6 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "wrangler": "^4.81.1"
+    "vite": "^6.2.0"
   }
 }

@@ -115,7 +115,13 @@ export async function handleSupabaseError(error: any, operation: string, user?: 
   console.error(`Supabase Error during ${operation}:`, error);
   
   if (error && typeof error === 'object') {
-    console.log('Full Error Object:', JSON.stringify(error, null, 2));
+    console.group(`Detailed Supabase Error: ${operation}`);
+    console.log('Message:', error.message);
+    console.log('Code:', error.code);
+    console.log('Details:', error.details);
+    console.log('Hint:', error.hint);
+    console.log('Full Object:', JSON.stringify(error, null, 2));
+    console.groupEnd();
   }
 
   const errInfo: SupabaseErrorInfo = {

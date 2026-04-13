@@ -13,7 +13,7 @@ export interface AppNotification {
   actor_id: string;
   actor_name: string;
   actor_photo?: string;
-  type: 'mention' | 'reply' | 'system' | 'message';
+  type: 'mention' | 'reply' | 'dm';
   resource_id: string;
   resource_type: 'post' | 'comment' | 'thread';
   content: string;
@@ -121,6 +121,14 @@ export interface DirectMessage {
   id: string;
   sender_id: string;
   text: string;
+  created_at: string;
+}
+
+export interface Nickname {
+  id: string;
+  user_id: string;
+  target_id: string;
+  nickname: string;
   created_at: string;
 }
 

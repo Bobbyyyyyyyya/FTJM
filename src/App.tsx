@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+// Force rebuild - RefreshCw fix
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { supabase, setSupabaseFirebaseUid, createSupabaseClient } from './utils/supabase';
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User } from './lib/firebase';
@@ -7,6 +8,7 @@ import { MentionOverlay } from './components/MentionOverlay';
 import { Toaster, toast } from 'sonner';
 
 import { motion, AnimatePresence } from 'motion/react';
+import { RefreshCw } from 'lucide-react';
 import { 
   Shield, 
   Bell, 
@@ -242,7 +244,26 @@ export default function App() {
     return localStorage.getItem('cached_useCustomTheme') === 'true';
   });
 
+  const [nicknames, setNicknames] = useState<Record<string, string>>(() => {
+    try {
+      const cached = localStorage.getItem('cached_nicknames');
+      return cached ? JSON.parse(cached) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [nicknameInput, setNicknameInput] = useState('');
+  const [isEditingNickname, setIsEditingNickname] = useState(false);
+  
+  useEffect(() => {
+    if (selectedUser) {
+      setNicknameInput(nicknames[selectedUser.id] || '');
+      setIsEditingNickname(false);
+    }
+  }, [selectedUser, nicknames]);
+
   const [reportTarget, setReportTarget] = useState<{ type: 'user' | 'post' | 'message', id: string, userId: string, displayName: string } | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [reportDetails, setReportDetails] = useState('');
@@ -267,51 +288,6 @@ export default function App() {
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const [messagesLimit, setMessagesLimit] = useState(50);
-
-  const [isHuman, setIsHuman] = useState(() => {
-    return localStorage.getItem('is_human_verified') === 'true';
-  });
-  const [showCaptcha, setShowCaptcha] = useState(false);
-  const [captchaAnswer, setCaptchaAnswer] = useState('');
-  const [captchaQuestion, setCaptchaQuestion] = useState({ q: '', a: 0 });
-
-  const generateCaptcha = () => {
-    const a = Math.floor(Math.random() * 10) + 1;
-    const b = Math.floor(Math.random() * 10) + 1;
-    setCaptchaQuestion({ q: `Hoeveel is ${a} + ${b}?`, a: a + b });
-    setCaptchaAnswer('');
-    setShowCaptcha(true);
-  };
-
-  const verifyCaptcha = () => {
-    if (parseInt(captchaAnswer) === captchaQuestion.a) {
-      setIsHuman(true);
-      localStorage.setItem('is_human_verified', 'true');
-      setShowCaptcha(false);
-      toast.success('Verificatie geslaagd!');
-    } else {
-      toast.error('Onjuist antwoord, probeer het opnieuw.');
-      generateCaptcha();
-    }
-  };
-
-  useEffect(() => {
-    // Basic IP/Country check
-    const checkLocation = async () => {
-      try {
-        const res = await fetch('https://ipapi.co/json/');
-        const data = await res.json();
-        if (data.country_code && data.country_code !== 'NL') {
-          console.warn('Toegang vanaf buiten Nederland gedetecteerd:', data.country_name);
-          // Force captcha for non-NL IPs
-          if (!isHuman) generateCaptcha();
-        }
-      } catch (e) {
-        console.error('Locatie check mislukt', e);
-      }
-    };
-    checkLocation();
-  }, []);
 
   const [websiteStatus, setWebsiteStatus] = useState<string>(() => {
     return localStorage.getItem('cached_websiteStatus') || 'Online';
@@ -341,105 +317,6 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const handleFileUpload = async (file: File) => {
-    if (!user || !isWhitelisted) return;
-    
-    // Check file size (limit to 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Bestand is te groot. Maximaal 5MB.');
-      return;
-    }
-
-    setUploading(true);
-    const uploadPromise = (async () => {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-      
-      const s3Key = import.meta.env.VITE_S3_KEY || '505a5c2b68262b9e470c9f663982eadcf0fbd543d32708e61f0303006a121ecf';
-      
-      try {
-        const s3Client = new S3Client({
-          region: "auto",
-          endpoint: "https://s3.amazonaws.com", // Default endpoint
-          credentials: {
-            accessKeyId: s3Key,
-            secretAccessKey: "dummy-secret", 
-          },
-        });
-
-        const arrayBuffer = await file.arrayBuffer();
-        const command = new PutObjectCommand({
-          Bucket: "ftjm-uploads",
-          Key: fileName,
-          Body: new Uint8Array(arrayBuffer),
-          ContentType: file.type,
-        });
-
-        await s3Client.send(command);
-        
-        const publicUrl = `https://ftjm-uploads.s3.amazonaws.com/${fileName}`;
-
-        if (view === 'chat') {
-          setPostInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-        } else if (view === 'forum') {
-          if (activeThread) {
-            setCommentInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-          } else {
-            setPostInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-          }
-        } else if (view === 'messages') {
-          setMessageInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-        }
-        
-        return publicUrl;
-      } catch (s3Err) {
-        console.error('S3 Upload failed, falling back to Supabase:', s3Err);
-        const filePath = `${user.uid}/${fileName}`;
-        const { error } = await supabaseClient.storage
-          .from('public-1')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (error) throw error;
-
-        const { data: { publicUrl } } = supabaseClient.storage
-          .from('public-1')
-          .getPublicUrl(filePath);
-
-        if (view === 'chat') {
-          setPostInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-        } else if (view === 'forum') {
-          if (activeThread) {
-            setCommentInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-          } else {
-            setPostInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-          }
-        } else if (view === 'messages') {
-          setMessageInput(prev => prev + (prev ? ' ' : '') + publicUrl);
-        }
-        
-        return publicUrl;
-      }
-    })();
-
-    toast.promise(uploadPromise, {
-      loading: 'Afbeelding uploaden...',
-      success: 'Afbeelding geüpload!',
-      error: (err) => `Upload mislukt: ${err.message}`
-    });
-
-    try {
-      await uploadPromise;
-    } catch (err) {
-      console.error('Final upload error:', err);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   const handleImageUrl = () => {
     const url = prompt('Voer de URL van de afbeelding in:');
@@ -666,7 +543,7 @@ export default function App() {
   }, [conversations]);
 
   useEffect(() => {
-    localStorage.setItem('cached_notifications', JSON.stringify(notificationSettings));
+    localStorage.setItem('cached_notifications', JSON.stringify(notifications));
     
     if (user) {
       const syncSettings = async () => {
@@ -1037,6 +914,35 @@ export default function App() {
     checkWhitelist();
   }, [user, isAdmin, supabaseClient]);
 
+  // Fetch nicknames
+  useEffect(() => {
+    if (!user || !isWhitelisted) return;
+
+    const fetchNicknames = async () => {
+      try {
+        const { data, error } = await supabaseClient
+          .from('nicknames')
+          .select('target_id, nickname')
+          .eq('user_id', user.uid);
+
+        if (error) {
+          console.error('Error fetching nicknames:', error);
+        } else if (data) {
+          const nicknameMap = data.reduce((acc: Record<string, string>, curr: any) => {
+            acc[curr.target_id] = curr.nickname;
+            return acc;
+          }, {});
+          setNicknames(nicknameMap);
+          localStorage.setItem('cached_nicknames', JSON.stringify(nicknameMap));
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching nicknames:', err);
+      }
+    };
+
+    fetchNicknames();
+  }, [user, isWhitelisted, supabaseClient]);
+
   // Real-time profile sync
   useEffect(() => {
     if (!user || isWhitelisted === false) return;
@@ -1185,21 +1091,28 @@ export default function App() {
     if (isAdmin && user && (!hasFetchedAdminData.current || (view === 'settings' && settingsTab === 'admin'))) {
       const fetchAdminData = async () => {
         console.log('Admin: Fetching reports and whitelist...');
-        const [wRes, rRes] = await Promise.all([
-          supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
-          supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
-        ]);
-        
-        if (wRes.data) {
-          setWhitelist(wRes.data);
-          localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
+        try {
+          const [wRes, rRes] = await Promise.all([
+            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
+            supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+          ]);
+          
+          if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
+          if (rRes.error) console.error('Admin: Error fetching reports:', rRes.error);
+
+          if (wRes.data) {
+            setWhitelist(wRes.data);
+            localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
+          }
+          if (rRes.data) {
+            console.log('Admin: Reports fetched:', rRes.data.length);
+            setReports(rRes.data);
+            localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
+          }
+          hasFetchedAdminData.current = true;
+        } catch (err) {
+          console.error('Admin: Unexpected error fetching data:', err);
         }
-        if (rRes.data) {
-          console.log('Admin: Reports fetched:', rRes.data.length);
-          setReports(rRes.data);
-          localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
-        }
-        hasFetchedAdminData.current = true;
       };
       fetchAdminData();
     }
@@ -1209,6 +1122,79 @@ export default function App() {
       supabaseClient.removeChannel(reportsChannel);
     };
   }, [isAdmin, user?.uid, supabaseClient, view, settingsTab]);
+
+  const fetchAdminData = async () => {
+    if (!isAdmin || !user) return;
+    console.log('Admin: Fetching reports and whitelist...');
+    try {
+      const [wRes, rRes] = await Promise.all([
+        supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
+        supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+      ]);
+      
+      if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
+      if (rRes.error) console.error('Admin: Error fetching reports:', rRes.error);
+
+      if (wRes.data) {
+        setWhitelist(wRes.data);
+        localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
+      }
+      if (rRes.data) {
+        console.log('Admin: Reports fetched:', rRes.data.length);
+        setReports(rRes.data);
+        localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
+      }
+      hasFetchedAdminData.current = true;
+    } catch (err) {
+      console.error('Admin: Unexpected error fetching data:', err);
+    }
+  };
+
+  const handleSetNickname = async (targetId: string, nickname: string) => {
+    if (!user) return;
+
+    try {
+      console.log('Saving nickname:', { targetId, nickname, userId: user.uid });
+      if (!nickname.trim()) {
+        // Delete nickname
+        const { error } = await supabaseClient
+          .from('nicknames')
+          .delete()
+          .eq('user_id', user.uid)
+          .eq('target_id', targetId);
+
+        if (error) throw error;
+
+        setNicknames(prev => {
+          const next = { ...prev };
+          delete next[targetId];
+          localStorage.setItem('cached_nicknames', JSON.stringify(next));
+          return next;
+        });
+        toast.success('Bijnaam verwijderd');
+      } else {
+        // Upsert nickname
+        const { error } = await supabaseClient
+          .from('nicknames')
+          .upsert({
+            user_id: user.uid,
+            target_id: targetId,
+            nickname: nickname.trim()
+          }, { onConflict: 'user_id,target_id' });
+
+        if (error) throw error;
+
+        setNicknames(prev => {
+          const next = { ...prev, [targetId]: nickname.trim() };
+          localStorage.setItem('cached_nicknames', JSON.stringify(next));
+          return next;
+        });
+        toast.success('Bijnaam opgeslagen');
+      }
+    } catch (err) {
+      handleSupabaseError(err, 'bijnaam opslaan', user);
+    }
+  };
 
   // Website status
   useEffect(() => {
@@ -1568,10 +1554,12 @@ export default function App() {
   useEffect(() => {
     const newStatuses: Record<string, string[]> = {};
     Object.keys(typingUsers).forEach(convId => {
-      newStatuses[convId] = Object.values(typingUsers[convId]).map(u => u.name);
+      newStatuses[convId] = Object.entries(typingUsers[convId]).map(([uid, u]) => {
+        return nicknames[uid] || u.name;
+      });
     });
     setTypingStatuses(newStatuses);
-  }, [typingUsers]);
+  }, [typingUsers, nicknames]);
 
   // Track typing status via Broadcast
   useEffect(() => {
@@ -1671,7 +1659,7 @@ export default function App() {
   // Mark notifications as read when opening a conversation
   useEffect(() => {
     if (activeConversation && user && view === 'messages') {
-      const unreadMessageNotifs = notifications.filter(n => n.type === 'message' && n.resource_id === activeConversation.id && !n.is_read);
+      const unreadMessageNotifs = notifications.filter(n => n.type === 'dm' && n.resource_id === activeConversation.id && !n.is_read);
       if (unreadMessageNotifs.length > 0) {
         const markAsRead = async () => {
           const ids = unreadMessageNotifs.map(n => n.id);
@@ -2187,7 +2175,9 @@ export default function App() {
         status: 'pending'
       });
       if (error) throw error;
-      toast.success('Rapport ingediend. Bedankt voor je hulp.');
+      toast.success('Moderatie: Rapport ingediend. Bedankt voor je hulp.', {
+        icon: '🛡️'
+      });
       setReportTarget(null);
       setReportReason('');
       setReportDetails('');
@@ -2225,7 +2215,10 @@ export default function App() {
       const newCooldown = now + 30000; // Increased to 30 seconds for spamming
       setCooldownUntil(newCooldown);
       setCooldownRemaining(30);
-      toast.error('Je gaat te snel! Stop met spammen. Er is een rapport geopend.');
+      toast.error('Moderatie: Je gaat te snel! Stop met spammen. Er is een rapport geopend.', {
+        icon: '🛡️',
+        duration: 5000
+      });
       
       // Automatic report for spamming
       if (user) {
@@ -2281,12 +2274,7 @@ export default function App() {
           is_read: false,
           created_at: new Date().toISOString()
         };
-        console.log('Sending mention notification:', {
-          type: payload.type,
-          resource_type: `"${payload.resource_type}"`,
-          resource_typeLen: payload.resource_type?.length,
-          resource_id: payload.resource_id
-        });
+        console.log('Sending mention notification payload:', JSON.stringify(payload, null, 2));
         await supabaseClient.from('notifications').insert(payload);
       } catch (err) {
         console.error('Failed to send mention notification', err);
@@ -2306,11 +2294,6 @@ export default function App() {
       return;
     }
     
-    if (!isHuman && !isAdmin) {
-      generateCaptcha();
-      return;
-    }
-
     if (!checkRateLimit()) return;
     
     isPostingRef.current = true;
@@ -2389,11 +2372,6 @@ export default function App() {
   const handleCreateThread = async () => {
     if (!user || !threadTitleInput.trim() || !threadContentInput.trim() || isWhitelisted !== true) return;
     
-    if (!isHuman && !isAdmin) {
-      generateCaptcha();
-      return;
-    }
-
     if (!checkRateLimit()) return;
     
     setSending(true);
@@ -2449,11 +2427,6 @@ export default function App() {
   const handleCreateComment = async (threadId: string) => {
     if (!user || !commentInput.trim() || isWhitelisted !== true) return;
     
-    if (!isHuman && !isAdmin) {
-      generateCaptcha();
-      return;
-    }
-
     if (!checkRateLimit()) return;
     
     setSending(true);
@@ -2489,12 +2462,7 @@ export default function App() {
           is_read: false,
           created_at: new Date().toISOString()
         };
-        console.log('Sending thread reply notification:', {
-          type: payload.type,
-          resource_type: `"${payload.resource_type}"`,
-          resource_typeLen: payload.resource_type?.length,
-          resource_id: payload.resource_id
-        });
+        console.log('Sending thread reply notification payload:', JSON.stringify(payload, null, 2));
         supabaseClient.from('notifications').insert(payload).then(({ error }) => {
           if (error) console.error('Failed to send thread reply notification', error);
         });
@@ -2966,11 +2934,6 @@ export default function App() {
     if (e) e.preventDefault();
     if (!user || !messageInput.trim() || !activeConversation) return;
     
-    if (!isHuman && !isAdmin) {
-      generateCaptcha();
-      return;
-    }
-
     if (!checkRateLimit()) return;
     
     const text = messageInput.trim();
@@ -3023,19 +2986,14 @@ export default function App() {
           actor_id: user.uid,
           actor_name: profile?.display_name || user.displayName || 'Anoniem',
           actor_photo: profile?.photo_url || user.photoURL || undefined,
-          type: 'message',
+          type: 'dm',
           resource_id: activeConversation.id,
           resource_type: 'thread',
           content: text.substring(0, 100),
           is_read: false,
           created_at: new Date().toISOString()
         };
-        console.log('Sending message notification:', {
-          type: payload.type,
-          resource_type: `"${payload.resource_type}"`,
-          resource_typeLen: payload.resource_type?.length,
-          resource_id: payload.resource_id
-        });
+        console.log('Sending message notification payload:', JSON.stringify(payload, null, 2));
         supabaseClient.from('notifications').insert(payload).then(({ error }) => {
           if (error) console.error('Failed to send message notification', error);
         });
@@ -3150,7 +3108,8 @@ export default function App() {
 
   const filteredUsers = users.filter(u => 
     u.display_name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(userSearchQuery.toLowerCase())
+    u.email.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+    (nicknames[u.id] && nicknames[u.id].toLowerCase().includes(userSearchQuery.toLowerCase()))
   );
 
   if (loading && !user) {
@@ -3399,7 +3358,7 @@ export default function App() {
                               <button 
                                 key={notif.id}
                                 onClick={() => {
-                                  if (notif.type === 'message') {
+                                  if (notif.type === 'dm') {
                                     setView('messages');
                                     setActiveConversation(conversations.find(c => c.id === notif.resource_id) || null);
                                   } else if (notif.resource_type === 'post') {
@@ -3422,9 +3381,9 @@ export default function App() {
                                 </div>
                                 <div className="min-w-0">
                                   <p className="text-xs text-app-ink font-medium">
-                                    <span className="font-bold">{notif.actor_name}</span> {
+                                    <span className="font-bold">{nicknames[notif.actor_id] || notif.actor_name}</span> {
                                       notif.type === 'mention' ? 'heeft je genoemd' :
-                                      notif.type === 'message' ? 'stuurde je een bericht' :
+                                      notif.type === 'dm' ? 'stuurde je een bericht' :
                                       notif.type === 'reply' ? 'reageerde op je post' :
                                       'stuurde een melding'
                                     }
@@ -3706,7 +3665,7 @@ export default function App() {
                                 <div className="w-1 h-8 bg-app-ink rounded-full flex-shrink-0" />
                                 <div className="overflow-hidden">
                                   <div className="flex items-center gap-2">
-                                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest">Reageren op {replyingTo.author_name}</p>
+                                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest">Reageren op {nicknames[replyingTo.author_id] || replyingTo.author_name}</p>
                                     <span className="text-[10px] text-app-muted/40">•</span>
                                     <p className="text-[10px] text-app-muted italic truncate max-w-[150px]">"{replyingTo.content}"</p>
                                   </div>
@@ -3758,15 +3717,6 @@ export default function App() {
                               title="Afbeelding via URL"
                             >
                               <Link className="w-4 h-4 sm:w-5 sm:h-5" />
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              disabled={uploading || cooldownRemaining > 0}
-                              className="p-2 sm:p-2.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all disabled:opacity-50"
-                              title="Afbeelding uploaden"
-                            >
-                              {uploading ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5" />}
                             </button>
                             <button 
                               type="submit"
@@ -3823,7 +3773,7 @@ export default function App() {
                                       onClick={() => handleOpenProfile(post.author_id)}
                                       className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
                                     >
-                                      {post.author_name}
+                                      {nicknames[post.author_id] || post.author_name}
                                     </button>
                                     <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
                                       {formatDate(post.created_at)} om {formatTime(post.created_at)}
@@ -3971,7 +3921,7 @@ export default function App() {
                               </div>
                             )}
                             <div className="flex items-center gap-2 text-xs text-app-muted">
-                              <span className="font-bold text-app-ink">{activeThread.author_name}</span>
+                              <span className="font-bold text-app-ink">{nicknames[activeThread.author_id] || activeThread.author_name}</span>
                               <span>•</span>
                               <span>{formatDate(activeThread.created_at)}</span>
                             </div>
@@ -4007,15 +3957,6 @@ export default function App() {
                                   <Link className="w-4 h-4" />
                                 </button>
                                 <button 
-                                  type="button"
-                                  onClick={() => fileInputRef.current?.click()}
-                                  disabled={uploading}
-                                  className="p-2 bg-app-accent text-app-ink rounded-xl hover:bg-app-border transition-all disabled:opacity-50"
-                                  title="Afbeelding uploaden"
-                                >
-                                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-                                </button>
-                                <button 
                                   onClick={() => handleCreateComment(activeThread.id)}
                                   disabled={sending || !commentInput.trim() || uploading}
                                   className="px-6 py-2 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all"
@@ -4045,7 +3986,7 @@ export default function App() {
                                   </div>
                                   <div className="flex-1 space-y-2">
                                     <div className="flex items-center gap-2 text-xs">
-                                      <span className="font-bold text-app-ink">{comment.author_name}</span>
+                                      <span className="font-bold text-app-ink">{nicknames[comment.author_id] || comment.author_name}</span>
                                       <span className="text-app-muted">{formatDate(comment.created_at)}</span>
                                     </div>
                                     <div className="text-app-ink text-sm sm:text-base leading-relaxed bg-app-accent/5 p-4 rounded-2xl border border-app-border/50">
@@ -4099,15 +4040,6 @@ export default function App() {
                                 >
                                   <Link className="w-5 h-5" />
                                 </button>
-                                <button 
-                                  type="button"
-                                  onClick={() => fileInputRef.current?.click()}
-                                  disabled={uploading}
-                                  className="p-2 bg-app-accent text-app-ink rounded-xl hover:bg-app-border transition-all disabled:opacity-50"
-                                  title="Afbeelding uploaden"
-                                >
-                                  {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ImageIcon className="w-5 h-5" />}
-                                </button>
                               </div>
                             </div>
                             <div className="flex justify-end gap-3">
@@ -4145,7 +4077,7 @@ export default function App() {
                             <div className="flex items-start justify-between gap-4">
                               <div className="space-y-3 flex-1">
                                 <div className="flex items-center gap-2 text-xs text-app-muted">
-                                  <span className="font-bold text-app-ink">{thread.author_name}</span>
+                                  <span className="font-bold text-app-ink">{nicknames[thread.author_id] || thread.author_name}</span>
                                   <span>•</span>
                                   <span>{formatDate(thread.created_at)}</span>
                                 </div>
@@ -4199,7 +4131,8 @@ export default function App() {
                       {conversations.map(conv => {
                         const otherParticipantUid = conv.participants.find(uid => uid !== user.uid);
                         const otherParticipantProfile = users.find(u => u.id === otherParticipantUid);
-                        const otherParticipantName = otherParticipantProfile?.display_name || (otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend');
+                        const originalName = otherParticipantProfile?.display_name || (otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend');
+                        const otherParticipantName = otherParticipantUid ? (nicknames[otherParticipantUid] || originalName) : originalName;
                         const otherParticipantPhoto = otherParticipantProfile?.photo_url || (otherParticipantUid ? conv.participant_photos[otherParticipantUid] : '');
                         const isActive = activeConversation?.id === conv.id;
                         return (
@@ -4234,7 +4167,7 @@ export default function App() {
                                   <p className={`text-[10px] font-medium ${isActive ? 'opacity-60' : 'text-app-muted'}`}>
                                     {formatDate(conv.updated_at)}
                                   </p>
-                                  {notifications.some(n => n.type === 'message' && n.resource_id === conv.id && !n.is_read) && (
+                                  {notifications.some(n => n.type === 'dm' && n.resource_id === conv.id && !n.is_read) && (
                                     <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-sm shadow-emerald-500/20" />
                                   )}
                                 </div>
@@ -4309,7 +4242,8 @@ export default function App() {
                               <h4 className="font-bold text-sm sm:text-lg dark:text-zinc-100" style={useCustomTheme ? { color: customTheme.text_color } : {}}>
                                 {(() => {
                                   const otherUid = activeConversation?.participants.find(uid => uid !== user.uid);
-                                  return otherUid ? activeConversation?.participant_names[otherUid] : 'Onbekend';
+                                  const originalName = otherUid ? activeConversation?.participant_names[otherUid] : 'Onbekend';
+                                  return otherUid ? (nicknames[otherUid] || originalName) : originalName;
                                 })()}
                               </h4>
                               {(() => {
@@ -4508,15 +4442,6 @@ export default function App() {
                                   title="Afbeelding via URL"
                                 >
                                   <Link className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  type="button"
-                                  onClick={() => fileInputRef.current?.click()}
-                                  disabled={uploading || cooldownRemaining > 0}
-                                  className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all disabled:opacity-50"
-                                  title="Afbeelding uploaden"
-                                >
-                                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
                                 </button>
                                 <button 
                                   type="submit"
@@ -5320,7 +5245,16 @@ export default function App() {
                             </div>
 
                               <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Rapporten ({reports.filter(r => r.status === 'pending').length} open)</label>
+                                <div className="flex items-center justify-between ml-1">
+                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest">Rapporten ({reports.filter(r => r.status === 'pending').length} open)</label>
+                                  <button 
+                                    onClick={fetchAdminData}
+                                    className="p-1 px-2 text-[10px] font-bold bg-app-accent text-app-muted rounded-lg hover:text-app-ink transition-all flex items-center gap-1"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                    Verversen
+                                  </button>
+                                </div>
                                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                                   {reports.length === 0 ? (
                                     <p className="text-sm text-app-muted p-4 bg-app-bg rounded-xl border border-app-border text-center">Geen rapporten gevonden.</p>
@@ -5470,8 +5404,10 @@ export default function App() {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm truncate">{u.display_name}</p>
-                          <p className="text-xs text-zinc-400 truncate">{u.email}</p>
+                          <p className="font-semibold text-sm truncate">{nicknames[u.id] || u.display_name}</p>
+                          <p className="text-xs text-zinc-400 truncate">
+                            {nicknames[u.id] ? `@${u.display_name}` : u.email}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
@@ -5512,19 +5448,24 @@ export default function App() {
         {/* User Profile Modal */}
         <AnimatePresence>
           {selectedUser && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto">
+            <div 
+              className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto"
+              onClick={() => setSelectedUser(null)}
+            >
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
                 className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden"
               >
                 <div className="h-32 bg-gradient-to-br from-zinc-900 to-zinc-800 relative">
                   <button 
                     onClick={() => setSelectedUser(null)}
-                    className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-all text-white backdrop-blur-md"
+                    className="absolute top-12 right-8 p-3 bg-white/20 hover:bg-white/30 rounded-2xl transition-all text-white backdrop-blur-md shadow-lg border border-white/10 active:scale-95 z-10"
+                    title="Sluiten"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-6 h-6" />
                   </button>
                 </div>
                 
@@ -5549,7 +5490,11 @@ export default function App() {
                   <div className="space-y-6">
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-2xl font-black text-zinc-900 tracking-tight">{selectedUser.display_name}</h3>
+                        <div className="flex-1">
+                          <h3 className="text-2xl font-black text-zinc-900 tracking-tight">
+                            {selectedUser.display_name}
+                          </h3>
+                        </div>
                         {onlineUsers.has(selectedUser.id) ? (
                           <div className="px-3 py-1 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -5582,6 +5527,58 @@ export default function App() {
                       </div>
                     )}
 
+                    {user && user.uid !== selectedUser.id && (
+                      <div className="p-6 bg-zinc-900/5 rounded-3xl border border-zinc-200/50">
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3">Persoonlijke Bijnaam</label>
+                        {isEditingNickname ? (
+                          <div className="flex gap-2">
+                            <input 
+                              type="text"
+                              value={nicknameInput}
+                              onChange={(e) => setNicknameInput(e.target.value)}
+                              placeholder="Geef deze persoon een bijnaam..."
+                              className="flex-1 p-3 bg-white border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 outline-none font-bold text-zinc-900"
+                              autoFocus
+                            />
+                            <button 
+                              onClick={() => {
+                                handleSetNickname(selectedUser.id, nicknameInput);
+                                setIsEditingNickname(false);
+                              }}
+                              className="p-3 bg-zinc-900 text-white rounded-xl hover:bg-zinc-800 transition-all"
+                            >
+                              <Check className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => setIsEditingNickname(false)}
+                              className="p-3 bg-zinc-100 text-zinc-400 rounded-xl hover:bg-zinc-200 transition-all"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <p className="text-zinc-900 font-bold">
+                              {nicknames[selectedUser.id] || <span className="text-zinc-400 font-normal italic">Geen bijnaam ingesteld</span>}
+                            </p>
+                            <button 
+                              onClick={() => {
+                                setNicknameInput(nicknames[selectedUser.id] || '');
+                                setIsEditingNickname(true);
+                              }}
+                              className="flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-900 rounded-xl text-xs font-bold hover:bg-zinc-50 transition-all shadow-sm"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              {nicknames[selectedUser.id] ? 'Aanpassen' : 'Instellen'}
+                            </button>
+                          </div>
+                        )}
+                        <p className="text-[9px] text-zinc-400 mt-3 italic">
+                          * Deze bijnaam is alleen voor jou zichtbaar en wordt overal in de app gebruikt.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="flex gap-3">
                       {user.uid !== selectedUser.id && (
                         <>
@@ -5607,6 +5604,16 @@ export default function App() {
                           </button>
                         </>
                       )}
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-zinc-100">
+                      <button 
+                        onClick={() => setSelectedUser(null)}
+                        className="w-full p-4 bg-zinc-100 text-zinc-600 rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                      >
+                        <X className="w-4 h-4" />
+                        Sluiten
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -5712,14 +5719,6 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
-        
-        <input 
-          type="file"
-          ref={fileInputRef}
-          onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-          accept="image/*"
-          className="hidden"
-        />
       </main>
         <AnimatePresence>
           {showAdminPrank && (
@@ -5750,45 +5749,6 @@ export default function App() {
                   </motion.div>
                 ))}
               </div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {showCaptcha && (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl text-center"
-              >
-                <div className="w-20 h-20 bg-zinc-100 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                  <ShieldCheck className="w-10 h-10 text-zinc-900" />
-                </div>
-                <h3 className="text-2xl font-black text-zinc-900 mb-2 uppercase tracking-tight">Beveiliging</h3>
-                <p className="text-zinc-500 mb-8 font-medium">Bewijs dat je een mens bent om door te gaan.</p>
-                
-                <div className="mb-6">
-                  <p className="text-lg font-bold text-zinc-900 mb-4">{captchaQuestion.q}</p>
-                  <input
-                    type="number"
-                    value={captchaAnswer}
-                    onChange={(e) => setCaptchaAnswer(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && verifyCaptcha()}
-                    placeholder="Antwoord..."
-                    className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-2xl text-center text-xl font-bold focus:ring-2 focus:ring-zinc-900 outline-none text-zinc-900 placeholder:text-zinc-400"
-                    autoFocus
-                  />
-                </div>
-                
-                <button
-                  onClick={verifyCaptcha}
-                  className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-95 shadow-lg shadow-zinc-900/20"
-                >
-                  Verifiëren
-                </button>
-              </motion.div>
             </div>
           )}
         </AnimatePresence>

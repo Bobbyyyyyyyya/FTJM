@@ -18,11 +18,19 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content }) 
   };
 
   const isImage = (url: string) => {
-    return url.match(/\.(jpeg|jpg|gif|png|webp|bmp|svg)(\?.*)?$/i) || 
-           url.includes('giphy.com/media') || 
-           url.includes('tenor.com/view') ||
-           url.includes('supabase.co/storage/v1/object/public/images') ||
-           url.includes('supabase.co/storage/v1/object/public/public-1');
+    const imageExtensions = /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)(\?.*)?$/i;
+    const imageHosts = [
+      'giphy.com/media',
+      'tenor.com/view',
+      'supabase.co/storage/v1/object/public',
+      'images.unsplash.com',
+      'i.imgur.com',
+      'images.pexels.com',
+      'cdn.discordapp.com/attachments',
+      'media.discordapp.net/attachments'
+    ];
+    
+    return url.match(imageExtensions) || imageHosts.some(host => url.includes(host));
   };
 
   return (
