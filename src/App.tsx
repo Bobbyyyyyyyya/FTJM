@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 // Force rebuild - RefreshCw fix
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { supabase, setSupabaseFirebaseUid, createSupabaseClient } from './utils/supabase';
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User } from './lib/firebase';
+import { auth, googleProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, User } from './lib/firebase';
 import { UserProfile, Post, Conversation, DirectMessage, CustomTheme, ForumThread, ForumComment, AppNotification, NotificationSettings, Report } from './types';
 import { MentionOverlay } from './components/MentionOverlay';
 import { Toaster, toast } from 'sonner';
@@ -808,6 +808,12 @@ export default function App() {
 
   // Auth state listener
   useEffect(() => {
+    // Handle redirect result when returning from Google login
+    getRedirectResult(auth).catch((err) => {
+      handleSupabaseError(err, 'Google inloggen');
+      setLoading(false);
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
@@ -1947,7 +1953,7 @@ export default function App() {
   const handleLogin = async () => {
     setLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithRedirect(auth, googleProvider);
     } catch (err) {
       handleSupabaseError(err, 'Google inloggen');
       setLoading(false);
