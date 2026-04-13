@@ -747,24 +747,24 @@ export default function App() {
           // Use ref to avoid re-subscribing when settings change
           const settings = notificationSettingsRef.current;
           if (settings.enable_sounds) {
-            if (newNotif.type === 'message') {
+            if (newNotif.type === 'dm') {
               playSound(settings.message_sound, true);
             } else {
               playSound(settings.post_sound, true);
             }
           }
-          
+
           let title = 'Nieuwe melding';
           if (newNotif.type === 'mention') title = `Nieuwe vermelding door ${newNotif.actor_name}`;
           else if (newNotif.type === 'reply') title = `Nieuwe reactie van ${newNotif.actor_name}`;
-          else if (newNotif.type === 'message') title = `Nieuw bericht van ${newNotif.actor_name}`;
-          
+          else if (newNotif.type === 'dm') title = `Nieuw bericht van ${newNotif.actor_name}`;
+
           toast.info(title, {
             description: newNotif.content,
             action: {
               label: 'Bekijken',
               onClick: () => {
-                if (newNotif.type === 'message') {
+                if (newNotif.type === 'dm') {
                   setView('messages');
                   setActiveConversation(conversationsRef.current.find(c => c.id === newNotif.resource_id) || null);
                 } else if (newNotif.resource_type === 'post') {
