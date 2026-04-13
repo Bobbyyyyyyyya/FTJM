@@ -135,7 +135,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news'>('chat');
 
-  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin'>('profile');
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app'>('profile');
   const [threads, setThreads] = useState<ForumThread[]>([]);
   const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
   const [threadComments, setThreadComments] = useState<ForumComment[]>([]);
@@ -197,6 +197,29 @@ export default function App() {
   });
   const [customSounds, setCustomSounds] = useState<{ name: string, url: string }[]>([]);
   const [uploadingSound, setUploadingSound] = useState(false);
+
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallButton, setShowInstallButton] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallButton(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setShowInstallButton(false);
+    }
+    setDeferredPrompt(null);
+  };
 
   const [customTheme, setCustomTheme] = useState<CustomTheme>(() => {
     try {
@@ -747,7 +770,7 @@ export default function App() {
           // Use ref to avoid re-subscribing when settings change
           const settings = notificationSettingsRef.current;
           if (settings.enable_sounds) {
-            if (newNotif.type === 'message') {
+            if (newNotif.type === 'dm') {
               playSound(settings.message_sound, true);
             } else {
               playSound(settings.post_sound, true);
@@ -757,14 +780,14 @@ export default function App() {
           let title = 'Nieuwe melding';
           if (newNotif.type === 'mention') title = `Nieuwe vermelding door ${newNotif.actor_name}`;
           else if (newNotif.type === 'reply') title = `Nieuwe reactie van ${newNotif.actor_name}`;
-          else if (newNotif.type === 'message') title = `Nieuw bericht van ${newNotif.actor_name}`;
+          else if (newNotif.type === 'dm') title = `Nieuw bericht van ${newNotif.actor_name}`;
           
           toast.info(title, {
             description: newNotif.content,
             action: {
               label: 'Bekijken',
               onClick: () => {
-                if (newNotif.type === 'message') {
+                if (newNotif.type === 'dm') {
                   setView('messages');
                   setActiveConversation(conversationsRef.current.find(c => c.id === newNotif.resource_id) || null);
                 } else if (newNotif.resource_type === 'post') {
@@ -4540,6 +4563,19 @@ export default function App() {
                         <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
                         Thema
                       </button>
+                      <button
+                        onClick={() => setSettingsTab('app')}
+                        className={`flex-shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${settingsTab === 'app' ? 'shadow-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
+                        style={useCustomTheme ? { 
+                          backgroundColor: settingsTab === 'app' ? customTheme.primary_color : 'transparent',
+                          color: settingsTab === 'app' ? '#ffffff' : customTheme.text_color
+                        } : {
+                          backgroundColor: settingsTab === 'app' ? undefined : 'transparent'
+                        }}
+                      >
+                        <Layout className="w-4 h-4 sm:w-5 sm:h-5" />
+                        App
+                      </button>
                       {isAdmin && (
                         <button
                           onClick={() => setSettingsTab('admin')}
@@ -5162,6 +5198,55 @@ export default function App() {
                                   {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                                   Thema Opslaan
                                 </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {settingsTab === 'app' && (
+                          <div className="space-y-8 max-w-2xl">
+                            <div className="flex items-center gap-4 mb-8">
+                              <div className="p-3 bg-app-accent rounded-2xl">
+                                <Layout className="w-6 h-6 text-app-ink" />
+                              </div>
+                              <h3 className="text-xl font-bold text-app-ink">App Instellingen</h3>
+                            </div>
+
+                            <div className="space-y-6">
+                              <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
+                                <h4 className="font-bold text-app-ink mb-2">Desktop App Installeren</h4>
+                                <p className="text-sm text-app-muted mb-6">
+                                  Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.
+                                </p>
+                                
+                                {showInstallButton ? (
+                                  <button 
+                                    onClick={handleInstallClick}
+                                    className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2"
+                                  >
+                                    <Plus className="w-5 h-5" />
+                                    Nu Installeren
+                                  </button>
+                                ) : (
+                                  <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 flex items-center gap-3">
+                                    <ShieldCheck className="w-5 h-5" />
+                                    <p className="text-xs font-bold">De app is al geïnstalleerd of je browser ondersteunt dit momenteel niet.</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="p-6 bg-app-accent/10 rounded-3xl border border-app-border border-dashed">
+                                <h4 className="text-xs font-black text-app-muted uppercase tracking-widest mb-2">App Info</h4>
+                                <div className="space-y-2">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-app-muted">Versie</span>
+                                    <span className="font-bold text-app-ink">1.8.0</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-app-muted">Platform</span>
+                                    <span className="font-bold text-app-ink">Progressive Web App</span>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>

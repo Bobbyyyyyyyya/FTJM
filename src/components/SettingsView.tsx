@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout } from 'lucide-react';
 import { UserProfile, CustomTheme, NotificationSettings } from '../types';
 import { SOUND_OPTIONS, PATTERNS } from '../constants';
 import { formatDate } from '../utils/helpers';
@@ -9,8 +9,8 @@ import { User } from '../lib/firebase';
 interface SettingsViewProps {
   user: User;
   profile: UserProfile | null;
-  settingsTab: 'profile' | 'notifications' | 'theme' | 'admin';
-  setSettingsTab: (tab: 'profile' | 'notifications' | 'theme' | 'admin') => void;
+  settingsTab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app';
+  setSettingsTab: (tab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app') => void;
   isAdmin: boolean;
   displayNameInput: string;
   setDisplayNameInput: (input: string) => void;
@@ -47,6 +47,8 @@ interface SettingsViewProps {
   handleDeleteReport: (id: string) => void;
   saving: boolean;
   uploadingSound: boolean;
+  showInstallButton: boolean;
+  handleInstallClick: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -89,7 +91,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   reports,
   handleDeleteReport,
   saving,
-  uploadingSound
+  uploadingSound,
+  showInstallButton,
+  handleInstallClick
 }) => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -99,6 +103,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           { id: 'profile', icon: UserCog, label: 'Profiel' },
           { id: 'notifications', icon: Bell, label: 'Notificaties' },
           { id: 'theme', icon: Palette, label: 'Thema' },
+          { id: 'app', icon: Layout, label: 'App' },
           ...(isAdmin ? [{ id: 'admin', icon: Shield, label: 'Beheer' }] : [])
         ].map(tab => (
           <button
@@ -530,6 +535,64 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          )}
+
+          {settingsTab === 'app' && (
+            <motion.div
+              key="app-settings"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm space-y-8"
+            >
+              <div className="flex items-center gap-4 border-b border-app-border pb-6">
+                <div className="w-16 h-16 bg-app-accent rounded-2xl flex items-center justify-center">
+                  <Layout className="w-8 h-8 text-app-ink" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-app-ink uppercase tracking-tighter">App Instellingen</h3>
+                  <p className="text-app-muted text-sm font-medium">Beheer hoe de app op je apparaat werkt.</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
+                  <h4 className="font-bold text-app-ink mb-2">Desktop App Installeren</h4>
+                  <p className="text-sm text-app-muted mb-6">
+                    Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.
+                  </p>
+                  
+                  {showInstallButton ? (
+                    <button 
+                      onClick={handleInstallClick}
+                      className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-5 h-5" />
+                      Nu Installeren
+                    </button>
+                  ) : (
+                    <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 flex items-center gap-3">
+                      <ShieldCheck className="w-5 h-5" />
+                      <p className="text-xs font-bold">De app is al geïnstalleerd of je browser ondersteunt dit momenteel niet.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-6 bg-app-accent/10 rounded-3xl border border-app-border border-dashed">
+                  <h4 className="text-xs font-black text-app-muted uppercase tracking-widest mb-2">App Info</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-app-muted">Versie</span>
+                      <span className="font-bold text-app-ink">1.8.0</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-app-muted">Platform</span>
+                      <span className="font-bold text-app-ink">Progressive Web App</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
