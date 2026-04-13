@@ -22,7 +22,7 @@ export const createSupabaseClient = (uid: string | null = null) => {
     return clientCache[cacheKey];
   }
 
-  const client = createClient(supabaseUrl || '', supabaseKey || '', {
+  const client = createClient(supabaseUrl || 'https://dummy.supabase.co', supabaseKey || 'dummy', {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
