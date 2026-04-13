@@ -5457,12 +5457,12 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
                 onClick={(e) => e.stopPropagation()}
-                className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden"
+                className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar"
               >
                 <div className="h-32 bg-gradient-to-br from-zinc-900 to-zinc-800 relative">
                   <button 
                     onClick={() => setSelectedUser(null)}
-                    className="absolute top-12 right-8 p-3 bg-white/20 hover:bg-white/30 rounded-2xl transition-all text-white backdrop-blur-md shadow-lg border border-white/10 active:scale-95 z-10"
+                    className="absolute top-16 right-8 p-3 bg-white/20 hover:bg-white/30 rounded-2xl transition-all text-white backdrop-blur-md shadow-lg border border-white/10 active:scale-95 z-10"
                     title="Sluiten"
                   >
                     <X className="w-6 h-6" />

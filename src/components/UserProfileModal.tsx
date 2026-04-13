@@ -32,7 +32,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-md bg-app-card rounded-[3rem] shadow-2xl border border-app-border overflow-hidden"
+            className="relative w-full max-w-md bg-app-card rounded-[3rem] shadow-2xl border border-app-border overflow-y-auto max-h-[90vh] custom-scrollbar"
           >
             <div className="h-32 bg-gradient-to-br from-app-ink to-[#004276] relative">
               <button 
