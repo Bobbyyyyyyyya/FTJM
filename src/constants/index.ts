@@ -30,15 +30,15 @@ export const NEWS_ITEMS = [
 ];
 
 export const SOUND_OPTIONS = [
-  { name: 'Standaard (2354)', url: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3' },
-  { name: 'Melding (2358)', url: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3' },
-  { name: 'Ping (2360)', url: 'https://image2url.com/r2/default/audio/1775756671546-6f36bf87-4347-477b-a2da-1af03009fdcf.mp3' },
-  { name: 'Chime (2362)', url: 'https://image2url.com/r2/default/audio/1775756302748-a840da24-e9d3-47a0-9e14-2a582fc0e093.mp3' },
-  { name: 'Alert (2364)', url: 'https://image2url.com/r2/default/audio/1775754319337-0525bbd3-8adb-4c26-ae70-842ba5769e7f.wav' },
-  { name: 'Success (2366)', url: 'https://assets.mixkit.co/active_storage/sfx/2366/2366-preview.mp3' },
-  { name: 'Notification (2368)', url: 'https://image2url.com/r2/default/audio/1775755636867-f3aa78d1-03e7-48c2-b75a-a5f990f517e9.mp3' },
-  { name: 'Pop (2370)', url: 'https://image2url.com/r2/default/audio/1775755973661-157bd979-8f6e-4d86-9e32-74761db166d9.mp3' },
-  { name: 'Bling (2372)', url: 'https://assets.mixkit.co/active_storage/sfx/2372/2372-preview.mp3' },
+  { name: 'Ping (Default)', url: 'https://image2url.com/r2/default/audio/1775756671546-6f36bf87-4347-477b-a2da-1af03009fdcf.mp3' },
+  { name: 'Notification', url: 'https://image2url.com/r2/default/audio/1775755636867-f3aa78d1-03e7-48c2-b75a-a5f990f517e9.mp3' },
+  { name: 'Chime', url: 'https://image2url.com/r2/default/audio/1775756302748-a840da24-e9d3-47a0-9e14-2a582fc0e093.mp3' },
+  { name: 'Alert', url: 'https://image2url.com/r2/default/audio/1775754319337-0525bbd3-8adb-4c26-ae70-842ba5769e7f.wav' },
+  { name: 'Pop', url: 'https://image2url.com/r2/default/audio/1775755973661-157bd979-8f6e-4d86-9e32-74761db166d9.mp3' },
+  { name: 'Success', url: 'https://assets.mixkit.co/active_storage/sfx/2366/2366-preview.mp3' },
+  { name: 'Bling', url: 'https://assets.mixkit.co/active_storage/sfx/2372/2372-preview.mp3' },
+  { name: 'Standaard (Old)', url: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3' },
+  { name: 'Melding (Old)', url: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3' },
 ];
 
 export const PATTERNS = [

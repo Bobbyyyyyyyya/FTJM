@@ -66,10 +66,11 @@ import { NewsView } from './components/NewsView';
 import { UserSearchModal } from './components/UserSearchModal';
 import { ReportModal } from './components/ReportModal';
 import { UserProfileModal } from './components/UserProfileModal';
+import { AudioLogsView } from './components/AudioLogsView';
 
 // Constants & Helpers
 import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS } from './constants';
-import { playSound, formatDate, formatTime, handleSupabaseError, audioCache } from './utils/helpers';
+import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent } from './utils/helpers';
 
 // App component
 export default function App() {
@@ -133,7 +134,7 @@ export default function App() {
   const [commentInput, setCommentInput] = useState('');
   const [whitelistInput, setWhitelistInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news'>('chat');
+  const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs'>('chat');
 
   const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app'>('profile');
   const [threads, setThreads] = useState<ForumThread[]>([]);
@@ -167,32 +168,44 @@ export default function App() {
   const [replyingTo, setReplyingTo] = useState<Post | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v1.7.9') === 'true';
+    return localStorage.getItem('has_seen_news_v1.7.9.2') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v1.7.9') === 'true';
+    return localStorage.getItem('has_seen_menu_v1.7.9.2') === 'true';
   });
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
+    const defaultSettings = {
+      enable_sounds: true,
+      notify_new_posts: true,
+      notify_new_messages: true,
+      notify_mentions: true,
+      message_sound: SOUND_OPTIONS[0].url,
+      post_sound: SOUND_OPTIONS[1].url
+    };
+
     try {
       const cached = localStorage.getItem('cached_notifications');
-      return cached ? JSON.parse(cached) : {
-        enable_sounds: true,
-        notify_new_posts: true,
-        notify_new_messages: true,
-        notify_mentions: true,
-        message_sound: SOUND_OPTIONS[0].url,
-        post_sound: SOUND_OPTIONS[1].url
-      };
+      if (!cached) return defaultSettings;
+      
+      const parsed = JSON.parse(cached);
+      
+      // Migration: If user has old Mixkit URLs that are known to be problematic, reset to new defaults
+      const oldMixkitUrls = [
+        'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3',
+        'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3'
+      ];
+      
+      if (oldMixkitUrls.includes(parsed.message_sound)) {
+        parsed.message_sound = SOUND_OPTIONS[0].url;
+      }
+      if (oldMixkitUrls.includes(parsed.post_sound)) {
+        parsed.post_sound = SOUND_OPTIONS[1].url;
+      }
+      
+      return parsed;
     } catch (e) {
       console.error('Failed to parse cached_notifications', e);
-      return {
-        enable_sounds: true,
-        notify_new_posts: true,
-        notify_new_messages: true,
-        notify_mentions: true,
-        message_sound: SOUND_OPTIONS[0].url,
-        post_sound: SOUND_OPTIONS[1].url
-      };
+      return defaultSettings;
     }
   });
   const [customSounds, setCustomSounds] = useState<{ name: string, url: string }[]>([]);
@@ -219,6 +232,33 @@ export default function App() {
       setShowInstallButton(false);
     }
     setDeferredPrompt(null);
+  };
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      toast.info('Nieuwe update beschikbaar!', {
+        description: 'Ververs de pagina om de nieuwste functies te gebruiken.',
+        duration: Infinity,
+        action: {
+          label: 'Verversen',
+          onClick: () => window.location.reload()
+        }
+      });
+    };
+    window.addEventListener('sw-update-available', handleUpdate);
+    return () => window.removeEventListener('sw-update-available', handleUpdate);
+  }, []);
+
+  const unlockAudio = async () => {
+    try {
+      const silent = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+      await silent.play();
+      toast.success('Audio geactiveerd!');
+      logAudioEvent('system', 'success', 'Audio handmatig ontgrendeld door gebruiker', user?.uid, profile?.display_name || user?.displayName || 'Anoniem');
+    } catch (err) {
+      console.error('Failed to unlock audio:', err);
+      toast.error('Audio activatie mislukt. Klik ergens op de pagina.');
+    }
   };
 
   const [customTheme, setCustomTheme] = useState<CustomTheme>(() => {
@@ -771,9 +811,9 @@ export default function App() {
           const settings = notificationSettingsRef.current;
           if (settings.enable_sounds) {
             if (newNotif.type === 'dm') {
-              playSound(settings.message_sound, true);
+              playSound(settings.message_sound, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
             } else {
-              playSound(settings.post_sound, true);
+              playSound(settings.post_sound, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
             }
           }
           
@@ -1294,7 +1334,7 @@ export default function App() {
                     }
                   }
                 });
-                playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds);
+                playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
               }
             }
             lastConversationUpdates.current[updatedConv.id] = updatedConv.updated_at;
@@ -1747,7 +1787,7 @@ export default function App() {
                   onClick: () => setView('forum')
                 }
               });
-              playSound(notificationSettingsRef.current.post_sound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enable_sounds);
+              playSound(notificationSettingsRef.current.post_sound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
             }
           }
           if (latestPost) lastPostId.current = latestPost.id;
@@ -1785,7 +1825,7 @@ export default function App() {
                 onClick: () => setView('forum')
               }
             });
-            playSound(notificationSettingsRef.current.post_sound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enable_sounds);
+            playSound(notificationSettingsRef.current.post_sound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
           }
         }
         if (latestPost) lastPostId.current = latestPost.id;
@@ -3245,7 +3285,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v1.7.9', 'true');
+                      localStorage.setItem('has_seen_menu_v1.7.9.2', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -3296,7 +3336,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v1.7.9', 'true');
+                              localStorage.setItem('has_seen_news_v1.7.9.2', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -3321,6 +3361,14 @@ export default function App() {
                           <Settings className="w-4 h-4" />
                           Instellingen
                         </button>
+                        <div className="h-px bg-app-border my-2 mx-2" />
+                        <button 
+                          onClick={() => { setView('audiologs'); setShowNavDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'audiologs' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
+                        >
+                          <Volume2 className="w-4 h-4" />
+                          Audio Logs
+                        </button>
                       </motion.div>
                     </>
                   )}
@@ -3331,9 +3379,20 @@ export default function App() {
 
           <div className="flex items-center gap-2 sm:gap-4">
             {user && isWhitelisted && (
-              <div className="relative">
+              <>
                 <button 
-                  onClick={() => setShowNotifications(!showNotifications)}
+                  onClick={unlockAudio}
+                  className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink group relative"
+                  title="Audio herstellen"
+                >
+                  <Volume2 className="w-5 h-5" />
+                  <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-app-ink text-app-bg text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                    Audio Herstellen
+                  </span>
+                </button>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowNotifications(!showNotifications)}
                   className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink relative"
                 >
                   <Bell className="w-5 h-5" />
@@ -3423,7 +3482,8 @@ export default function App() {
                   )}
                 </AnimatePresence>
               </div>
-            )}
+            </>
+          )}
             <button 
               onClick={() => {
                 if (useCustomTheme) {
@@ -4778,7 +4838,7 @@ export default function App() {
                                         <button 
                                           onClick={() => {
                                             if (!newSoundUrl) return toast.error('Vul eerst een URL in');
-                                            playSound(newSoundUrl, true);
+                                            playSound(newSoundUrl, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
                                             toast.info('Geluid testen...');
                                           }}
                                           className="px-3 bg-app-card border border-app-border rounded-xl hover:bg-app-accent transition-colors"
@@ -4805,7 +4865,7 @@ export default function App() {
                                     {customSounds.map((sound, idx) => (
                                       <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-app-card border border-app-border rounded-xl group">
                                         <button 
-                                          onClick={() => playSound(sound.url, true)}
+                                          onClick={() => playSound(sound.url, true, user.uid, profile?.display_name || user.displayName || 'Anoniem')}
                                           className="p-1 hover:bg-app-accent rounded-lg transition-colors"
                                         >
                                           <Volume2 className="w-3 h-3 text-app-ink" />
@@ -4836,7 +4896,7 @@ export default function App() {
                                     onChange={(e) => {
                                       const soundUrl = e.target.value;
                                       setNotificationSettings(prev => ({ ...prev, message_sound: soundUrl }));
-                                      playSound(soundUrl, true);
+                                      playSound(soundUrl, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
                                     }}
                                     className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
                                   >
@@ -4861,7 +4921,7 @@ export default function App() {
                                     onChange={(e) => {
                                       const soundUrl = e.target.value;
                                       setNotificationSettings(prev => ({ ...prev, post_sound: soundUrl }));
-                                      playSound(soundUrl, true);
+                                      playSound(soundUrl, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
                                     }}
                                     className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
                                   >
@@ -5381,6 +5441,11 @@ export default function App() {
                   </div>
                 </div>
               )}
+              {view === 'audiologs' && (
+                <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
+                  <AudioLogsView />
+                </div>
+              )}
               {view === 'news' && (
                 <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
                   <div className="mb-8">
@@ -5415,6 +5480,11 @@ export default function App() {
                       </motion.div>
                     ))}
                   </div>
+                </div>
+              )}
+              {view === 'audiologs' && (
+                <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
+                  <AudioLogsView />
                 </div>
               )}
             </motion.div>

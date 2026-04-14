@@ -1,9 +1,26 @@
 import { toast } from 'sonner';
-import { SupabaseErrorInfo } from '../types';
+import { AudioLog, SupabaseErrorInfo } from '../types';
+import { supabase } from './supabase';
 
 export const audioCache = new Map<string, HTMLAudioElement>();
 
-export const playSound = (url: string, enabled: boolean) => {
+export const logAudioEvent = async (url: string, status: 'success' | 'error' | 'warning', message: string, userId?: string, userName?: string) => {
+  try {
+    // We use the default supabase client for logging
+    await supabase.from('audio_logs').insert({
+      url,
+      status,
+      message,
+      user_id: userId,
+      user_name: userName,
+      created_at: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Failed to log audio event:', err);
+  }
+};
+
+export const playSound = (url: string, enabled: boolean, userId?: string, userName?: string) => {
   if (!enabled || !url) {
     console.log('Sound skipped:', { enabled, hasUrl: !!url });
     return;
@@ -17,6 +34,7 @@ export const playSound = (url: string, enabled: boolean) => {
     if (ytMatch) {
       const videoId = ytMatch[1];
       console.log('YouTube sound detected:', videoId);
+      logAudioEvent(url, 'success', `YouTube audio gestart: ${videoId}`, userId, userName);
       let iframe = document.getElementById('yt-audio-player') as HTMLIFrameElement;
       if (!iframe) {
         iframe = document.createElement('iframe');
@@ -52,15 +70,17 @@ export const playSound = (url: string, enabled: boolean) => {
     if (playPromise !== undefined) {
       playPromise.then(() => {
         console.log('Sound played successfully');
+        logAudioEvent(url, 'success', 'Geluid succesvol afgespeeld', userId, userName);
       }).catch(error => {
         console.warn('Audio play failed:', error);
+        logAudioEvent(url, 'error', `Afspelen mislukt: ${error.message || error.name}`, userId, userName);
         
         if (error.name === 'NotAllowedError') {
-          toast.info('Klik ergens om geluiden te activeren', {
+          toast.info('Klik op het luidspreker-icoon bovenin om geluiden te activeren', {
             id: 'audio-unlock-toast',
-            duration: 5000,
+            duration: 8000,
             action: {
-              label: 'Activeer',
+              label: 'Herstel Audio',
               onClick: () => {
                 const silent = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
                 silent.play().then(() => {
@@ -70,24 +90,23 @@ export const playSound = (url: string, enabled: boolean) => {
               }
             }
           });
-        } else if (error.name === 'NotSupportedError' || error.message?.includes('supported source')) {
-          console.error('Audio format not supported or invalid URL:', url);
-          // Don't toast every time to avoid spam, but log it clearly
         } else {
-          // Only try fallback for other types of errors (like transient network issues)
-          console.log('Attempting one-time fallback for transient error');
-          const fallback = new Audio(url);
+          // Attempt a more aggressive fallback: create a completely new instance
+          console.log('Attempting aggressive fallback with new Audio instance');
+          const fallback = new Audio(url + (url.includes('?') ? '&' : '?') + 'cb=' + Date.now());
           fallback.volume = 0.5;
-          fallback.play().catch(e => {
-            if (!e.message?.includes('supported source')) {
-              console.error('Fallback audio also failed:', e);
-            }
+          fallback.play().then(() => {
+            logAudioEvent(url, 'warning', 'Afgespeeld via agressieve fallback na initiële fout', userId, userName);
+          }).catch(e => {
+            console.error('Aggressive fallback also failed:', e);
+            logAudioEvent(url, 'error', `Agressieve fallback ook mislukt: ${e.message}`, userId, userName);
           });
         }
       });
     }
   } catch (err) {
     console.error('Error in playSound:', err);
+    logAudioEvent(url, 'error', `Systeemfout in playSound: ${err instanceof Error ? err.message : String(err)}`, userId, userName);
   }
 };
 

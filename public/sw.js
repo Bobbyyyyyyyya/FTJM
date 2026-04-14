@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ftjm-v2';
+const CACHE_NAME = 'ftjm-v2.2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

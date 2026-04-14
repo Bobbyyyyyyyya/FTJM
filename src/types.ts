@@ -132,6 +132,16 @@ export interface Nickname {
   created_at: string;
 }
 
+export interface AudioLog {
+  id: string;
+  user_id?: string;
+  user_name?: string;
+  url: string;
+  status: 'success' | 'error' | 'warning';
+  message: string;
+  created_at: string;
+}
+
 export interface SupabaseErrorInfo {
   error: string;
   operation: string;
