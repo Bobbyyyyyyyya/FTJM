@@ -64,6 +64,9 @@ export const playSound = (url: string, enabled: boolean, userId?: string, userNa
     
     // Reset and play
     audio.volume = 0.5;
+    
+    // Explicitly load before play, sometimes helps on Chrome OS
+    audio.load();
     audio.currentTime = 0;
     
     const playPromise = audio.play();

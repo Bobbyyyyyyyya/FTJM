@@ -168,10 +168,10 @@ export default function App() {
   const [replyingTo, setReplyingTo] = useState<Post | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v1.7.9.2') === 'true';
+    return localStorage.getItem('has_seen_news_v1.7.9.3') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v1.7.9.2') === 'true';
+    return localStorage.getItem('has_seen_menu_v1.7.9.3') === 'true';
   });
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
     const defaultSettings = {
@@ -246,7 +246,38 @@ export default function App() {
       });
     };
     window.addEventListener('sw-update-available', handleUpdate);
-    return () => window.removeEventListener('sw-update-available', handleUpdate);
+    
+    // Auto-unlock audio on first interaction
+    const autoUnlock = async () => {
+      try {
+        const silent = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+        await silent.play();
+        console.log('Audio auto-unlocked');
+        
+        if (navigator.userAgent.includes('CrOS')) {
+          toast.success('Chrome OS Audio Geactiveerd', {
+            description: 'Geluiden zouden nu moeten werken. Gebruik de luidspreker bovenin bij problemen.',
+            duration: 5000
+          });
+        }
+
+        window.removeEventListener('click', autoUnlock);
+        window.removeEventListener('touchstart', autoUnlock);
+        window.removeEventListener('keydown', autoUnlock);
+      } catch (e) {
+        // Silent fail
+      }
+    };
+    window.addEventListener('click', autoUnlock);
+    window.addEventListener('touchstart', autoUnlock);
+    window.addEventListener('keydown', autoUnlock);
+
+    return () => {
+      window.removeEventListener('sw-update-available', handleUpdate);
+      window.removeEventListener('click', autoUnlock);
+      window.removeEventListener('touchstart', autoUnlock);
+      window.removeEventListener('keydown', autoUnlock);
+    };
   }, []);
 
   const unlockAudio = async () => {
@@ -3285,7 +3316,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v1.7.9.2', 'true');
+                      localStorage.setItem('has_seen_menu_v1.7.9.3', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -3336,7 +3367,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v1.7.9.2', 'true');
+                              localStorage.setItem('has_seen_news_v1.7.9.3', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}

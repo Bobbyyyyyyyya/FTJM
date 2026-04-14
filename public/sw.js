@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ftjm-v2.2';
+const CACHE_NAME = 'ftjm-v2.3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -29,9 +29,27 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Network first for HTML/navigate requests to ensure updates are detected
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache first for assets, but stale-while-revalidate for JS/CSS
   event.respondWith(
     caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, networkResponse.clone());
+          });
+        }
+        return networkResponse;
+      }).catch(() => null);
+
+      return response || fetchPromise;
     })
   );
 });
