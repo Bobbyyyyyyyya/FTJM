@@ -27,13 +27,6 @@ export const createSupabaseClient = (uid: string | null = null) => {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
-      // Use a unique storage key per UID to avoid "Multiple GoTrueClient instances" warning
-      storageKey: `sb-${cacheKey}-auth-token`,
-      storage: {
-        getItem: () => null,
-        setItem: () => {},
-        removeItem: () => {},
-      }
     },
     global: {
       fetch: (url, options) => {

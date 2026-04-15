@@ -10,7 +10,7 @@ interface ChatViewProps {
   isAdmin: boolean;
   postInput: string;
   handleCreatePost: (e: React.FormEvent) => void;
-  handleTyping: (e: React.ChangeEvent<HTMLInputElement>, channel: string) => void;
+  handleTyping: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, channel: string) => void;
   cooldownRemaining: number;
   sending: boolean;
   replyingTo: Post | null;
@@ -31,6 +31,7 @@ interface ChatViewProps {
   uploading: boolean;
   fileInputRef: React.RefObject<HTMLInputElement>;
   handleFileUpload: (file: File) => void;
+  nicknames: Record<string, string>;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -59,7 +60,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   customTheme,
   uploading,
   fileInputRef,
-  handleFileUpload
+  handleFileUpload,
+  nicknames
 }) => {
   return (
     <div 
@@ -184,10 +186,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
               onOpenProfile={handleOpenProfile}
               editingPostId={editingPostId}
               editPostInput={editPostInput}
-              setEditPostInput={setEditPostInput}
+              handleTyping={handleTyping}
               onUpdatePost={handleUpdatePost}
               onCancelEdit={() => setEditingPostId(null)}
               saving={saving}
+              nicknames={nicknames}
             />
           ))
         )}

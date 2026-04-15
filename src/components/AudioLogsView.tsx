@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabase';
 import { AudioLog } from '../types';
-import { formatTime } from '../utils/helpers';
+import { formatTime, localAudioLogs } from '../utils/helpers';
 import { motion } from 'motion/react';
 import { Volume2, AlertCircle, CheckCircle, RefreshCw, Clock, User, Link as LinkIcon } from 'lucide-react';
 
@@ -9,37 +8,24 @@ export const AudioLogsView: React.FC = () => {
   const [logs, setLogs] = useState<AudioLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchLogs = async () => {
+  const fetchLogs = () => {
     setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('audio_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      setLogs(data || []);
-    } catch (err) {
-      console.error('Failed to fetch audio logs:', err);
-    } finally {
-      setLoading(false);
-    }
+    setLogs([...localAudioLogs]);
+    setLoading(false);
   };
 
   useEffect(() => {
     fetchLogs();
 
-    const channel = supabase
-      .channel('audio-logs-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audio_logs' }, (payload) => {
-        setLogs(prev => [payload.new as AudioLog, ...prev].slice(0, 50));
-      })
-      .subscribe();
-
-    return () => {
-      channel.unsubscribe();
+    const handleNewLog = (event: Event) => {
+      const customEvent = event as CustomEvent<AudioLog>;
+      if (customEvent.detail) {
+        setLogs(prev => [customEvent.detail, ...prev].slice(0, 100));
+      }
     };
+
+    window.addEventListener('audio-log-added', handleNewLog);
+    return () => window.removeEventListener('audio-log-added', handleNewLog);
   }, []);
 
   return (

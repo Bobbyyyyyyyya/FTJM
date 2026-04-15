@@ -17,10 +17,11 @@ interface PostItemProps {
   onOpenProfile: (userId: string) => void;
   editingPostId: string | null;
   editPostInput: string;
-  setEditPostInput: (input: string) => void;
+  handleTyping: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, channel: string) => void;
   onUpdatePost: (id: string) => void;
   onCancelEdit: () => void;
   saving: boolean;
+  nicknames: Record<string, string>;
 }
 
 export const PostItem: React.FC<PostItemProps> = ({
@@ -35,10 +36,11 @@ export const PostItem: React.FC<PostItemProps> = ({
   onOpenProfile,
   editingPostId,
   editPostInput,
-  setEditPostInput,
+  handleTyping,
   onUpdatePost,
   onCancelEdit,
-  saving
+  saving,
+  nicknames
 }) => {
   return (
     <motion.div 
@@ -73,16 +75,24 @@ export const PostItem: React.FC<PostItemProps> = ({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <button 
-              onClick={() => onOpenProfile(post.author_id)}
-              className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
-            >
-              {post.author_name}
-            </button>
-            <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
-              {formatDate(post.created_at)} om {formatTime(post.created_at)}
-            </span>
+          <div className="flex flex-col min-w-0">
+            {post.parent_author_name && (
+              <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-app-muted mb-1 font-medium bg-app-accent/30 w-fit px-2 py-0.5 rounded-full border border-app-border/50">
+                <MessageSquare className="w-3 h-3" />
+                <span>Geantwoord op <span className="font-bold text-app-ink">{post.parent_author_name}</span></span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <button 
+                onClick={() => onOpenProfile(post.author_id)}
+                className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
+              >
+                {nicknames[post.author_id] || post.author_name}
+              </button>
+              <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
+                {formatDate(post.created_at)} om {formatTime(post.created_at)}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button 
@@ -136,7 +146,7 @@ export const PostItem: React.FC<PostItemProps> = ({
             <input 
               type="text"
               value={editPostInput}
-              onChange={(e) => setEditPostInput(e.target.value)}
+              onChange={(e) => handleTyping(e, `edit-post-${post.id}`)}
               className="flex-1 px-3 py-2 sm:px-4 sm:py-3 bg-app-bg border border-app-border rounded-lg sm:rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink"
               autoFocus
             />

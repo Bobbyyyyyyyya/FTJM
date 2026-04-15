@@ -29,7 +29,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         </div>
         <div className="hidden md:flex items-center gap-8">
           <a href="#features" className="text-[9px] font-black text-white/60 hover:text-white transition-colors uppercase tracking-[0.3em]">Features</a>
-          <a href="#about" className="text-[9px] font-black text-white/60 hover:text-white transition-colors uppercase tracking-[0.3em]">Over FTJM</a>
+          <a href="#tos" className="text-[9px] font-black text-white/60 hover:text-white transition-colors uppercase tracking-[0.3em]">Voorwaarden</a>
           <button 
             onClick={onLogin}
             className="px-6 py-2.5 bg-white text-[#004276] rounded-lg font-black text-[10px] hover:bg-zinc-100 transition-all active:scale-95 shadow-2xl shadow-black/20 uppercase tracking-widest"
@@ -161,6 +161,55 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         </div>
       </section>
 
+      {/* Terms of Service Section */}
+      <section id="tos" className="py-24 bg-app-bg relative z-10 border-t border-app-border">
+        <div className="max-w-4xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-app-accent rounded-full text-[9px] font-black text-app-ink border border-app-border uppercase tracking-[0.3em] mb-6">
+              Juridisch
+            </div>
+            <h2 className="text-4xl font-black tracking-tighter text-app-ink uppercase leading-none">
+              Terms of <span className="text-[#004276]">Service</span>
+            </h2>
+          </div>
+
+          <div className="bg-app-card rounded-[2.5rem] p-8 sm:p-12 border border-app-border shadow-sm space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-[#004276] uppercase tracking-widest">1. Gebruikersgedrag</h4>
+                <p className="text-sm text-app-muted leading-relaxed font-medium">
+                  De eigenaar van FTJM Enterprise is <span className="text-app-ink font-bold">niet verantwoordelijk</span> voor het gedrag, de uitspraken of de acties van gebruikers op dit platform. Gebruikers worden geacht zich professioneel en respectvol te gedragen.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-[#004276] uppercase tracking-widest">2. Inhoud & Aansprakelijkheid</h4>
+                <p className="text-sm text-app-muted leading-relaxed font-medium">
+                  Alle inhoud geplaatst door gebruikers is de exclusieve verantwoordelijkheid van de betreffende gebruiker. De eigenaar aanvaardt geen aansprakelijkheid voor onjuiste, lasterlijke of schadelijke informatie die door derden wordt gedeeld.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-[#004276] uppercase tracking-widest">3. Moderatie & Toegang</h4>
+                <p className="text-sm text-app-muted leading-relaxed font-medium">
+                  De eigenaar behoudt zich het recht voor om op elk moment, zonder voorafgaande kennisgeving en zonder opgaaf van redenen, de toegang van gebruikers te ontzeggen of geplaatste inhoud te verwijderen.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-[#004276] uppercase tracking-widest">4. Gegevens & Privacy</h4>
+                <p className="text-sm text-app-muted leading-relaxed font-medium">
+                  Gebruikers zijn zelf verantwoordelijk voor de beveiliging van hun account en inloggegevens. FTJM Enterprise is niet aansprakelijk voor schade voortvloeiend uit ongeautoriseerde toegang tot gebruikersaccounts.
+                </p>
+              </div>
+            </div>
+            
+            <div className="pt-8 border-t border-app-border">
+              <p className="text-[10px] text-app-muted italic text-center font-medium">
+                Door gebruik te maken van dit platform stemt u in met deze voorwaarden. Het gebruik van FTJM Enterprise is geheel op eigen risico.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="py-12 bg-app-bg border-t border-app-border relative z-10">
         <div className="max-w-7xl mx-auto px-6">
@@ -173,7 +222,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             </div>
             <div className="flex items-center gap-10">
               <a href="#" className="text-[9px] font-black text-app-muted hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Privacy</a>
-              <a href="#" className="text-[9px] font-black text-app-muted hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Voorwaarden</a>
+              <a href="#tos" className="text-[9px] font-black text-app-muted hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Voorwaarden</a>
               <a href="#" className="text-[9px] font-black text-app-muted hover:text-[#004276] transition-colors uppercase tracking-[0.3em]">Contact</a>
             </div>
           </div>

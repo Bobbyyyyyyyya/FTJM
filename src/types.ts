@@ -105,6 +105,7 @@ export interface ForumComment {
   content: string;
   created_at: string;
   parent_id?: string;
+  parent_author_name?: string;
 }
 
 export interface Conversation {

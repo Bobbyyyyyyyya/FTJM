@@ -5,6 +5,7 @@ import { supabase, setSupabaseFirebaseUid, createSupabaseClient } from './utils/
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User } from './lib/firebase';
 import { UserProfile, Post, Conversation, DirectMessage, CustomTheme, ForumThread, ForumComment, AppNotification, NotificationSettings, Report } from './types';
 import { MentionOverlay } from './components/MentionOverlay';
+import { EmojiOverlay } from './components/EmojiOverlay';
 import { Toaster, toast } from 'sonner';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -69,8 +70,8 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { AudioLogsView } from './components/AudioLogsView';
 
 // Constants & Helpers
-import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS } from './constants';
-import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent } from './utils/helpers';
+import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
+import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons } from './utils/helpers';
 
 // App component
 export default function App() {
@@ -166,14 +167,16 @@ export default function App() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editMessageInput, setEditMessageInput] = useState('');
   const [replyingTo, setReplyingTo] = useState<Post | null>(null);
+  const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v1.7.9.3') === 'true';
+    return localStorage.getItem('has_seen_news_v1.7.9.6') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v1.7.9.3') === 'true';
+    return localStorage.getItem('has_seen_menu_v1.7.9.6') === 'true';
   });
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
+  // Helper to clean and migrate notification settings
+  const cleanNotificationSettings = (settings: any): NotificationSettings => {
     const defaultSettings = {
       enable_sounds: true,
       notify_new_posts: true,
@@ -183,29 +186,41 @@ export default function App() {
       post_sound: SOUND_OPTIONS[1].url
     };
 
+    if (!settings) return defaultSettings;
+
+    // Map old camelCase keys to snake_case if they exist and snake_case is missing
+    const cleaned: NotificationSettings = {
+      enable_sounds: settings.enable_sounds !== undefined ? settings.enable_sounds : (settings.enableSounds !== undefined ? settings.enableSounds : defaultSettings.enable_sounds),
+      notify_new_posts: settings.notify_new_posts !== undefined ? settings.notify_new_posts : (settings.notifyNewPosts !== undefined ? settings.notifyNewPosts : defaultSettings.notify_new_posts),
+      notify_new_messages: settings.notify_new_messages !== undefined ? settings.notify_new_messages : (settings.notifyNewMessages !== undefined ? settings.notifyNewMessages : defaultSettings.notify_new_messages),
+      notify_mentions: settings.notify_mentions !== undefined ? settings.notify_mentions : (settings.notifyMentions !== undefined ? settings.notifyMentions : defaultSettings.notify_mentions),
+      message_sound: settings.message_sound || settings.messageSound || defaultSettings.message_sound,
+      post_sound: settings.post_sound || settings.postSound || defaultSettings.post_sound
+    };
+
+    // Migration: Reset problematic old Mixkit URLs
+    const oldMixkitUrls = [
+      'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3',
+      'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3'
+    ];
+
+    if (oldMixkitUrls.includes(cleaned.message_sound)) {
+      cleaned.message_sound = SOUND_OPTIONS[0].url;
+    }
+    if (oldMixkitUrls.includes(cleaned.post_sound)) {
+      cleaned.post_sound = SOUND_OPTIONS[1].url;
+    }
+
+    return cleaned;
+  };
+
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
     try {
       const cached = localStorage.getItem('cached_notifications');
-      if (!cached) return defaultSettings;
-      
-      const parsed = JSON.parse(cached);
-      
-      // Migration: If user has old Mixkit URLs that are known to be problematic, reset to new defaults
-      const oldMixkitUrls = [
-        'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3',
-        'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3'
-      ];
-      
-      if (oldMixkitUrls.includes(parsed.message_sound)) {
-        parsed.message_sound = SOUND_OPTIONS[0].url;
-      }
-      if (oldMixkitUrls.includes(parsed.post_sound)) {
-        parsed.post_sound = SOUND_OPTIONS[1].url;
-      }
-      
-      return parsed;
+      return cleanNotificationSettings(cached ? JSON.parse(cached) : null);
     } catch (e) {
       console.error('Failed to parse cached_notifications', e);
-      return defaultSettings;
+      return cleanNotificationSettings(null);
     }
   });
   const [customSounds, setCustomSounds] = useState<{ name: string, url: string }[]>([]);
@@ -252,6 +267,7 @@ export default function App() {
       try {
         const silent = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
         await silent.play();
+        setIsAudioUnlocked(true);
         console.log('Audio auto-unlocked');
         
         if (navigator.userAgent.includes('CrOS')) {
@@ -260,6 +276,16 @@ export default function App() {
             duration: 5000
           });
         }
+
+        // Preload sounds after unlock
+        SOUND_OPTIONS.forEach(opt => {
+          if (!audioCache.has(opt.url)) {
+            const audio = new Audio(opt.url);
+            audio.preload = 'auto';
+            audio.load();
+            audioCache.set(opt.url, audio);
+          }
+        });
 
         window.removeEventListener('click', autoUnlock);
         window.removeEventListener('touchstart', autoUnlock);
@@ -282,10 +308,20 @@ export default function App() {
 
   const unlockAudio = async () => {
     try {
+      if (isAudioUnlocked) {
+        playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, true, user?.uid, profile?.display_name || user?.displayName || 'Anoniem');
+        toast.info('Test geluid afgespeeld');
+        return;
+      }
       const silent = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
       await silent.play();
+      setIsAudioUnlocked(true);
       toast.success('Audio geactiveerd!');
       logAudioEvent('system', 'success', 'Audio handmatig ontgrendeld door gebruiker', user?.uid, profile?.display_name || user?.displayName || 'Anoniem');
+      // Play a quick test sound after activation
+      setTimeout(() => {
+        playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, true, user?.uid, profile?.display_name || user?.displayName || 'Anoniem');
+      }, 500);
     } catch (err) {
       console.error('Failed to unlock audio:', err);
       toast.error('Audio activatie mislukt. Klik ergens op de pagina.');
@@ -372,9 +408,14 @@ export default function App() {
   const [mentionSearch, setMentionSearch] = useState('');
   const [mentionResults, setMentionResults] = useState<UserProfile[]>([]);
   const [mentionPosition, setMentionPosition] = useState<{ top: number, left: number } | null>(null);
-  const [activeMentionInput, setActiveMentionInput] = useState<'post' | 'message' | 'comment' | 'editPost' | null>(null);
+  const [activeMentionInput, setActiveMentionInput] = useState<'post' | 'message' | 'comment' | 'editPost' | 'editMessage' | null>(null);
+
+  const [emojiSearch, setEmojiSearch] = useState('');
+  const [emojiResults, setEmojiResults] = useState<any[]>([]);
+  const [emojiPosition, setEmojiPosition] = useState<{ top: number, left: number } | null>(null);
   const [showAdminPrank, setShowAdminPrank] = useState(false);
   const [adminPrankLogs, setAdminPrankLogs] = useState<string[]>([]);
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
   const [isPranking, setIsPranking] = useState(false);
   const [fakeErrors, setFakeErrors] = useState<string[]>([]);
   const saveConversationsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -501,7 +542,7 @@ export default function App() {
     setIsPranking(false);
     toast.success("Systeem hersteld. Alle processen zijn weer normaal.");
   };
-  const initialLoadTime = useRef(new Date(Date.now() - 30000).toISOString()); // 30 seconds buffer to account for server/client clock drift
+  const initialLoadTime = useRef(new Date(Date.now() - 60000).toISOString()); // 60 seconds buffer to account for server/client clock drift
   const lastPostId = useRef<string | null>(null);
   const lastConversationUpdates = useRef<Record<string, string>>({});
   const notificationSettingsRef = useRef(notificationSettings);
@@ -517,34 +558,6 @@ export default function App() {
   const [supabaseClient, setSupabaseClient] = useState(supabase);
 
   useEffect(() => {
-    const unlockAudio = () => {
-      const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
-      silentAudio.play().then(() => {
-        console.log('Audio unlocked');
-        window.removeEventListener('click', unlockAudio);
-        window.removeEventListener('touchstart', unlockAudio);
-      }).catch(() => {});
-    };
-    window.addEventListener('click', unlockAudio);
-    window.addEventListener('touchstart', unlockAudio);
-    return () => {
-      window.removeEventListener('click', unlockAudio);
-      window.removeEventListener('touchstart', unlockAudio);
-    };
-  }, []);
-
-  useEffect(() => {
-    // Preload standard sounds
-    SOUND_OPTIONS.forEach(opt => {
-      if (!audioCache.has(opt.url)) {
-        console.log('Preloading default sound:', opt.name);
-        const audio = new Audio(opt.url);
-        audio.preload = 'auto';
-        audio.load(); // Explicitly trigger load
-        audioCache.set(opt.url, audio);
-      }
-    });
-    
     // Preload custom sounds
     customSounds.forEach(sound => {
       if (!audioCache.has(sound.url)) {
@@ -605,7 +618,7 @@ export default function App() {
     return () => {
       channel.unsubscribe();
     };
-  }, [user, supabaseClient]);
+  }, [user?.uid]);
 
   // Caching effects
   useEffect(() => {
@@ -644,7 +657,16 @@ export default function App() {
         try {
           await supabaseClient
             .from('profiles')
-            .update({ notification_settings: notificationSettings })
+            .update({ 
+              notification_settings: {
+                enable_sounds: notificationSettings.enable_sounds,
+                notify_new_posts: notificationSettings.notify_new_posts,
+                notify_new_messages: notificationSettings.notify_new_messages,
+                notify_mentions: notificationSettings.notify_mentions,
+                message_sound: notificationSettings.message_sound,
+                post_sound: notificationSettings.post_sound
+              } 
+            })
             .eq('id', user.uid);
         } catch (err) {
           console.error('Failed to sync notification settings', err);
@@ -884,7 +906,7 @@ export default function App() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, [user, isWhitelisted]);
+  }, [user?.uid, isWhitelisted]);
 
   // Test connection on boot
   useEffect(() => {
@@ -898,7 +920,7 @@ export default function App() {
       }
     }
     testConnection();
-  }, [supabaseClient]);
+  }, []);
 
   // Auth state listener
   useEffect(() => {
@@ -906,6 +928,7 @@ export default function App() {
       setUser(currentUser);
       
       if (currentUser) {
+        logAudioEvent('system', 'success', `Ingelogd als ${currentUser.displayName || currentUser.email}`, currentUser.uid, currentUser.displayName || 'Anoniem');
         if (currentUidRef.current !== currentUser.uid) {
           currentUidRef.current = currentUser.uid;
           setSupabaseFirebaseUid(currentUser.uid);
@@ -931,7 +954,7 @@ export default function App() {
               setPhotoURLInput(data.photo_url || currentUser.photoURL || '');
               setBioInput(data.bio || '');
               if (data.notification_settings) {
-                setNotificationSettings(data.notification_settings);
+                setNotificationSettings(cleanNotificationSettings(data.notification_settings));
               }
               if (data.custom_sounds) {
                 setCustomSounds(data.custom_sounds);
@@ -993,6 +1016,7 @@ export default function App() {
         }
         
         console.log('Whitelist check result:', { whitelisted, exists, isAdmin });
+        logAudioEvent('system', whitelisted ? 'success' : 'warning', whitelisted ? 'Whitelist check geslaagd' : 'Niet op de whitelist', user.uid, user.displayName || 'Anoniem');
         setIsWhitelisted(whitelisted);
         localStorage.setItem('cached_isWhitelisted', JSON.stringify(whitelisted));
       } catch (err) {
@@ -1006,7 +1030,7 @@ export default function App() {
     };
 
     checkWhitelist();
-  }, [user, isAdmin, supabaseClient]);
+  }, [user?.uid, isAdmin]);
 
   // Fetch nicknames
   useEffect(() => {
@@ -1035,7 +1059,7 @@ export default function App() {
     };
 
     fetchNicknames();
-  }, [user, isWhitelisted, supabaseClient]);
+  }, [user?.uid, isWhitelisted]);
 
   // Real-time profile sync
   useEffect(() => {
@@ -1070,6 +1094,7 @@ export default function App() {
       })
       .subscribe((status) => {
         console.log(`Profile subscription status for ${user.uid}:`, status);
+        logAudioEvent('system', status === 'SUBSCRIBED' ? 'success' : 'warning', `Profiel status: ${status}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       });
 
     // Create profile if it doesn't exist
@@ -1089,7 +1114,14 @@ export default function App() {
           email: user.email || '',
           photo_url: user.photoURL || undefined,
           use_custom_theme: useCustomTheme,
-          notification_settings: notificationSettings,
+          notification_settings: {
+            enable_sounds: notificationSettings.enable_sounds,
+            notify_new_posts: notificationSettings.notify_new_posts,
+            notify_new_messages: notificationSettings.notify_new_messages,
+            notify_mentions: notificationSettings.notify_mentions,
+            message_sound: notificationSettings.message_sound,
+            post_sound: notificationSettings.post_sound
+          },
           custom_theme: customTheme,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -1123,7 +1155,7 @@ export default function App() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, [user?.uid, isWhitelisted, supabaseClient]);
+  }, [user?.uid, isWhitelisted]);
 
   // Real-time whitelist and reports sync for admin
   useEffect(() => {
@@ -1215,7 +1247,7 @@ export default function App() {
       supabaseClient.removeChannel(whitelistChannel);
       supabaseClient.removeChannel(reportsChannel);
     };
-  }, [isAdmin, user?.uid, supabaseClient, view, settingsTab]);
+  }, [isAdmin, user?.uid, view, settingsTab]);
 
   const fetchAdminData = async () => {
     if (!isAdmin || !user) return;
@@ -1310,7 +1342,7 @@ export default function App() {
       }
     };
     fetchStatus();
-  }, [supabaseClient]);
+  }, []);
 
   // Real-time conversations sync
   useEffect(() => {
@@ -1349,7 +1381,7 @@ export default function App() {
             // Notification logic
             if (updatedConv.updated_at > (lastConversationUpdates.current[updatedConv.id] || '') && 
                 updatedConv.last_message_sender_id !== user.uid && 
-                updatedConv.updated_at > initialLoadTime.current) {
+                new Date(updatedConv.updated_at).getTime() > new Date(initialLoadTime.current).getTime()) {
               
               const otherParticipantUid = updatedConv.participants.find((uid: string) => uid !== user.uid);
               const senderName = otherParticipantUid ? updatedConv.participant_names[otherParticipantUid] : 'Iemand';
@@ -1408,12 +1440,17 @@ export default function App() {
       })
       .subscribe((status) => {
         console.log(`Conversations subscription status for ${user.uid}:`, status);
+        if (status === 'SUBSCRIBED') {
+          logAudioEvent('system', 'success', `Conversatie verbinding actief`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          logAudioEvent('system', 'error', `Conversatie verbinding fout: ${status}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
+        }
       });
 
     conversationsChannelRef.current = channel;
 
     // Initial fetch if not already done
-    if (!hasFetchedConversations.current || view === 'messages') {
+    if (!hasFetchedConversations.current) {
       const fetchConversations = async () => {
         const { data, error } = await supabaseClient
           .from('conversations')
@@ -1460,8 +1497,52 @@ export default function App() {
 
     return () => {
       supabaseClient.removeChannel(channel);
+      conversationsChannelRef.current = null;
     };
-  }, [user?.uid, isWhitelisted, supabaseClient, view]);
+  }, [user?.uid, isWhitelisted]);
+
+  // Separate effect for fetching conversations when switching to messages view
+  useEffect(() => {
+    if (!user || !isWhitelisted || view !== 'messages') return;
+    
+    const fetchConversations = async () => {
+      const { data, error } = await supabaseClient
+        .from('conversations')
+        .select('id, participants, participant_names, participant_photos, last_message, last_message_sender_id, updated_at')
+        .contains('participants', [user.uid]);
+      
+      if (error) {
+        console.error('Error fetching conversations:', error);
+        return;
+      }
+
+      const conversationsWithLastMsg = await Promise.all((data || []).map(async (conv) => {
+        const { data: lastMsg } = await supabaseClient
+          .from('messages')
+          .select('text, sender_id, created_at')
+          .eq('conversation_id', conv.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (lastMsg) {
+          return {
+            ...conv,
+            last_message: lastMsg.text,
+            last_message_sender_id: lastMsg.sender_id,
+            updated_at: lastMsg.created_at
+          };
+        }
+        return conv;
+      }));
+
+      const sorted = conversationsWithLastMsg.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+      setConversations(sorted);
+      hasFetchedConversations.current = true;
+    };
+    
+    fetchConversations();
+  }, [user?.uid, isWhitelisted, view]);
 
   // Real-time messages sync
   useEffect(() => {
@@ -1481,6 +1562,7 @@ export default function App() {
         console.log('Real-time message change:', payload);
         if (payload.eventType === 'INSERT') {
           const msg = payload.new as DirectMessage;
+          logAudioEvent('system', 'success', `Nieuw bericht ontvangen van ${msg.sender_id === user.uid ? 'jou' : 'andere gebruiker'}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
           setMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
             return [...prev, msg];
@@ -1515,6 +1597,7 @@ export default function App() {
       })
       .subscribe((status) => {
         console.log(`Messages subscription status for ${activeConversation.id}:`, status);
+        logAudioEvent('system', status === 'SUBSCRIBED' ? 'success' : 'warning', `Berichten status: ${status}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       });
 
     messageChannelRef.current = channel;
@@ -1541,8 +1624,9 @@ export default function App() {
 
     return () => {
       supabaseClient.removeChannel(channel);
+      messageChannelRef.current = null;
     };
-  }, [user?.uid, activeConversation?.id, supabaseClient]);
+  }, [user?.uid, activeConversation?.id]);
 
   const [isTypingSubscribed, setIsTypingSubscribed] = useState(false);
 
@@ -1642,7 +1726,7 @@ export default function App() {
       setIsTypingSubscribed(false);
       clearInterval(interval);
     };
-  }, [user?.uid, supabaseClient]);
+  }, [user?.uid]);
 
   // Derive typingStatuses from typingUsers
   useEffect(() => {
@@ -1725,7 +1809,7 @@ export default function App() {
     };
     
     fetchParticipantProfiles();
-  }, [user, isWhitelisted, conversations, supabaseClient]);
+  }, [user?.uid, isWhitelisted, conversations.length]);
 
   // Fetch users for search only when searching or needed
   useEffect(() => {
@@ -1748,7 +1832,7 @@ export default function App() {
     
     const timeout = setTimeout(fetchUsers, 300);
     return () => clearTimeout(timeout);
-  }, [user, isWhitelisted, showUserSearch, userSearchQuery, supabaseClient]);
+  }, [user?.uid, isWhitelisted, showUserSearch, userSearchQuery]);
 
   // Mark notifications as read when opening a conversation
   useEffect(() => {
@@ -1795,7 +1879,7 @@ export default function App() {
             
             const newPosts = [latestPost, ...prev].sort((a, b) => 
               new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            ).slice(0, 50); // Increased limit slightly for better UX
+            ).slice(0, 50);
             
             if (savePostsTimeoutRef.current) clearTimeout(savePostsTimeoutRef.current);
             savePostsTimeoutRef.current = setTimeout(() => {
@@ -1809,7 +1893,7 @@ export default function App() {
 
           if (lastPostId.current && latestPost && latestPost.id !== lastPostId.current && 
               latestPost.author_id !== user.uid && 
-              latestPost.created_at > initialLoadTime.current) {
+              new Date(latestPost.created_at).getTime() > new Date(initialLoadTime.current).getTime()) {
             if (notificationSettingsRef.current.notify_new_posts) {
               toast.info(`Nieuw bericht van ${latestPost.author_name}`, {
                 description: latestPost.content.substring(0, 50) + (latestPost.content.length > 50 ? '...' : ''),
@@ -1847,7 +1931,7 @@ export default function App() {
         
         if (lastPostId.current && latestPost && latestPost.id !== lastPostId.current && 
             latestPost.author_id !== user.uid && 
-            latestPost.created_at > initialLoadTime.current) {
+            new Date(latestPost.created_at).getTime() > new Date(initialLoadTime.current).getTime()) {
           if (notificationSettingsRef.current.notify_new_posts) {
             toast.info(`Nieuw bericht van ${latestPost.author_name}`, {
               description: latestPost.content.substring(0, 50) + (latestPost.content.length > 50 ? '...' : ''),
@@ -1890,6 +1974,7 @@ export default function App() {
       })
       .subscribe((status) => {
         console.log('Posts subscription status:', status);
+        logAudioEvent('system', status === 'SUBSCRIBED' ? 'success' : 'warning', `Posts status: ${status}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       });
 
     postsChannelRef.current = channel;
@@ -1907,9 +1992,25 @@ export default function App() {
       if (data) {
         setPosts(data);
         localStorage.setItem('cached_posts', JSON.stringify(data));
+        if (data.length > 0) {
+          lastPostId.current = data[0].id;
+        }
         hasFetchedPosts.current = true;
       }
     };
+
+    fetchPosts();
+    setLoading(false);
+
+    return () => {
+      supabaseClient.removeChannel(channel);
+      postsChannelRef.current = null;
+    };
+  }, [user?.uid, isWhitelisted]);
+
+  // Real-time forum threads sync
+  useEffect(() => {
+    if (!user || !isWhitelisted) return;
 
     const fetchThreads = async () => {
       try {
@@ -1924,11 +2025,8 @@ export default function App() {
       }
     };
 
-    fetchPosts();
     fetchThreads();
-    setLoading(false);
 
-    // Forum threads real-time sync
     const threadsChannel = supabaseClient
       .channel('forum_threads_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_threads' }, (payload) => {
@@ -1954,10 +2052,9 @@ export default function App() {
       .subscribe();
 
     return () => {
-      supabaseClient.removeChannel(channel);
       supabaseClient.removeChannel(threadsChannel);
     };
-  }, [user?.uid, isWhitelisted, supabaseClient, activeThread?.id]);
+  }, [user?.uid, isWhitelisted, activeThread?.id]);
 
   // Real-time forum comments sync
   useEffect(() => {
@@ -1993,7 +2090,7 @@ export default function App() {
     return () => {
       supabaseClient.removeChannel(channel);
     };
-  }, [user?.uid, isWhitelisted, activeThread?.id, supabaseClient]);
+  }, [user?.uid, isWhitelisted, activeThread?.id]);
 
   const loadMoreMessages = async () => {
     if (!activeConversation || loadingMoreMessages || !hasMoreMessages) return;
@@ -2070,7 +2167,14 @@ export default function App() {
       display_name: displayNameInput.trim() || user.displayName || 'Anoniem',
       photo_url: photoURLInput.trim() || user.photoURL || null,
       bio: bioInput.trim() || null,
-      notification_settings: notificationSettings,
+      notification_settings: {
+        enable_sounds: notificationSettings.enable_sounds,
+        notify_new_posts: notificationSettings.notify_new_posts,
+        notify_new_messages: notificationSettings.notify_new_messages,
+        notify_mentions: notificationSettings.notify_mentions,
+        message_sound: notificationSettings.message_sound,
+        post_sound: notificationSettings.post_sound
+      },
       custom_theme: customTheme,
       use_custom_theme: useCustomTheme,
       custom_sounds: customSounds,
@@ -2084,6 +2188,7 @@ export default function App() {
         
       if (error) throw error;
       
+      logAudioEvent('system', 'success', 'Profiel succesvol bijgewerkt', user.uid, profile?.display_name || user.displayName || 'Anoniem');
       // Update all content where this user is the author to reflect name/photo changes
       try {
         const bulkUpdates = [
@@ -2414,6 +2519,8 @@ export default function App() {
       }
 
       console.log('Post inserted successfully:', insertData);
+      logAudioEvent('system', 'success', 'Bericht succesvol geplaatst', user.uid, profile?.display_name || user.displayName || 'Anoniem');
+      playSound(notificationSettingsRef.current.post_sound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       setPostInput('');
       setReplyingTo(null);
 
@@ -2486,6 +2593,7 @@ export default function App() {
 
       if (error) throw error;
       
+      logAudioEvent('system', 'success', `Topic '${payload.title}' succesvol geplaatst`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       setThreads(prev => [data, ...prev]);
       setThreadTitleInput('');
       setThreadContentInput('');
@@ -2531,13 +2639,17 @@ export default function App() {
         author_name: profile?.display_name || user.displayName || 'Anoniem',
         author_photo: profile?.photo_url || user.photoURL || undefined,
         content: commentInput.trim(),
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        parent_id: replyingToComment?.id || null,
+        parent_author_name: replyingToComment?.author_name || null
       }).select().single();
 
       if (error) throw error;
       
+      logAudioEvent('system', 'success', `Reactie geplaatst op thread ${threadId}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       setThreadComments(prev => [...prev, data]);
       setCommentInput('');
+      setReplyingToComment(null);
       
       // Notify mentioned users
       handleMentions(data.content, data.id, 'comment');
@@ -3051,6 +3163,8 @@ export default function App() {
       }
       
       console.log('Message sent successfully:', insertedMsg);
+      logAudioEvent('system', 'success', `Bericht verzonden naar conversatie ${activeConversation.id}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
+      playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       
       // Update local state immediately for better UX
       if (insertedMsg) {
@@ -3088,8 +3202,12 @@ export default function App() {
           created_at: new Date().toISOString()
         };
         console.log('Sending message notification payload:', JSON.stringify(payload, null, 2));
+        logAudioEvent('system', 'success', `Notificatie verzonden naar ${participantId}: ${text.substring(0, 20)}...`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
         supabaseClient.from('notifications').insert(payload).then(({ error }) => {
-          if (error) console.error('Failed to send message notification', error);
+          if (error) {
+            console.error('Failed to send message notification', error);
+            logAudioEvent('system', 'error', `Notificatie fout: ${error.message}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
+          }
         });
       });
 
@@ -3137,6 +3255,36 @@ export default function App() {
     }
   }, [user?.uid, isWhitelisted]);
 
+  const handleEmojiSelect = (emoji: string) => {
+    let currentInput = '';
+    let setInput: (val: string) => void = () => {};
+
+    if (activeMentionInput === 'post') {
+      currentInput = postInput;
+      setInput = setPostInput;
+    } else if (activeMentionInput === 'comment') {
+      currentInput = commentInput;
+      setInput = setCommentInput;
+    } else if (activeMentionInput === 'message') {
+      currentInput = messageInput;
+      setInput = setMessageInput;
+    } else if (activeMentionInput === 'editPost') {
+      currentInput = editPostInput;
+      setInput = setEditPostInput;
+    } else if (activeMentionInput === 'editMessage') {
+      currentInput = editMessageInput;
+      setInput = setEditMessageInput;
+    }
+
+    const lastColon = currentInput.lastIndexOf(':');
+    if (lastColon !== -1) {
+      const newValue = currentInput.substring(0, lastColon) + emoji + ' ';
+      setInput(newValue);
+    }
+
+    setEmojiResults([]);
+  };
+
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, conversationId: string) => {
     const value = e.target.value;
     const cursorPosition = e.target.selectionStart || 0;
@@ -3164,7 +3312,8 @@ export default function App() {
         else if (conversationId === 'forum') {
           if (activeThread) setActiveMentionInput('comment');
           else setActiveMentionInput('post');
-        } else if (conversationId.startsWith('edit-')) setActiveMentionInput('editPost');
+        } else if (conversationId.startsWith('edit-post-')) setActiveMentionInput('editPost');
+        else if (conversationId.startsWith('edit-msg-')) setActiveMentionInput('editMessage');
         else setActiveMentionInput('message');
       } else {
         setMentionResults([]);
@@ -3173,14 +3322,50 @@ export default function App() {
       setMentionResults([]);
     }
 
-    if (conversationId === 'forum') {
-      if (activeThread) {
-        setCommentInput(e.target.value);
+    // Emoji detection
+    const lastColon = value.lastIndexOf(':', cursorPosition - 1);
+    if (lastColon !== -1) {
+      const query = value.substring(lastColon + 1, cursorPosition);
+      if (!query.includes(' ')) {
+        setEmojiSearch(query);
+        const results = EMOJI_LIST.filter(e => 
+          e.name.toLowerCase().includes(query.toLowerCase()) ||
+          e.keywords.some(k => k.toLowerCase().includes(query.toLowerCase()))
+        ).slice(0, 20);
+        setEmojiResults(results);
+        
+        // Calculate position
+        const rect = e.target.getBoundingClientRect();
+        setEmojiPosition({
+          top: rect.top,
+          left: rect.left + 20
+        });
+
+        // Determine which input is active
+        if (conversationId === 'chat') setActiveMentionInput('post');
+        else if (conversationId === 'forum') {
+          if (activeThread) setActiveMentionInput('comment');
+          else setActiveMentionInput('post');
+        } else if (conversationId.startsWith('edit-post-')) setActiveMentionInput('editPost');
+        else if (conversationId.startsWith('edit-msg-')) setActiveMentionInput('editMessage');
+        else setActiveMentionInput('message');
       } else {
-        setPostInput(e.target.value);
+        setEmojiResults([]);
       }
     } else {
-      setMessageInput(e.target.value);
+      setEmojiResults([]);
+    }
+
+    const convertedValue = convertEmoticons(e.target.value);
+
+    if (conversationId === 'forum') {
+      if (activeThread) {
+        setCommentInput(convertedValue);
+      } else {
+        setPostInput(convertedValue);
+      }
+    } else {
+      setMessageInput(convertedValue);
     }
 
     if (!user) return;
@@ -3316,7 +3501,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v1.7.9.3', 'true');
+                      localStorage.setItem('has_seen_menu_v1.7.9.6', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -3367,7 +3552,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v1.7.9.3', 'true');
+                              localStorage.setItem('has_seen_news_v1.7.9.6', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -3413,12 +3598,12 @@ export default function App() {
               <>
                 <button 
                   onClick={unlockAudio}
-                  className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink group relative"
-                  title="Audio herstellen"
+                  className={`p-2 rounded-full transition-all group relative ${isAudioUnlocked ? 'hover:bg-app-accent text-app-muted hover:text-app-ink' : 'bg-amber-100 text-amber-600 animate-pulse shadow-lg shadow-amber-500/20'}`}
+                  title={isAudioUnlocked ? "Audio testen" : "Audio herstellen"}
                 >
-                  <Volume2 className="w-5 h-5" />
+                  {isAudioUnlocked ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
                   <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-app-ink text-app-bg text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
-                    Audio Herstellen
+                    {isAudioUnlocked ? "Audio Testen" : "Audio Activeren"}
                   </span>
                 </button>
                 <div className="relative">
@@ -3882,16 +4067,24 @@ export default function App() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
-                                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                                    <button 
-                                      onClick={() => handleOpenProfile(post.author_id)}
-                                      className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
-                                    >
-                                      {nicknames[post.author_id] || post.author_name}
-                                    </button>
-                                    <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
-                                      {formatDate(post.created_at)} om {formatTime(post.created_at)}
-                                    </span>
+                                  <div className="flex flex-col min-w-0">
+                                    {post.parent_author_name && (
+                                      <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-app-muted mb-1 font-medium bg-app-accent/30 w-fit px-2 py-0.5 rounded-full border border-app-border/50">
+                                        <MessageSquare className="w-3 h-3" />
+                                        <span>Geantwoord op <span className="font-bold text-app-ink">{post.parent_author_name}</span></span>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                      <button 
+                                        onClick={() => handleOpenProfile(post.author_id)}
+                                        className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
+                                      >
+                                        {nicknames[post.author_id] || post.author_name}
+                                      </button>
+                                      <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
+                                        {formatDate(post.created_at)} om {formatTime(post.created_at)}
+                                      </span>
+                                    </div>
                                   </div>
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button 
@@ -4053,6 +4246,22 @@ export default function App() {
                               Reacties ({threadComments.length})
                             </h3>
                             <div className="relative">
+                              {replyingToComment && (
+                                <div className="mb-2 flex items-center justify-between bg-app-accent/30 border border-app-border p-2 rounded-xl">
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <div className="w-1 h-6 bg-app-ink rounded-full flex-shrink-0" />
+                                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest truncate">
+                                      Reageren op <span className="text-app-ink">{replyingToComment.author_name}</span>
+                                    </p>
+                                  </div>
+                                  <button 
+                                    onClick={() => setReplyingToComment(null)}
+                                    className="p-1 text-app-muted hover:text-app-ink transition-colors"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
                               <textarea 
                                 value={commentInput}
                                 onChange={(e) => handleTyping(e, 'forum')}
@@ -4099,9 +4308,26 @@ export default function App() {
                                     )}
                                   </div>
                                   <div className="flex-1 space-y-2">
-                                    <div className="flex items-center gap-2 text-xs">
-                                      <span className="font-bold text-app-ink">{nicknames[comment.author_id] || comment.author_name}</span>
-                                      <span className="text-app-muted">{formatDate(comment.created_at)}</span>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex flex-col">
+                                        {comment.parent_author_name && (
+                                          <div className="flex items-center gap-1 text-[10px] text-app-muted mb-0.5 font-medium">
+                                            <MessageSquare className="w-2.5 h-2.5" />
+                                            <span>Geantwoord op <span className="font-bold text-app-ink">{comment.parent_author_name}</span></span>
+                                          </div>
+                                        )}
+                                        <div className="flex items-center gap-2 text-xs">
+                                          <span className="font-bold text-app-ink">{nicknames[comment.author_id] || comment.author_name}</span>
+                                          <span className="text-app-muted">{formatDate(comment.created_at)}</span>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        onClick={() => setReplyingToComment(comment)}
+                                        className="p-1.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                        title="Reageren"
+                                      >
+                                        <MessageSquare className="w-3.5 h-3.5" />
+                                      </button>
                                     </div>
                                     <div className="text-app-ink text-sm sm:text-base leading-relaxed bg-app-accent/5 p-4 rounded-2xl border border-app-border/50">
                                       <RichContent content={comment.content} />
@@ -4132,7 +4358,7 @@ export default function App() {
                             <input 
                               type="text"
                               value={threadTitleInput}
-                              onChange={(e) => setThreadTitleInput(e.target.value)}
+                              onChange={(e) => setThreadTitleInput(convertEmoticons(e.target.value))}
                               placeholder="Titel van je topic"
                               className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all font-bold text-lg text-app-ink"
                             />
@@ -4435,7 +4661,7 @@ export default function App() {
                                     <div className="space-y-3 min-w-[240px]">
                                       <textarea 
                                         value={editMessageInput}
-                                        onChange={(e) => setEditMessageInput(e.target.value)}
+                                        onChange={(e) => handleTyping(e, `edit-msg-${msg.id}`)}
                                         className={`w-full p-3 rounded-xl text-sm focus:ring-2 outline-none resize-none transition-all duration-500 ${
                                           isMe 
                                             ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/40 focus:ring-white/50' 
@@ -5721,7 +5947,7 @@ export default function App() {
                             <input 
                               type="text"
                               value={nicknameInput}
-                              onChange={(e) => setNicknameInput(e.target.value)}
+                              onChange={(e) => setNicknameInput(convertEmoticons(e.target.value))}
                               placeholder="Geef deze persoon een bijnaam..."
                               className="flex-1 p-3 bg-white border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 outline-none font-bold text-zinc-900"
                               autoFocus
@@ -5876,7 +6102,7 @@ export default function App() {
                     <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Details (optioneel)</label>
                     <textarea 
                       value={reportDetails}
-                      onChange={(e) => setReportDetails(e.target.value)}
+                      onChange={(e) => setReportDetails(convertEmoticons(e.target.value))}
                       placeholder="Geef meer context over de situatie..."
                       rows={4}
                       className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all outline-none font-medium resize-none text-zinc-900 placeholder:text-zinc-400"
@@ -5945,6 +6171,14 @@ export default function App() {
           position={mentionPosition}
           onSelect={handleSelectMention}
           onClose={() => setMentionResults([])}
+        />
+
+        <EmojiOverlay 
+          show={emojiResults.length > 0}
+          results={emojiResults}
+          position={emojiPosition}
+          onSelect={handleEmojiSelect}
+          onClose={() => setEmojiResults([])}
         />
         <Toaster position="top-right" richColors closeButton />
       </div>

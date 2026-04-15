@@ -22,6 +22,9 @@ interface ForumViewProps {
   handleCreateComment: (threadId: string) => void;
   handleOpenThread: (thread: ForumThread) => void;
   sending: boolean;
+  replyingToComment: ForumComment | null;
+  setReplyingToComment: (comment: ForumComment | null) => void;
+  nicknames: Record<string, string>;
 }
 
 export const ForumView: React.FC<ForumViewProps> = ({
@@ -40,7 +43,10 @@ export const ForumView: React.FC<ForumViewProps> = ({
   setCommentInput,
   handleCreateComment,
   handleOpenThread,
-  sending
+  sending,
+  replyingToComment,
+  setReplyingToComment,
+  nicknames
 }) => {
   return (
     <div className="space-y-8">
@@ -72,20 +78,20 @@ export const ForumView: React.FC<ForumViewProps> = ({
 
           <div className="bg-app-card rounded-3xl border border-app-border shadow-sm overflow-hidden">
             <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5">
-              <div className="flex items-center gap-3 mb-4">
-                {(activeThread.author_photo) ? (
-                  <img src={activeThread.author_photo} alt="" className="w-8 h-8 rounded-full border border-app-border" />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                    <UserIcon className="w-4 h-4 text-app-muted" />
+                <div className="flex items-center gap-3 mb-4">
+                  {(activeThread.author_photo) ? (
+                    <img src={activeThread.author_photo} alt="" className="w-8 h-8 rounded-full border border-app-border" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
+                      <UserIcon className="w-4 h-4 text-app-muted" />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-xs text-app-muted">
+                    <span className="font-bold text-app-ink">{nicknames[activeThread.author_id] || activeThread.author_name}</span>
+                    <span>•</span>
+                    <span>{formatDate(activeThread.created_at)}</span>
                   </div>
-                )}
-                <div className="flex items-center gap-2 text-xs text-app-muted">
-                  <span className="font-bold text-app-ink">{activeThread.author_name}</span>
-                  <span>•</span>
-                  <span>{formatDate(activeThread.created_at)}</span>
                 </div>
-              </div>
               <h1 className="text-2xl sm:text-3xl font-black text-app-ink mb-4 leading-tight">{activeThread.title}</h1>
               <div className="text-app-ink text-base sm:text-lg leading-relaxed whitespace-pre-wrap">
                 <RichContent content={activeThread.content} />
@@ -98,7 +104,24 @@ export const ForumView: React.FC<ForumViewProps> = ({
                   <MessageSquare className="w-5 h-5" />
                   Reacties ({threadComments.length})
                 </h3>
+                
                 <div className="relative">
+                  {replyingToComment && (
+                    <div className="mb-2 flex items-center justify-between bg-app-accent/30 border border-app-border p-2 rounded-xl">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <div className="w-1 h-6 bg-app-ink rounded-full flex-shrink-0" />
+                        <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest truncate">
+                          Reageren op <span className="text-app-ink">{replyingToComment.author_name}</span>
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setReplyingToComment(null)}
+                        className="p-1 text-app-muted hover:text-app-ink transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
                   <textarea 
                     value={commentInput}
                     onChange={(e) => setCommentInput(e.target.value)}
@@ -133,9 +156,26 @@ export const ForumView: React.FC<ForumViewProps> = ({
                         )}
                       </div>
                       <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="font-bold text-app-ink">{comment.author_name}</span>
-                          <span className="text-app-muted">{formatDate(comment.created_at)}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-col">
+                            {comment.parent_author_name && (
+                              <div className="flex items-center gap-1 text-[10px] text-app-muted mb-0.5 font-medium">
+                                <MessageSquare className="w-2.5 h-2.5" />
+                                <span>Geantwoord op <span className="font-bold text-app-ink">{comment.parent_author_name}</span></span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="font-bold text-app-ink">{nicknames[comment.author_id] || comment.author_name}</span>
+                              <span className="text-app-muted">{formatDate(comment.created_at)}</span>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setReplyingToComment(comment)}
+                            className="p-1.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            title="Reageren"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                         <div className="text-app-ink text-sm sm:text-base leading-relaxed bg-app-accent/5 p-4 rounded-2xl border border-app-border/50">
                           <RichContent content={comment.content} />
@@ -211,7 +251,7 @@ export const ForumView: React.FC<ForumViewProps> = ({
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-3 flex-1">
                     <div className="flex items-center gap-2 text-xs text-app-muted">
-                      <span className="font-bold text-app-ink">{thread.author_name}</span>
+                      <span className="font-bold text-app-ink">{nicknames[thread.author_id] || thread.author_name}</span>
                       <span>•</span>
                       <span>{formatDate(thread.created_at)}</span>
                     </div>

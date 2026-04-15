@@ -1,9 +1,10 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout } from 'lucide-react';
+import { toast } from 'sonner';
 import { UserProfile, CustomTheme, NotificationSettings } from '../types';
 import { SOUND_OPTIONS, PATTERNS } from '../constants';
-import { formatDate } from '../utils/helpers';
+import { formatDate, convertEmoticons } from '../utils/helpers';
 import { User } from '../lib/firebase';
 
 interface SettingsViewProps {
@@ -208,7 +209,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <label className="block text-[10px] font-black text-app-muted uppercase tracking-[0.2em] mb-2 ml-1">Bio / Status</label>
                   <textarea 
                     value={bioInput}
-                    onChange={(e) => setBioInput(e.target.value)}
+                    onChange={(e) => setBioInput(convertEmoticons(e.target.value))}
                     placeholder="Vertel iets over jezelf..."
                     className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink min-h-[120px] resize-none"
                   />
@@ -260,22 +261,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         ...notificationSettings,
                         [toggle.id]: !notificationSettings[toggle.id as keyof NotificationSettings]
                       })}
-                      className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                      className={`flex items-center justify-center p-4 rounded-2xl border transition-all ${
                         notificationSettings[toggle.id as keyof NotificationSettings]
-                          ? 'bg-app-ink text-app-bg border-app-ink'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-lg scale-[1.02]'
                           : 'bg-app-bg text-app-muted border-app-border hover:border-app-ink/30'
                       }`}
                     >
-                      <span className="text-xs font-bold uppercase tracking-widest">{toggle.label}</span>
-                      <div className={`w-10 h-5 rounded-full relative transition-colors ${
-                        notificationSettings[toggle.id as keyof NotificationSettings] ? 'bg-app-bg/20' : 'bg-app-accent'
-                      }`}>
-                        <div className={`absolute top-1 w-3 h-3 rounded-full transition-all ${
-                          notificationSettings[toggle.id as keyof NotificationSettings] 
-                            ? 'right-1 bg-app-bg' 
-                            : 'left-1 bg-app-muted'
-                        }`} />
-                      </div>
+                      <span className="text-xs font-black uppercase tracking-widest">{toggle.label}</span>
                     </button>
                   ))}
                 </div>
@@ -585,13 +577,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-app-muted">Versie</span>
-                      <span className="font-bold text-app-ink">1.8.0</span>
+                      <span className="font-bold text-app-ink">1.7.9.6</span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-app-muted">Platform</span>
                       <span className="font-bold text-app-ink">Progressive Web App</span>
                     </div>
                   </div>
+                  <button 
+                    onClick={() => {
+                      if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.getRegistration().then(reg => {
+                          if (reg) {
+                            reg.update().then(() => {
+                              toast.success('Gecontroleerd op updates', {
+                                description: 'Als er een update is, verschijnt er zo een melding.'
+                              });
+                            });
+                          }
+                        });
+                      }
+                    }}
+                    className="w-full mt-4 py-2 bg-app-accent text-app-ink rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-app-accent/80 transition-all"
+                  >
+                    Controleer op updates
+                  </button>
                 </div>
               </div>
             </motion.div>
