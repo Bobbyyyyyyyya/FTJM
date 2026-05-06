@@ -49,6 +49,8 @@ export interface CustomTheme {
   opacity?: number;
   wallpaper_x?: number;
   wallpaper_y?: number;
+  border_radius?: number;
+  font_family?: 'sans' | 'mono' | 'serif' | 'display';
 }
 
 export interface UserProfile {
@@ -69,6 +71,7 @@ export interface UserProfile {
   name_locked_until?: string;
   bio_locked_until?: string;
   admin_notes?: string;
+  public_key?: string; // Base64 encoded public key
   created_at: string;
   updated_at: string;
 }
@@ -81,7 +84,6 @@ export interface Post {
   content: string;
   created_at: string;
   parent_id?: string;
-  parent_author_name?: string;
 }
 
 export interface ForumThread {
@@ -105,7 +107,6 @@ export interface ForumComment {
   content: string;
   created_at: string;
   parent_id?: string;
-  parent_author_name?: string;
 }
 
 export interface Conversation {
@@ -115,14 +116,19 @@ export interface Conversation {
   participant_photos: Record<string, string>;
   last_message?: string;
   last_message_sender_id?: string;
+  last_message_is_encrypted?: boolean;
+  last_message_iv?: string;
   updated_at: string;
 }
 
 export interface DirectMessage {
   id: string;
+  conversation_id: string;
   sender_id: string;
   text: string;
   created_at: string;
+  is_encrypted?: boolean;
+  iv?: string; // Initialization vector for AES-GCM
 }
 
 export interface Nickname {

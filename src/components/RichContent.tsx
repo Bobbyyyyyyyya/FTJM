@@ -1,15 +1,19 @@
 import React from 'react';
+import { decryptGeneralChat } from '../utils/encryption';
 
 interface RichContentProps {
   content: string;
 }
 
 export const RichContent: React.FC<RichContentProps> = React.memo(({ content }) => {
+  // Attempt to decrypt if it looks like an encrypted general chat message
+  const decryptedContent = decryptGeneralChat(content);
+  
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
   
   const combinedRegex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_]+)/g;
-  const parts = content.split(combinedRegex);
+  const parts = decryptedContent.split(combinedRegex);
 
   const getYoutubeId = (url: string) => {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -60,7 +64,7 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content }) 
       })}</div>
       
       <div className="flex flex-col gap-4 mt-2">
-        {content.match(urlRegex)?.map((url, i) => {
+        {decryptedContent.match(urlRegex)?.map((url, i) => {
           const youtubeId = getYoutubeId(url);
           if (youtubeId) {
             return (

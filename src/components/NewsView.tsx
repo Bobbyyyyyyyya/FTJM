@@ -10,79 +10,95 @@ interface NewsViewProps {
 
 export const NewsView: React.FC<NewsViewProps> = ({ expandedNewsId, setExpandedNewsId }) => {
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 bg-app-ink rounded-2xl flex items-center justify-center shadow-lg">
-          <Newspaper className="w-6 h-6 text-app-bg" />
-        </div>
+    <div className="space-y-12 max-w-5xl mx-auto py-8">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 border-b-4 border-app-ink pb-8">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-black text-app-ink tracking-tight uppercase">Laatste Nieuws</h2>
-          <p className="text-app-muted text-sm font-medium">Blijf op de hoogte van updates en aankondigingen.</p>
+          <div className="flex items-center gap-3 mb-2">
+            <motion.div 
+              animate={{ rotate: [0, 360] }}
+              transition={{ repeat: Infinity, duration: 20, ease: "linear" }}
+              className="w-8 h-8 bg-app-ink rounded-full flex items-center justify-center"
+            >
+              <Newspaper className="w-4 h-4 text-app-bg" />
+            </motion.div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-app-muted">Intelligence Feed</span>
+          </div>
+          <h2 className="text-4xl sm:text-6xl font-bold text-app-ink tracking-tight">
+            The Wire
+          </h2>
         </div>
-      </div>
+        <div className="text-right">
+          <p className="text-sm font-bold uppercase tracking-wider text-app-ink">Update log v1.8.0</p>
+          <p className="text-[10px] font-semibold text-app-muted uppercase tracking-wider mt-1">Status: Operational</p>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-1 gap-6">
-        {NEWS_ITEMS.map((item) => (
-          <motion.div 
+      <div className="grid grid-cols-1 gap-12">
+        {NEWS_ITEMS.map((item, index) => (
+          <motion.article 
             key={item.id}
-            layout
-            className={`bg-app-card rounded-[2rem] border border-app-border shadow-sm overflow-hidden transition-all duration-500 hover:shadow-xl hover:border-app-ink/20 ${expandedNewsId === item.id ? 'ring-2 ring-app-ink' : ''}`}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className="group"
           >
-            <div className="p-8 sm:p-10">
-              <div className="flex items-center justify-between mb-6">
-                <span className="px-4 py-1.5 bg-app-accent text-app-ink rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-app-border/50">
-                  {item.category}
-                </span>
-                <div className="flex items-center gap-2 text-app-muted">
-                  <Clock className="w-4 h-4" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">{item.date}</span>
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_2.5fr] gap-8 items-start">
+              <div className="flex flex-col gap-4 lg:sticky lg:top-32">
+                <div className="flex items-center gap-3">
+                  <span className="text-4xl font-bold text-app-ink/10">
+                    {(index + 1).toString().padStart(2, '0')}
+                  </span>
+                  <div className="h-px flex-grow bg-app-ink/10 lg:hidden" />
+                </div>
+                <div className="space-y-4">
+                  <span className="inline-block px-4 py-2 bg-app-ink text-app-bg rounded-full text-[10px] font-bold uppercase tracking-wider">
+                    {item.category}
+                  </span>
+                  <div className="flex items-center gap-2 text-app-muted text-[10px] font-bold uppercase tracking-wider">
+                    <Clock className="w-3 h-3" />
+                    <span>{item.date}</span>
+                  </div>
                 </div>
               </div>
-              
-              <h3 className="text-2xl font-black text-app-ink mb-4 leading-tight uppercase">{item.title}</h3>
-              
-              <AnimatePresence mode="wait">
-                {expandedNewsId === item.id ? (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <p className="text-app-muted leading-relaxed mb-8 text-lg font-medium">
-                      {item.content}
-                    </p>
+
+              <div className="space-y-6">
+                <h3 className="text-3xl sm:text-4xl font-bold text-app-ink leading-tight tracking-tight group-hover:text-[#004276] transition-colors cursor-pointer" onClick={() => setExpandedNewsId(expandedNewsId === item.id ? null : item.id)}>
+                  {item.title}
+                </h3>
+                
+                <div className="relative">
+                  <p className={`text-app-muted leading-relaxed font-medium transition-all duration-500 ${expandedNewsId === item.id ? 'text-lg text-app-ink' : 'line-clamp-3 text-base'}`}>
+                    {item.content}
+                  </p>
+                  
+                  <div className="pt-8 flex items-center gap-6">
                     <button 
-                      onClick={() => setExpandedNewsId(null)}
-                      className="flex items-center gap-2 text-app-ink font-black text-xs uppercase tracking-widest hover:gap-3 transition-all"
+                      onClick={() => setExpandedNewsId(expandedNewsId === item.id ? null : item.id)}
+                      className="px-8 py-3 bg-app-bg border-2 border-app-ink text-app-ink rounded-full font-bold text-[10px] uppercase tracking-wider hover:bg-app-ink hover:text-app-bg transition-all active:scale-95 shadow-xl shadow-app-ink/5"
                     >
-                      <ChevronLeft className="w-4 h-4" />
-                      Minder lezen
+                      {expandedNewsId === item.id ? 'Inklappen' : 'Lees meer'}
                     </button>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    <p className="text-app-muted leading-relaxed mb-8 line-clamp-2 font-medium">
-                      {item.content}
-                    </p>
-                    <button 
-                      onClick={() => setExpandedNewsId(item.id)}
-                      className="flex items-center gap-2 text-app-ink font-black text-xs uppercase tracking-widest hover:gap-3 transition-all"
-                    >
-                      Lees het volledige artikel
-                      <ChevronLeft className="w-4 h-4 rotate-180" />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    
+                    <div className="h-0.5 flex-grow bg-app-ink/5" />
+                    
+                    <div className="flex gap-2">
+                      <div className="w-2 h-2 rounded-full bg-app-ink/10" />
+                      <div className="w-2 h-2 rounded-full bg-app-ink/10" />
+                      <div className="w-2 h-2 rounded-full bg-app-ink/10" />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </motion.div>
+            
+            <div className="mt-12 h-px bg-app-ink/10" />
+          </motion.article>
         ))}
       </div>
+
+      <footer className="pt-12 text-center border-t-2 border-app-ink/5">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-app-muted animate-pulse">End of Feed</p>
+      </footer>
     </div>
   );
 };

@@ -45,7 +45,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
             className="relative w-full max-w-lg bg-app-card rounded-[2.5rem] shadow-2xl border border-app-border overflow-hidden"
           >
             <div className="p-6 sm:p-8 border-b border-app-border flex items-center justify-between bg-app-accent/5">
-              <h3 className="text-xl font-black text-app-ink uppercase tracking-tighter">Gebruikers Zoeken</h3>
+              <h3 className="text-xl font-bold text-app-ink uppercase tracking-tight">Gebruikers Zoeken</h3>
               <button onClick={onClose} className="p-2 hover:bg-app-accent rounded-full transition-colors">
                 <X className="w-5 h-5" />
               </button>

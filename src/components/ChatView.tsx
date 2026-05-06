@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Loader2, X, ChevronLeft, Image as ImageIcon } from 'lucide-react';
+import { MessageSquare, Send, Loader2, X, ChevronLeft, Smile, Link } from 'lucide-react';
 import { Post, CustomTheme } from '../types';
 import { PostItem } from './PostItem';
 
@@ -29,8 +29,8 @@ interface ChatViewProps {
   useCustomTheme: boolean;
   customTheme: CustomTheme;
   uploading: boolean;
-  fileInputRef: React.RefObject<HTMLInputElement>;
-  handleFileUpload: (file: File) => void;
+  handleEmojiButtonClick: (e: React.MouseEvent, type: 'post') => void;
+  handleImageUrl: () => void;
   nicknames: Record<string, string>;
 }
 
@@ -59,8 +59,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   useCustomTheme,
   customTheme,
   uploading,
-  fileInputRef,
-  handleFileUpload,
+  handleEmojiButtonClick,
+  handleImageUrl,
   nicknames
 }) => {
   return (
@@ -123,14 +123,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
-        
-        <input 
-          type="file"
-          ref={fileInputRef}
-          onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-          accept="image/*"
-          className="hidden"
-        />
 
         <div className="relative">
           <input 
@@ -139,23 +131,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
             onChange={(e) => handleTyping(e, 'forum')}
             placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Deel een bericht..."}
             disabled={cooldownRemaining > 0}
-            className="w-full pl-4 sm:pl-6 pr-24 sm:pr-28 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
+            className="w-full pl-4 sm:pl-6 pr-28 sm:pr-40 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
             maxLength={1000}
           />
-          <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+          <div className="absolute right-1 top-1 bottom-1 flex items-center gap-0.5 sm:gap-1">
             <button 
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleImageUrl}
               disabled={uploading || cooldownRemaining > 0}
-              className="p-2 sm:p-2.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all disabled:opacity-50"
-              title="Afbeelding uploaden"
+              className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all disabled:opacity-50"
+              title="Afbeelding via URL"
             >
-              {uploading ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5" />}
+              <Link className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            <button 
+              type="button"
+              onClick={(e) => handleEmojiButtonClick(e, 'post')}
+              disabled={cooldownRemaining > 0}
+              className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all disabled:opacity-50"
+              title="Emoji kiezen"
+            >
+              <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <button 
               type="submit"
-              disabled={sending || !postInput.trim() || cooldownRemaining > 0}
-              className="p-2 sm:p-2.5 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all"
+              disabled={sending || !postInput.trim() || cooldownRemaining > 0 || uploading}
+              className="px-3 sm:px-4 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center min-w-[40px] sm:min-w-[50px]"
             >
               {sending ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-4 h-4 sm:w-5 sm:h-5" />}
             </button>
@@ -191,6 +192,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               onCancelEdit={() => setEditingPostId(null)}
               saving={saving}
               nicknames={nicknames}
+              allPosts={posts}
             />
           ))
         )}

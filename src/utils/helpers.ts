@@ -158,24 +158,23 @@ export const formatTime = (isoString: string | undefined | null) => {
   });
 };
 
-export async function handleSupabaseError(error: any, operation: string, user?: any) {
+export async function handleSupabaseError(error: any, operation: string, user?: any, isAdmin: boolean = false) {
   console.error(`Supabase Error during ${operation}:`, error);
   
   const errorMessage = error?.message || String(error);
   logAudioEvent('system', 'error', `Database fout (${operation}): ${errorMessage}`, user?.uid, user?.displayName || 'Anoniem');
 
+  // Log details only to developer console, not to user toasts if sensitive
   if (error && typeof error === 'object') {
     console.group(`Detailed Supabase Error: ${operation}`);
-    console.log('Message:', error.message);
     console.log('Code:', error.code);
     console.log('Details:', error.details);
     console.log('Hint:', error.hint);
-    console.log('Full Object:', JSON.stringify(error, null, 2));
     console.groupEnd();
   }
 
   const errInfo: SupabaseErrorInfo = {
-    error: error?.message || String(error),
+    error: errorMessage,
     operation,
     authInfo: {
       userId: user?.uid,
@@ -184,9 +183,14 @@ export async function handleSupabaseError(error: any, operation: string, user?: 
   };
   
   if (error?.code === '42501' || error?.message?.includes('insufficient permissions')) {
-    toast.error(`Geen toestemming voor ${operation}. Controleer of je bent ingelogd.`);
+    toast.error(`Toegang geweigerd: Je hebt onvoldoende rechten voor ${operation}.`);
   } else {
-    toast.error(`Er is een fout opgetreden tijdens ${operation}: ${error?.message || 'Onbekende fout'}`);
+    // Show a simplified message for common users, detailed for admins
+    const displayMessage = isAdmin 
+      ? `Fout bij ${operation}: ${errorMessage}`
+      : `Er is een systeemfout opgetreden. Probeer het later opnieuw.`;
+    
+    toast.error(displayMessage);
   }
 }
 
@@ -237,4 +241,51 @@ export const convertEmoticons = (text: string): string => {
     newText = newText.replace(regex, (match, p1) => `${p1}${emoji}`);
   });
   return newText;
+};
+
+export const maskEmail = (email: string | undefined | null) => {
+  if (!email) return 'anoniem@ftjm.app';
+  const [user, domain] = email.split('@');
+  if (!domain) return email;
+  if (user.length <= 2) return `*@${domain}`;
+  return `${user[0]}${'*'.repeat(user.length - 2)}${user[user.length - 1]}@${domain}`;
+};
+
+export const isDarkColor = (color: string): boolean => {
+  if (!color) return false;
+  
+  // Convert hex to RGB
+  let r, g, b;
+  if (color.startsWith('#')) {
+    const hex = color.slice(1);
+    if (hex.length === 3) {
+      r = parseInt(hex[0] + hex[0], 16);
+      g = parseInt(hex[1] + hex[1], 16);
+      b = parseInt(hex[2] + hex[2], 16);
+    } else {
+      r = parseInt(hex.slice(0, 2), 16);
+      g = parseInt(hex.slice(2, 4), 16);
+      b = parseInt(hex.slice(4, 6), 16);
+    }
+  } else if (color.startsWith('rgb')) {
+    const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+      r = parseInt(match[1]);
+      g = parseInt(match[2]);
+      b = parseInt(match[3]);
+    } else {
+      return false;
+    }
+  } else {
+    return false;
+  }
+
+  // Calculate perceived brightness (HSP color model)
+  const hsp = Math.sqrt(
+    0.299 * (r * r) +
+    0.587 * (g * g) +
+    0.114 * (b * b)
+  );
+
+  return hsp < 127.5;
 };

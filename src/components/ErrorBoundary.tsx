@@ -58,7 +58,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
                 <Shield className="w-5 h-5 text-white" />
               </div>
-              <h2 className="text-3xl font-black text-zinc-900 uppercase tracking-tighter">Systeemfout</h2>
+              <h2 className="text-3xl font-bold text-zinc-900 uppercase tracking-tight">Systeemfout</h2>
             </div>
             
             <p className="text-zinc-500 mb-10 leading-relaxed font-medium text-lg">

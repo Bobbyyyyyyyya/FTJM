@@ -36,7 +36,7 @@ export const MentionOverlay: React.FC<MentionOverlayProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="p-3 border-b border-app-border bg-app-accent/5">
-            <p className="text-[9px] font-black text-app-muted uppercase tracking-widest">Gebruikers Mentionen</p>
+            <p className="text-[9px] font-bold text-app-muted uppercase tracking-wide">Gebruikers Mentionen</p>
           </div>
           <div className="p-1">
             {results.map((user) => (

@@ -47,7 +47,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
                   <Flag className="w-5 h-5 text-red-600" />
                 </div>
-                <h3 className="text-xl font-black text-app-ink uppercase tracking-tighter">Rapporteren</h3>
+                <h3 className="text-xl font-bold text-app-ink uppercase tracking-tight">Rapporteren</h3>
               </div>
               <button onClick={onClose} className="p-2 hover:bg-red-100 rounded-full transition-colors text-red-600">
                 <X className="w-5 h-5" />
@@ -63,7 +63,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-[10px] font-black text-app-muted uppercase tracking-[0.2em] mb-2 ml-1">Reden</label>
+                  <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Reden</label>
                   <select 
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
@@ -78,7 +78,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-app-muted uppercase tracking-[0.2em] mb-2 ml-1">Details</label>
+                  <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Details</label>
                   <textarea 
                     value={details}
                     onChange={(e) => setDetails(e.target.value)}

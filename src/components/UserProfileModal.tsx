@@ -62,7 +62,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
               <div className="text-center space-y-2">
                 <div className="flex items-center justify-center gap-2">
-                  <h3 className="text-2xl font-black text-app-ink tracking-tight uppercase">{user.display_name || 'Anoniem'}</h3>
+                  <h3 className="text-2xl font-bold text-app-ink tracking-tight uppercase">{user.display_name || 'Anoniem'}</h3>
                   {user.role === 'admin' && (
                     <div className="p-1 bg-app-ink text-app-bg rounded-md" title="Admin">
                       <ShieldCheck className="w-4 h-4" />
@@ -73,7 +73,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               </div>
 
               <div className="mt-8 p-6 bg-app-accent/30 rounded-3xl border border-app-border/50">
-                <p className="text-[10px] font-black text-app-muted uppercase tracking-widest mb-3 flex items-center gap-2">
+                <p className="text-[10px] font-bold text-app-muted uppercase tracking-wide mb-3 flex items-center gap-2">
                   <MessageSquare className="w-3 h-3" />
                   Over Mij
                 </p>
@@ -85,7 +85,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               <div className="mt-6 flex items-center justify-center gap-6 text-app-muted">
                 <div className="flex flex-col items-center">
                   <Calendar className="w-4 h-4 mb-1 opacity-50" />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Lid Sinds</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide">Lid Sinds</span>
                   <span className="text-xs font-bold text-app-ink">{formatDate(user.created_at)}</span>
                 </div>
               </div>

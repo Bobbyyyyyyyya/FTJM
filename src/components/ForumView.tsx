@@ -1,6 +1,6 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { Layout, Plus, ChevronLeft, MessageSquare, Clock, User as UserIcon, Loader2, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Layout, Plus, ChevronLeft, MessageSquare, Clock, User as UserIcon, Loader2, X, Smile, Link, Send } from 'lucide-react';
 import { ForumThread, ForumComment } from '../types';
 import { formatDate } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -21,7 +21,12 @@ interface ForumViewProps {
   setCommentInput: (input: string) => void;
   handleCreateComment: (threadId: string) => void;
   handleOpenThread: (thread: ForumThread) => void;
+  handleOpenProfile: (userId: string) => void;
+  handleTyping: (e: any, channel: string) => void;
+  handleEmojiButtonClick: (e: React.MouseEvent, type: 'post' | 'comment') => void;
+  handleImageUrl: () => void;
   sending: boolean;
+  uploading: boolean;
   replyingToComment: ForumComment | null;
   setReplyingToComment: (comment: ForumComment | null) => void;
   nicknames: Record<string, string>;
@@ -43,7 +48,12 @@ export const ForumView: React.FC<ForumViewProps> = ({
   setCommentInput,
   handleCreateComment,
   handleOpenThread,
+  handleOpenProfile,
+  handleTyping,
+  handleEmojiButtonClick,
+  handleImageUrl,
   sending,
+  uploading,
   replyingToComment,
   setReplyingToComment,
   nicknames
@@ -52,7 +62,7 @@ export const ForumView: React.FC<ForumViewProps> = ({
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-black text-app-ink tracking-tight">Community Forum</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold text-app-ink tracking-tight">Community Forum</h2>
           <p className="text-app-muted text-sm mt-1">Deel je gedachten, stel vragen en help anderen.</p>
         </div>
         {!activeThread && (
@@ -92,7 +102,7 @@ export const ForumView: React.FC<ForumViewProps> = ({
                     <span>{formatDate(activeThread.created_at)}</span>
                   </div>
                 </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-app-ink mb-4 leading-tight">{activeThread.title}</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-app-ink mb-4 leading-tight">{activeThread.title}</h1>
               <div className="text-app-ink text-base sm:text-lg leading-relaxed whitespace-pre-wrap">
                 <RichContent content={activeThread.content} />
               </div>
@@ -105,36 +115,67 @@ export const ForumView: React.FC<ForumViewProps> = ({
                   Reacties ({threadComments.length})
                 </h3>
                 
-                <div className="relative">
-                  {replyingToComment && (
-                    <div className="mb-2 flex items-center justify-between bg-app-accent/30 border border-app-border p-2 rounded-xl">
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="w-1 h-6 bg-app-ink rounded-full flex-shrink-0" />
-                        <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest truncate">
-                          Reageren op <span className="text-app-ink">{replyingToComment.author_name}</span>
-                        </p>
-                      </div>
-                      <button 
-                        onClick={() => setReplyingToComment(null)}
-                        className="p-1 text-app-muted hover:text-app-ink transition-colors"
+                <div className="relative space-y-2">
+                  <AnimatePresence>
+                    {replyingToComment && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center justify-between bg-app-accent/30 border border-app-border p-2 rounded-xl overflow-hidden"
                       >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div className="w-1 h-6 bg-app-ink rounded-full flex-shrink-0" />
+                          <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest truncate">
+                            Reageren op <span className="text-app-ink">{nicknames[replyingToComment.author_id] || replyingToComment.author_name}</span>
+                          </p>
+                        </div>
+                        <button 
+                          onClick={() => setReplyingToComment(null)}
+                          className="p-1 text-app-muted hover:text-app-ink transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                   <textarea 
                     value={commentInput}
-                    onChange={(e) => setCommentInput(e.target.value)}
+                    onChange={(e) => handleTyping(e, 'forum')}
                     placeholder="Wat vind jij hiervan?"
+                    disabled={uploading}
                     className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[120px] resize-none"
                   />
-                  <button 
-                    onClick={() => handleCreateComment(activeThread.id)}
-                    disabled={sending || !commentInput.trim()}
-                    className="absolute bottom-4 right-4 px-6 py-2 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all"
-                  >
-                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Plaatsen'}
-                  </button>
+                  <div className="flex items-center justify-between gap-2 bg-app-accent/20 p-2 rounded-xl">
+                    <div className="flex gap-1">
+                      <button 
+                        type="button"
+                        onClick={handleImageUrl}
+                        disabled={uploading}
+                        className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all disabled:opacity-50"
+                        title="Afbeelding via URL"
+                      >
+                        <Link className="w-5 h-5" />
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={(e) => handleEmojiButtonClick(e, 'comment')}
+                        disabled={uploading}
+                        className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all disabled:opacity-50"
+                        title="Emoji kiezen"
+                      >
+                        <Smile className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <button 
+                      onClick={() => handleCreateComment(activeThread.id)}
+                      disabled={sending || !commentInput.trim() || uploading}
+                      className="px-6 py-2 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all flex items-center gap-2"
+                    >
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      Plaatsen
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -158,10 +199,25 @@ export const ForumView: React.FC<ForumViewProps> = ({
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex flex-col">
-                            {comment.parent_author_name && (
-                              <div className="flex items-center gap-1 text-[10px] text-app-muted mb-0.5 font-medium">
-                                <MessageSquare className="w-2.5 h-2.5" />
-                                <span>Geantwoord op <span className="font-bold text-app-ink">{comment.parent_author_name}</span></span>
+                            {comment.parent_id && (
+                              <div className="mb-1.5 space-y-1">
+                                {(() => {
+                                  const parent = threadComments.find(c => c.id === comment.parent_id);
+                                  if (!parent) return null;
+                                  return (
+                                    <>
+                                      <div className="flex items-center gap-1 text-[10px] text-app-muted font-medium bg-app-accent/30 w-fit px-2 py-0.5 rounded-full border border-app-border/50">
+                                        <MessageSquare className="w-2.5 h-2.5" />
+                                        <span>Geantwoord op <span className="font-bold text-app-ink">{nicknames[parent.author_id] || parent.author_name}</span></span>
+                                      </div>
+                                      <div className="pl-2 border-l-2 border-app-border ml-1.5">
+                                        <p className="text-[10px] text-app-muted italic line-clamp-1 opacity-70">
+                                          "{parent.content}"
+                                        </p>
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                               </div>
                             )}
                             <div className="flex items-center gap-2 text-xs">
@@ -197,7 +253,7 @@ export const ForumView: React.FC<ForumViewProps> = ({
               className="bg-app-card rounded-3xl p-6 sm:p-8 border-2 border-app-ink shadow-xl space-y-6"
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-black text-app-ink">Nieuw Topic Starten</h3>
+                <h3 className="text-xl font-bold text-app-ink">Nieuw Topic Starten</h3>
                 <button onClick={() => setIsCreatingThread(false)} className="p-2 hover:bg-app-accent rounded-full transition-colors">
                   <X className="w-5 h-5" />
                 </button>
@@ -210,12 +266,32 @@ export const ForumView: React.FC<ForumViewProps> = ({
                   placeholder="Titel van je topic"
                   className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all font-bold text-lg text-app-ink"
                 />
-                <textarea 
-                  value={threadContentInput}
-                  onChange={(e) => setThreadContentInput(e.target.value)}
-                  placeholder="Waar wil je het over hebben?"
-                  className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[200px] resize-none"
-                />
+                <div className="space-y-4">
+                  <textarea 
+                    value={threadContentInput}
+                    onChange={(e) => setThreadContentInput(e.target.value)}
+                    placeholder="Waar wil je het over hebben?"
+                    className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[200px] resize-none"
+                  />
+                  <div className="flex items-center gap-2 bg-app-accent/20 p-2 rounded-xl">
+                    <button 
+                      type="button"
+                      onClick={handleImageUrl}
+                      className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
+                      title="Afbeelding via URL"
+                    >
+                      <Link className="w-5 h-5" />
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={(e) => handleEmojiButtonClick(e, 'post')}
+                      className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
+                      title="Emoji kiezen"
+                    >
+                      <Smile className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
                 <div className="flex justify-end gap-3">
                   <button 
                     onClick={() => setIsCreatingThread(false)}
@@ -255,7 +331,7 @@ export const ForumView: React.FC<ForumViewProps> = ({
                       <span>•</span>
                       <span>{formatDate(thread.created_at)}</span>
                     </div>
-                    <h3 className="text-xl font-black text-app-ink group-hover:text-app-ink/80 transition-colors leading-tight">{thread.title}</h3>
+                    <h3 className="text-xl font-bold text-app-ink group-hover:text-app-ink/80 transition-colors leading-tight">{thread.title}</h3>
                     <p className="text-app-muted text-sm line-clamp-2 leading-relaxed">{thread.content}</p>
                     <div className="flex items-center gap-4 pt-2">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-app-muted">

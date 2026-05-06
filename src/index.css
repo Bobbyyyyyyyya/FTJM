@@ -1,8 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Inter", sans-serif;
   
   --color-app-bg: var(--bg);
   --color-app-ink: var(--ink);
@@ -29,6 +31,7 @@
   --custom-wallpaper-y: 50%;
   --custom-glass-bg: rgba(255, 255, 255, 1);
   --custom-glass-blur: none;
+  --app-radius: 1.5rem; /* 24px default */
 }
 
 [data-theme='dark'] {
@@ -59,6 +62,19 @@
   --card-bg: var(--custom-card-bg, #ffffff);
   --card-border: var(--custom-accent, #e4e4e7);
   --muted: var(--custom-text, #71717a);
+  --font-sans: var(--custom-font, "Inter", sans-serif);
+}
+
+.rounded-3xl {
+  border-radius: var(--app-radius) !important;
+}
+
+.rounded-2xl {
+  border-radius: calc(var(--app-radius) * 0.7) !important;
+}
+
+.rounded-xl {
+  border-radius: calc(var(--app-radius) * 0.5) !important;
 }
 
 .custom-glass {
@@ -130,3 +146,84 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
+
+/* Sonner Toast Customization */
+[data-sonner-toast] {
+  --toast-bg: var(--card-bg);
+  --toast-border: var(--card-border);
+  --toast-text: var(--ink);
+  
+  background: var(--toast-bg) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid var(--toast-border) !important;
+  color: var(--toast-text) !important;
+  border-radius: calc(var(--app-radius) * 0.8) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  padding: 1.25rem 1.5rem !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+  will-change: transform, opacity;
+}
+
+/* Entrance animation */
+[data-sonner-toast][data-mounted="true"] {
+  animation: sonner-slide-in 0.5s cubic-bezier(0.2, 1, 0.2, 1) forwards !important;
+}
+
+@keyframes sonner-slide-in {
+  from {
+    transform: translate3d(100%, 0, 0) scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Exit animation - ensure it slides away */
+[data-sonner-toast][data-removed="true"] {
+  animation: sonner-slide-out 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+}
+
+@keyframes sonner-slide-out {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(100%, 0, 0) scale(0.8);
+    opacity: 0;
+  }
+}
+
+[data-sonner-toast][data-style="success"] {
+  border-left: 5px solid #10b981 !important;
+}
+
+[data-sonner-toast][data-style="error"] {
+  border-left: 5px solid #ef4444 !important;
+}
+
+[data-sonner-toast][data-style="info"] {
+  border-left: 5px solid #3b82f6 !important;
+}
+
+[data-sonner-toast][data-style="warning"] {
+  border-left: 5px solid #f59e0b !important;
+}
+
+[data-sonner-toast] [data-close-button] {
+  background: var(--accent) !important;
+  border: 1px solid var(--card-border) !important;
+  color: var(--muted) !important;
+  border-radius: 6px !important;
+}
+
+[data-sonner-toast] [data-icon] {
+  margin-right: 0.5rem !important;
+}
+
+

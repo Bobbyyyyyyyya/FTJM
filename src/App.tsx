@@ -18,7 +18,7 @@ import {
   Moon, 
   Sparkles, 
   Sun, 
-  Lock, 
+  Lock as LockIcon, 
   User as UserIcon, 
   LogOut, 
   MessageSquare, 
@@ -27,6 +27,7 @@ import {
   Newspaper, 
   Settings, 
   ShieldCheck, 
+  Activity,
   AlertCircle, 
   Loader2, 
   AlertTriangle, 
@@ -48,10 +49,11 @@ import {
   Pencil, 
   Check,
   Zap,
+  ShieldAlert,
   ArrowRight,
   ArrowLeft,
   Link,
-  Image as ImageIcon
+  Bot
 } from 'lucide-react';
 
 // Components
@@ -68,10 +70,13 @@ import { UserSearchModal } from './components/UserSearchModal';
 import { ReportModal } from './components/ReportModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { AudioLogsView } from './components/AudioLogsView';
+import { MessageEditArea } from './components/MessageEditArea';
 
 // Constants & Helpers
 import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
-import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons } from './utils/helpers';
+import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor } from './utils/helpers';
+
+import { encryptGeneralChat, decryptGeneralChat } from './utils/encryption';
 
 // App component
 export default function App() {
@@ -113,7 +118,6 @@ export default function App() {
     }
   });
 
-  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
   const isPostingRef = useRef(false);
 
   const [loading, setLoading] = useState(() => {
@@ -137,7 +141,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs'>('chat');
 
-  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app'>('profile');
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs'>('profile');
   const [threads, setThreads] = useState<ForumThread[]>([]);
   const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
   const [threadComments, setThreadComments] = useState<ForumComment[]>([]);
@@ -156,8 +160,27 @@ export default function App() {
     conversationsRef.current = conversations;
   }, [conversations]);
 
-  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+  const [activeConversation, setActiveConversation] = useState<Conversation | null>(() => {
+    try {
+      const cached = localStorage.getItem('active_conversation');
+      return cached ? JSON.parse(cached) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const handleSetActiveConversation = (conv: Conversation | null) => {
+    setActiveConversation(conv);
+    if (conv) {
+      localStorage.setItem('active_conversation', JSON.stringify(conv));
+    } else {
+      localStorage.removeItem('active_conversation');
+    }
+    // Clear decryption attempts when switching conversations
+    decryptionAttempts.current.clear();
+  };
   const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [reSyncTrigger, setReSyncTrigger] = useState(0);
   const [messageInput, setMessageInput] = useState('');
   const [messageTimestamps, setMessageTimestamps] = useState<number[]>([]);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
@@ -166,16 +189,22 @@ export default function App() {
   const [editPostInput, setEditPostInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editMessageInput, setEditMessageInput] = useState('');
+  
+  // Track decryption attempts to avoid infinite loops and redundant work
+  const decryptionAttempts = useRef<Set<string>>(new Set());
+  const conversationDecryptionAttempts = useRef<Map<string, string>>(new Map());
   const [replyingTo, setReplyingTo] = useState<Post | null>(null);
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
+  const [showWhatsNew, setShowWhatsNew] = useState(() => {
+    return localStorage.getItem('has_seen_whats_new_v1.8') !== 'true';
+  });
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v1.7.9.6') === 'true';
+    return localStorage.getItem('has_seen_news_v1.8') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v1.7.9.6') === 'true';
+    return localStorage.getItem('has_seen_menu_v1.8') === 'true';
   });
-  // Helper to clean and migrate notification settings
   const cleanNotificationSettings = (settings: any): NotificationSettings => {
     const defaultSettings = {
       enable_sounds: true,
@@ -236,7 +265,19 @@ export default function App() {
       setShowInstallButton(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    
+    const handleReSync = () => {
+      decryptionAttempts.current.clear();
+      conversationDecryptionAttempts.current.clear();
+      setReSyncTrigger(prev => prev + 1);
+      toast.success('System re-sync gestart...');
+    };
+    window.addEventListener('re-sync-encryption', handleReSync);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('re-sync-encryption', handleReSync);
+    };
   }, []);
 
   const handleInstallClick = async () => {
@@ -346,7 +387,9 @@ export default function App() {
         blur_amount: 10,
         opacity: 100,
         wallpaper_x: 50,
-        wallpaper_y: 50
+        wallpaper_y: 50,
+        border_radius: 24,
+        font_family: 'sans'
       };
     } catch (e) {
       console.error('Failed to parse cached_customTheme', e);
@@ -365,7 +408,9 @@ export default function App() {
         blur_amount: 10,
         opacity: 100,
         wallpaper_x: 50,
-        wallpaper_y: 50
+        wallpaper_y: 50,
+        border_radius: 24,
+        font_family: 'sans'
       };
     }
   });
@@ -413,6 +458,7 @@ export default function App() {
   const [emojiSearch, setEmojiSearch] = useState('');
   const [emojiResults, setEmojiResults] = useState<any[]>([]);
   const [emojiPosition, setEmojiPosition] = useState<{ top: number, left: number } | null>(null);
+  const [emojiPickerMode, setEmojiPickerMode] = useState<'picker' | 'suggestion'>('suggestion');
   const [showAdminPrank, setShowAdminPrank] = useState(false);
   const [adminPrankLogs, setAdminPrankLogs] = useState<string[]>([]);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
@@ -450,7 +496,6 @@ export default function App() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingUpdateRef = useRef<number>(0);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleImageUrl = () => {
@@ -462,7 +507,7 @@ export default function App() {
         if (activeThread) {
           setCommentInput(prev => prev + (prev ? ' ' : '') + url);
         } else {
-          setPostInput(prev => prev + (prev ? ' ' : '') + url);
+          setThreadContentInput(prev => prev + (prev ? ' ' : '') + url);
         }
       } else if (view === 'messages') {
         setMessageInput(prev => prev + (prev ? ' ' : '') + url);
@@ -739,6 +784,16 @@ export default function App() {
     if (customTheme.wallpaper_x !== undefined) root.style.setProperty('--custom-wallpaper-x', `${customTheme.wallpaper_x}%`);
     if (customTheme.wallpaper_y !== undefined) root.style.setProperty('--custom-wallpaper-y', `${customTheme.wallpaper_y}%`);
     
+    // Border Radius
+    if (customTheme.border_radius !== undefined) {
+      root.style.setProperty('--app-radius', `${customTheme.border_radius}px`);
+    }
+
+    // Font Family
+    let fontFamily = '"Inter", sans-serif';
+    if (customTheme.font_family === 'serif') fontFamily = 'ui-serif, Georgia, serif';
+    root.style.setProperty('--custom-font', fontFamily);
+
     // Glass Effect Variables
     if (customTheme.glass_effect) {
       const r = parseInt(customTheme.card_bg_color?.slice(1,3) || 'ff', 16);
@@ -798,13 +853,16 @@ export default function App() {
     viewRef.current = view;
   }, [view]);
 
-  useEffect(() => {
-    const handleQuotaError = () => setIsQuotaExceeded(true);
-    window.addEventListener('firestore-quota-exceeded', handleQuotaError);
-    return () => window.removeEventListener('firestore-quota-exceeded', handleQuotaError);
-  }, []);
+  // Security & Permissions
+  const isAdmin = profile?.role === 'admin' || user?.email === 'markohoksen@gmail.com';
+  const isBlocked = profile?.is_blocked === true;
 
-  const isAdmin = user?.email === 'markohoksen@gmail.com';
+  // Auto-set admin role for markohoksen@gmail.com
+  useEffect(() => {
+    if (user?.email === 'markohoksen@gmail.com' && profile && profile.role !== 'admin') {
+      supabaseClient.from('profiles').update({ role: 'admin' }).eq('id', user.uid);
+    }
+  }, [user, profile]);
 
   // Update Supabase client with custom headers when user changes
   useEffect(() => {
@@ -882,7 +940,7 @@ export default function App() {
               onClick: () => {
                 if (newNotif.type === 'dm') {
                   setView('messages');
-                  setActiveConversation(conversationsRef.current.find(c => c.id === newNotif.resource_id) || null);
+                  handleSetActiveConversation(conversationsRef.current.find(c => c.id === newNotif.resource_id) || null);
                 } else if (newNotif.resource_type === 'post') {
                   setView('chat');
                 } else {
@@ -946,7 +1004,7 @@ export default function App() {
               .single();
               
             if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
-              handleSupabaseError(error, 'profiel ophalen');
+              handleSupabaseError(error, 'profiel ophalen', currentUser, profile?.role === 'admin' || currentUser?.email === 'markohoksen@gmail.com');
             } else if (data) {
               setProfile(data);
               localStorage.setItem('cached_profile', JSON.stringify(data));
@@ -1021,7 +1079,7 @@ export default function App() {
         localStorage.setItem('cached_isWhitelisted', JSON.stringify(whitelisted));
       } catch (err) {
         console.error('Whitelist check error:', err);
-        handleSupabaseError(err, 'whitelist check');
+        handleSupabaseError(err, 'whitelist check', user, isAdmin);
         setIsWhitelisted(isAdmin);
         localStorage.setItem('cached_isWhitelisted', JSON.stringify(isAdmin));
       } finally {
@@ -1103,7 +1161,7 @@ export default function App() {
       
       const { data, error } = await supabaseClient
         .from('profiles')
-        .select('id, display_name, photo_url, bio, role, notification_settings, updated_at, email, created_at, custom_theme, use_custom_theme')
+        .select('id, display_name, photo_url, bio, role, notification_settings, updated_at, email, created_at, custom_theme, use_custom_theme, public_key, is_blocked')
         .eq('id', user.uid)
         .single();
         
@@ -1136,6 +1194,7 @@ export default function App() {
         }
       } else if (data) {
         const profileData = data as UserProfile;
+
         setProfile(profileData);
         localStorage.setItem('cached_profile', JSON.stringify(profileData));
         setBioInput(profileData.bio || '');
@@ -1213,18 +1272,28 @@ export default function App() {
       })
       .subscribe();
 
-    // Initial fetch if not already done or if in admin view
-    if (isAdmin && user && (!hasFetchedAdminData.current || (view === 'settings' && settingsTab === 'admin'))) {
+    // Initial fetch if in admin view or not yet fetched
+    if (isAdmin && user && (view === 'settings' && (settingsTab === 'admin' || settingsTab === 'profile'))) {
       const fetchAdminData = async () => {
-        console.log('Admin: Fetching reports and whitelist...');
+        console.log('Admin: Fetching data (Explicit trigger)...');
         try {
-          const [wRes, rRes] = await Promise.all([
+          const [wRes, rRes, uRes] = await Promise.all([
             supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
-            supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+            supabaseClient.from('reports').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('profiles').select('id, display_name, photo_url, email, created_at, updated_at, is_blocked').limit(200)
           ]);
           
-          if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
-          if (rRes.error) console.error('Admin: Error fetching reports:', rRes.error);
+          if (wRes.error) {
+            console.error('Admin: Error fetching whitelist:', wRes.error);
+            toast.error('Fout bij ophalen whitelist');
+          }
+          if (rRes.error) {
+            console.error('Admin: Error fetching reports:', rRes.error);
+            toast.error('Fout bij ophalen rapporten');
+          }
+          if (uRes.error) {
+            console.error('Admin: Error fetching users:', uRes.error);
+          }
 
           if (wRes.data) {
             setWhitelist(wRes.data);
@@ -1235,9 +1304,35 @@ export default function App() {
             setReports(rRes.data);
             localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
           }
+          if (uRes.data) {
+            const sorted = [...uRes.data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+            setUsers(sorted);
+          }
           hasFetchedAdminData.current = true;
         } catch (err) {
           console.error('Admin: Unexpected error fetching data:', err);
+        }
+      };
+      fetchAdminData();
+    } else if (isAdmin && user && !hasFetchedAdminData.current) {
+      // Background fetch if admin but not in view yet
+      const fetchAdminData = async () => {
+        try {
+          const [wRes, rRes] = await Promise.all([
+            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
+            supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+          ]);
+          if (wRes.data) {
+            setWhitelist(wRes.data);
+            localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
+          }
+          if (rRes.data) {
+            setReports(rRes.data);
+            localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
+          }
+          hasFetchedAdminData.current = true;
+        } catch (e) {
+          console.error('Background admin fetch failed', e);
         }
       };
       fetchAdminData();
@@ -1318,7 +1413,7 @@ export default function App() {
         toast.success('Bijnaam opgeslagen');
       }
     } catch (err) {
-      handleSupabaseError(err, 'bijnaam opslaan', user);
+      handleSupabaseError(err, 'bijnaam opslaan', user, isAdmin);
     }
   };
 
@@ -1392,7 +1487,7 @@ export default function App() {
                   action: {
                     label: 'Beantwoorden',
                     onClick: () => {
-                      setActiveConversation(updatedConv);
+                      handleSetActiveConversation(updatedConv);
                       setView('messages');
                     }
                   }
@@ -1472,7 +1567,7 @@ export default function App() {
                 .eq('conversation_id', conv.id)
                 .order('created_at', { ascending: false })
                 .limit(1)
-                .single();
+                .maybeSingle();
               
               if (lastMsg) {
                 return {
@@ -1523,7 +1618,7 @@ export default function App() {
           .eq('conversation_id', conv.id)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle(); // Use maybeSingle to avoid error if no messages
         
         if (lastMsg) {
           return {
@@ -1562,11 +1657,42 @@ export default function App() {
         console.log('Real-time message change:', payload);
         if (payload.eventType === 'INSERT') {
           const msg = payload.new as DirectMessage;
-          logAudioEvent('system', 'success', `Nieuw bericht ontvangen van ${msg.sender_id === user.uid ? 'jou' : 'andere gebruiker'}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
-          setMessages(prev => {
-            if (prev.some(m => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
+          
+          const handleIncoming = async () => {
+            let processedMsg = msg;
+
+            // Update conversations list preview
+            setConversations(prev => {
+              const index = prev.findIndex(c => c.id === processedMsg.conversation_id);
+              if (index === -1) return prev;
+              const currentConv = prev[index];
+              
+              const next = [...prev];
+              next[index] = {
+                ...currentConv,
+                last_message: processedMsg.text,
+                last_message_sender_id: processedMsg.sender_id,
+                updated_at: processedMsg.created_at
+              };
+              return next.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+            });
+
+            logAudioEvent('system', 'success', `Nieuw bericht ontvangen van ${processedMsg.sender_id === user.uid ? 'jou' : 'andere gebruiker'}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
+            
+            if (processedMsg.sender_id !== user.uid) {
+              playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
+            }
+            
+            setMessages(prev => {
+              const exists = prev.find(m => m.id === processedMsg.id);
+              if (exists) {
+                return prev;
+              }
+              return [processedMsg, ...prev];
+            });
+          };
+
+          handleIncoming();
         } else if (payload.eventType === 'UPDATE') {
           const updated = payload.new as DirectMessage;
           setMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
@@ -1580,15 +1706,47 @@ export default function App() {
       .on('broadcast', { event: 'new_message' }, (payload) => {
         console.log('Broadcast message received:', payload);
         const msg = payload.payload as DirectMessage;
-        setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
+        
+        const handleNewBroadcast = async () => {
+          let processedMsg = msg;
+
+          // Update conversations list preview
+          setConversations(prev => {
+            const index = prev.findIndex(c => c.id === processedMsg.conversation_id);
+            if (index === -1) return prev;
+            const currentConv = prev[index];
+            
+            const next = [...prev];
+            next[index] = {
+              ...currentConv,
+              last_message: processedMsg.text,
+              last_message_sender_id: processedMsg.sender_id,
+              updated_at: processedMsg.created_at
+            };
+            return next.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+          });
+
+          setMessages(prev => {
+            if (prev.some(m => m.id === processedMsg.id)) return prev;
+            return [processedMsg, ...prev];
+          });
+        };
+        handleNewBroadcast();
       })
       .on('broadcast', { event: 'update_message' }, (payload) => {
         console.log('Broadcast update message received:', payload);
         const update = payload.payload;
-        setMessages(prev => prev.map(m => m.id === update.id ? { ...m, ...update } : m));
+        
+        const handleUpdateBroadcast = async () => {
+          let decryptedText = update.text;
+
+          setMessages(prev => prev.map(m => m.id === update.id ? { 
+            ...m, 
+            ...update, 
+            text: decryptedText 
+          } : m));
+        };
+        handleUpdateBroadcast();
       })
       .on('broadcast', { event: 'delete_message' }, (payload) => {
         console.log('Broadcast delete message received:', payload);
@@ -1613,9 +1771,8 @@ export default function App() {
         .limit(messagesLimit);
       
       if (data) {
-        // Reverse because we want oldest first in the array for the UI logic
-        const sorted = data.reverse();
-        setMessages(sorted);
+        // Don't reverse - we want newest first at index 0 for flex-col-reverse
+        setMessages(data as DirectMessage[]);
         setHasMoreMessages(data.length === messagesLimit);
       }
       setLoadingMoreMessages(false);
@@ -1792,7 +1949,7 @@ export default function App() {
 
       const { data } = await supabaseClient
         .from('profiles')
-        .select('id, display_name, photo_url, email, created_at, updated_at')
+        .select('id, display_name, photo_url, email, created_at, updated_at, is_blocked')
         .in('id', Array.from(participantIds));
         
       if (data) {
@@ -1803,7 +1960,7 @@ export default function App() {
               next.push(profile);
             }
           });
-          return next;
+          return next.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
         });
       }
     };
@@ -1819,7 +1976,7 @@ export default function App() {
     const fetchUsers = async () => {
       const query = supabaseClient
         .from('profiles')
-        .select('id, display_name, photo_url, email, created_at, updated_at')
+        .select('id, display_name, photo_url, email, created_at, updated_at, is_blocked')
         .neq('id', user.uid);
       
       if (userSearchQuery) {
@@ -1827,7 +1984,10 @@ export default function App() {
       }
       
       const { data } = await query.limit(50);
-      if (data) setUsers(data);
+      if (data) {
+        const sorted = [...data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+        setUsers(sorted);
+      }
     };
     
     const timeout = setTimeout(fetchUsers, 300);
@@ -1867,7 +2027,8 @@ export default function App() {
       .channel('posts_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async (payload) => {
         if (payload.eventType === 'INSERT') {
-          const latestPost = payload.new as Post;
+          const rawPost = payload.new as Post;
+          const latestPost = { ...rawPost, content: decryptGeneralChat(rawPost.content) };
           
           // Skip if we already have it
           let alreadyExists = false;
@@ -1879,7 +2040,7 @@ export default function App() {
             
             const newPosts = [latestPost, ...prev].sort((a, b) => 
               new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            ).slice(0, 50);
+            ).slice(0, 100);
             
             if (savePostsTimeoutRef.current) clearTimeout(savePostsTimeoutRef.current);
             savePostsTimeoutRef.current = setTimeout(() => {
@@ -1908,7 +2069,8 @@ export default function App() {
           if (latestPost) lastPostId.current = latestPost.id;
           
         } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as Post;
+          const rawUpdated = payload.new as Post;
+          const updated = { ...rawUpdated, content: decryptGeneralChat(rawUpdated.content) };
           setPosts(prev => {
             const newPosts = prev.map(p => p.id === updated.id ? updated : p);
             localStorage.setItem('cached_posts', JSON.stringify(newPosts));
@@ -1927,7 +2089,8 @@ export default function App() {
       })
       .on('broadcast', { event: 'new_post' }, (payload) => {
         console.log('Broadcast post received:', payload);
-        const latestPost = payload.payload as Post;
+        const latestPostRaw = payload.payload as Post;
+        const latestPost = { ...latestPostRaw, content: decryptGeneralChat(latestPostRaw.content) };
         
         if (lastPostId.current && latestPost && latestPost.id !== lastPostId.current && 
             latestPost.author_id !== user.uid && 
@@ -1949,14 +2112,15 @@ export default function App() {
           if (prev.some(p => p.id === latestPost.id)) return prev;
           const newPosts = [latestPost, ...prev].sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          ).slice(0, 20);
+          ).slice(0, 100);
           localStorage.setItem('cached_posts', JSON.stringify(newPosts));
           return newPosts;
         });
       })
       .on('broadcast', { event: 'update_post' }, (payload) => {
         console.log('Broadcast update post received:', payload);
-        const update = payload.payload;
+        const updateRaw = payload.payload;
+        const update = { ...updateRaw, content: decryptGeneralChat(updateRaw.content) };
         setPosts(prev => {
           const newPosts = prev.map(p => p.id === update.id ? { ...p, ...update } : p);
           localStorage.setItem('cached_posts', JSON.stringify(newPosts));
@@ -1985,13 +2149,14 @@ export default function App() {
       
       const { data, error } = await supabaseClient
         .from('posts')
-        .select('id, content, author_id, author_name, author_photo, created_at, updated_at, parent_id, parent_author_name')
+        .select('id, content, author_id, author_name, author_photo, created_at, updated_at, parent_id')
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(100);
       
       if (data) {
-        setPosts(data);
-        localStorage.setItem('cached_posts', JSON.stringify(data));
+        const decryptedPosts = (data as Post[]).map(p => ({ ...p, content: decryptGeneralChat(p.content) }));
+        setPosts(decryptedPosts);
+        localStorage.setItem('cached_posts', JSON.stringify(decryptedPosts));
         if (data.length > 0) {
           lastPostId.current = data[0].id;
         }
@@ -2019,7 +2184,14 @@ export default function App() {
           .select('*')
           .order('updated_at', { ascending: false });
         
-        if (data) setThreads(data);
+        if (data) {
+          const decryptedThreads = (data as ForumThread[]).map(t => ({ 
+            ...t, 
+            title: decryptGeneralChat(t.title), 
+            content: decryptGeneralChat(t.content) 
+          }));
+          setThreads(decryptedThreads);
+        }
       } catch (err) {
         console.error('Error fetching threads:', err);
       }
@@ -2032,13 +2204,23 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_threads' }, (payload) => {
         console.log('Real-time thread change:', payload);
         if (payload.eventType === 'INSERT') {
-          const newThread = payload.new as ForumThread;
+          const newThreadRaw = payload.new as ForumThread;
+          const newThread = { 
+            ...newThreadRaw, 
+            title: decryptGeneralChat(newThreadRaw.title), 
+            content: decryptGeneralChat(newThreadRaw.content) 
+          };
           setThreads(prev => {
             if (prev.some(t => t.id === newThread.id)) return prev;
             return [newThread, ...prev];
           });
         } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as ForumThread;
+          const updatedRaw = payload.new as ForumThread;
+          const updated = { 
+            ...updatedRaw, 
+            title: decryptGeneralChat(updatedRaw.title), 
+            content: decryptGeneralChat(updatedRaw.content) 
+          };
           setThreads(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t));
           setActiveThread(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev);
         } else if (payload.eventType === 'DELETE') {
@@ -2070,13 +2252,15 @@ export default function App() {
       }, (payload) => {
         console.log('Real-time comment change:', payload);
         if (payload.eventType === 'INSERT') {
-          const newComment = payload.new as ForumComment;
+          const newCommentRaw = payload.new as ForumComment;
+          const newComment = { ...newCommentRaw, content: decryptGeneralChat(newCommentRaw.content) };
           setThreadComments(prev => {
             if (prev.some(c => c.id === newComment.id)) return prev;
             return [...prev, newComment];
           });
         } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as ForumComment;
+          const updatedRaw = payload.new as ForumComment;
+          const updated = { ...updatedRaw, content: decryptGeneralChat(updatedRaw.content) };
           setThreadComments(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c));
         } else if (payload.eventType === 'DELETE') {
           const deletedId = payload.old?.id;
@@ -2140,8 +2324,61 @@ export default function App() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
-      handleSupabaseError(err, 'Google inloggen');
+      handleSupabaseError(err, 'Google inloggen', user, isAdmin);
       setLoading(false);
+    }
+  };
+
+  const handleUpdateNotifications = async () => {
+    if (!user) {
+      toast.error('Je moet ingelogd zijn');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabaseClient
+        .from('profiles')
+        .update({ notification_settings: notificationSettings })
+        .eq('id', user.uid);
+      
+      if (error) throw error;
+      setProfile(prev => prev ? { ...prev, notification_settings: notificationSettings } : null);
+      toast.success('Notificatie-instellingen opgeslagen');
+      logAudioEvent('system', 'success', 'Notificatie-instellingen bijgewerkt', user.uid, profile?.display_name || user.displayName || 'Anoniem');
+    } catch (err) {
+      handleSupabaseError(err, 'notificaties opslaan', user, isAdmin);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateTheme = async () => {
+    if (!user) {
+      toast.error('Je moet ingelogd zijn');
+      return;
+    }
+    setSaving(true);
+    isSavingThemeRef.current = true;
+    try {
+      const { error } = await supabaseClient
+        .from('profiles')
+        .update({ 
+          custom_theme: customTheme,
+          use_custom_theme: useCustomTheme
+        })
+        .eq('id', user.uid);
+      
+      if (error) throw error;
+      setProfile(prev => prev ? { ...prev, custom_theme: customTheme, use_custom_theme: useCustomTheme } : null);
+      toast.success('Thema instellingen opgeslagen');
+      logAudioEvent('system', 'success', 'Thema bijgewerkt', user.uid, profile?.display_name || user.displayName || 'Anoniem');
+    } catch (err) {
+      handleSupabaseError(err, 'thema opslaan', user, isAdmin);
+    } finally {
+      setSaving(false);
+      setTimeout(() => {
+        isSavingThemeRef.current = false;
+      }, 1000);
     }
   };
 
@@ -2246,7 +2483,7 @@ export default function App() {
       
       toast.success('Instellingen opgeslagen');
     } catch (err) {
-      handleSupabaseError(err, 'instellingen opslaan', user);
+      handleSupabaseError(err, 'instellingen opslaan', user, isAdmin);
     } finally {
       setSaving(false);
     }
@@ -2330,6 +2567,25 @@ export default function App() {
     }
   };
 
+  const handleDeleteCustomSound = async (index: number) => {
+    if (!user || !supabaseClient) return;
+    
+    try {
+      const updatedSounds = customSounds.filter((_, i) => i !== index);
+      setCustomSounds(updatedSounds);
+      
+      await supabaseClient
+        .from('profiles')
+        .update({ custom_sounds: updatedSounds })
+        .eq('id', user.uid);
+        
+      toast.success('Geluid verwijderd');
+    } catch (err) {
+      console.error('Failed to delete custom sound', err);
+      toast.error('Kon geluid niet verwijderen');
+    }
+  };
+
   const handleResetToGoogle = () => {
     if (!user) return;
     setDisplayNameInput(user.displayName || '');
@@ -2348,7 +2604,7 @@ export default function App() {
       if (error) throw error;
       if (data) setSelectedUser(data);
     } catch (err) {
-      handleSupabaseError(err, 'profiel ophalen');
+      handleSupabaseError(err, 'profiel ophalen', user, isAdmin);
     }
   };
 
@@ -2381,7 +2637,7 @@ export default function App() {
       setReportReason('');
       setReportDetails('');
     } catch (err) {
-      handleSupabaseError(err, 'rapport indienen');
+      handleSupabaseError(err, 'rapport indienen', user, isAdmin);
     } finally {
       setSending(false);
     }
@@ -2481,6 +2737,56 @@ export default function App() {
     }
   };
 
+  const moderateContent = async (content: string): Promise<{ allowed: boolean; reason?: string }> => {
+    const lowerContent = content.toLowerCase();
+    
+    // 1. Extreme words that are ALWAYS blocked (slurs, severe illnesses)
+    const absoluteForbidden = [
+      'neger', 'nikker', 'nigger', 'negro', 'kankerlijer', 'kkr', 'kanker', 'nazi', 'jood', 'hitler', 'hoerezoon', 'varken', 'teringlijer'
+    ];
+
+    for (const word of absoluteForbidden) {
+      if (lowerContent.includes(word)) {
+        return { allowed: false, reason: 'Dit bericht bevat verboden woorden.' };
+      }
+    }
+
+    // 2. Words that are only blocked if directed at someone
+    const directedForbidden = [
+      // English
+      'idiot', 'fool', 'jerk', 'asshole', 'bitch', 'bastard', 'prick', 'douchebag', 'moron', 'cunt', 'dick', 'shithead', 'wanker', 'twat', 'faggot',
+      // Dutch
+      'domkop', 'sukkel', 'idioot', 'eikel', 'klootzak', 'lul', 'zakkenwasser', 'mongool', 'mongooltje', 'trut', 'hoer', 'slet', 'pipo', 'pannenkoek', 'dakhaas', 'flikker', 'homo', 'gay', 'kneus', 'paling', 'lapzwans', 'kwibus', 'flapuit', 'droeftoeter'
+    ];
+
+    // Check if the message contains a potential target
+    const hasMention = content.includes('@');
+    // Check if any registered user's display name is in the message (case insensitive)
+    const hasUserName = users.some(u => 
+      u.display_name && 
+      u.display_name.length > 2 && 
+      lowerContent.includes(u.display_name.toLowerCase())
+    );
+    // Simple check for names (words starting with a capital letter that aren't at the start of a sentence)
+    // This is a rough heuristic for the hardcoded filter
+    const hasPotentialName = /\s[A-Z][a-z]+/.test(content);
+
+    if (hasMention || hasUserName || hasPotentialName) {
+      for (const word of directedForbidden) {
+        if (lowerContent.includes(word)) {
+          return { 
+            allowed: false, 
+            reason: `Je mag deze woorden niet gebruiken om anderen te beledigen.` 
+          };
+        }
+      }
+    }
+
+    return { allowed: true };
+  };
+
+  const MAX_CONTENT_LENGTH = 2000;
+
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('handleCreatePost triggered', { user: !!user, postInput: !!postInput.trim(), isWhitelisted });
@@ -2492,24 +2798,37 @@ export default function App() {
       }
       return;
     }
-    
+
     if (!checkRateLimit()) return;
     
     isPostingRef.current = true;
     const content = postInput.trim();
+    
+    if (content.length > MAX_CONTENT_LENGTH) {
+      toast.error(`Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      return;
+    }
+
     setSending(true);
     setError(null);
 
     const postPromise = (async () => {
+      // Moderation check
+      const moderation = await moderateContent(content);
+      if (!moderation.allowed) {
+        isPostingRef.current = false;
+        throw new Error(moderation.reason || 'Je bericht is geblokkeerd vanwege negatieve uitlatingen over personen.');
+      }
+
       console.log('Attempting to insert post:', { content, author_id: user.uid, parent_id: replyingTo?.id });
+      const encryptedContent = encryptGeneralChat(content);
       const { data: insertData, error } = await supabaseClient.from('posts').insert({
         author_id: user.uid,
         author_name: profile?.display_name || user.displayName || 'Anoniem',
         author_photo: profile?.photo_url || user.photoURL || undefined,
-        content: content,
+        content: encryptedContent,
         created_at: new Date().toISOString(),
-        parent_id: replyingTo?.id || null,
-        parent_author_name: replyingTo?.author_name || null
+        parent_id: replyingTo?.id || null
       }).select().single();
 
       if (error) {
@@ -2527,10 +2846,11 @@ export default function App() {
       // Update state directly with the new post to avoid race conditions
       if (insertData) {
         handleMentions(content, insertData.id, 'post');
+        const decryptedPost = { ...insertData, content: content };
         setPosts((prev) => {
-          const alreadyExists = prev.some(p => p.id === insertData.id);
+          const alreadyExists = prev.some(p => p.id === decryptedPost.id);
           if (alreadyExists) return prev;
-          const newPosts = [insertData, ...prev].slice(0, 20);
+          const newPosts = [decryptedPost, ...prev].slice(0, 100);
           localStorage.setItem('cached_posts', JSON.stringify(newPosts));
           return newPosts;
         });
@@ -2564,7 +2884,7 @@ export default function App() {
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       }
     } catch (err) {
-      handleSupabaseError(err, 'bericht plaatsen', user);
+      handleSupabaseError(err, 'bericht plaatsen', user, isAdmin);
     } finally {
       setSending(false);
     }
@@ -2573,15 +2893,37 @@ export default function App() {
   const handleCreateThread = async () => {
     if (!user || !threadTitleInput.trim() || !threadContentInput.trim() || isWhitelisted !== true) return;
     
+    if (threadTitleInput.trim().length > 100) {
+      toast.error('Titel is te lang (max 100 tekens).');
+      return;
+    }
+
+    if (threadContentInput.trim().length > MAX_CONTENT_LENGTH) {
+      toast.error(`Inhoud is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      return;
+    }
+
     if (!checkRateLimit()) return;
     
     setSending(true);
+
+    // Moderation check
+    const moderation = await moderateContent(threadContentInput.trim());
+    if (!moderation.allowed) {
+      toast.error(moderation.reason || 'Je topic is geblokkeerd vanwege negatieve uitlatingen over personen.', {
+        icon: '🛡️',
+        duration: 5000
+      });
+      setSending(false);
+      return;
+    }
+
     const payload = {
       author_id: user.uid,
       author_name: profile?.display_name || user.displayName || 'Anoniem',
       author_photo: profile?.photo_url || user.photoURL || undefined,
-      title: threadTitleInput.trim(),
-      content: threadContentInput.trim(),
+      title: encryptGeneralChat(threadTitleInput.trim()),
+      content: encryptGeneralChat(threadContentInput.trim()),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -2594,14 +2936,19 @@ export default function App() {
       if (error) throw error;
       
       logAudioEvent('system', 'success', `Topic '${payload.title}' succesvol geplaatst`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
-      setThreads(prev => [data, ...prev]);
+      const decryptedData = { 
+        ...data, 
+        title: threadTitleInput.trim(), 
+        content: threadContentInput.trim() 
+      };
+      setThreads(prev => [decryptedData, ...prev]);
       setThreadTitleInput('');
       setThreadContentInput('');
       setIsCreatingThread(false);
       setActiveThread(data);
       toast.success('Topic succesvol geplaatst!');
     } catch (err) {
-      handleSupabaseError(err, 'topic aanmaken', user);
+      handleSupabaseError(err, 'topic aanmaken', user, isAdmin);
     } finally {
       setSending(false);
     }
@@ -2620,9 +2967,12 @@ export default function App() {
         .order('created_at', { ascending: true });
         
       if (error) throw error;
-      setThreadComments(data || []);
+      if (data) {
+        const decryptedComments = (data as ForumComment[]).map(c => ({ ...c, content: decryptGeneralChat(c.content) }));
+        setThreadComments(decryptedComments);
+      }
     } catch (err) {
-      handleSupabaseError(err, 'reacties ophalen', user);
+      handleSupabaseError(err, 'reacties ophalen', user, isAdmin);
     }
   };
 
@@ -2632,27 +2982,40 @@ export default function App() {
     if (!checkRateLimit()) return;
     
     setSending(true);
+
+    // Moderation check
+    const moderation = await moderateContent(commentInput.trim());
+    if (!moderation.allowed) {
+      toast.error(moderation.reason || 'Je reactie is geblokkeerd vanwege negatieve uitlatingen over personen.', {
+        icon: '🛡️',
+        duration: 5000
+      });
+      setSending(false);
+      return;
+    }
+
     try {
+      const encryptedComment = encryptGeneralChat(commentInput.trim());
       const { data, error } = await supabaseClient.from('forum_comments').insert({
         thread_id: threadId,
         author_id: user.uid,
         author_name: profile?.display_name || user.displayName || 'Anoniem',
         author_photo: profile?.photo_url || user.photoURL || undefined,
-        content: commentInput.trim(),
+        content: encryptedComment,
         created_at: new Date().toISOString(),
-        parent_id: replyingToComment?.id || null,
-        parent_author_name: replyingToComment?.author_name || null
+        parent_id: replyingToComment?.id || null
       }).select().single();
 
       if (error) throw error;
       
       logAudioEvent('system', 'success', `Reactie geplaatst op thread ${threadId}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
-      setThreadComments(prev => [...prev, data]);
+      const decryptedData = { ...data, content: decryptGeneralChat(data.content) };
+      setThreadComments(prev => [...prev, decryptedData]);
       setCommentInput('');
       setReplyingToComment(null);
       
       // Notify mentioned users
-      handleMentions(data.content, data.id, 'comment');
+      handleMentions(decryptedData.content, data.id, 'comment');
       
       // Notify thread author if they are not the commenter
       if (activeThread && activeThread.author_id !== user.uid) {
@@ -2679,7 +3042,7 @@ export default function App() {
       
       toast.success('Reactie geplaatst!');
     } catch (err) {
-      handleSupabaseError(err, 'reactie plaatsen', user);
+      handleSupabaseError(err, 'reactie plaatsen', user, isAdmin);
     } finally {
       setSending(false);
     }
@@ -2737,7 +3100,7 @@ export default function App() {
     try {
       await deletePromise;
     } catch (err) {
-      handleSupabaseError(err, 'bericht verwijderen', user);
+      handleSupabaseError(err, 'bericht verwijderen', user, isAdmin);
     }
   };
 
@@ -2748,12 +3111,20 @@ export default function App() {
     
     isPostingRef.current = true;
     const updatePromise = (async () => {
+      // Moderation check
+      const moderation = await moderateContent(editPostInput.trim());
+      if (!moderation.allowed) {
+        isPostingRef.current = false;
+        throw new Error(moderation.reason || 'Je bericht is geblokkeerd vanwege negatieve uitlatingen over personen.');
+      }
+
       console.log('Attempting to update post:', postId);
+      const encryptedUpdate = encryptGeneralChat(editPostInput.trim());
       
       let query = supabaseClient
         .from('posts')
         .update({
-          content: editPostInput.trim(),
+          content: encryptedUpdate,
           updated_at: new Date().toISOString()
         })
         .eq('id', postId);
@@ -2804,23 +3175,33 @@ export default function App() {
     try {
       await updatePromise;
     } catch (err) {
-      handleSupabaseError(err, 'bericht bijwerken', user);
+      handleSupabaseError(err, 'bericht bijwerken', user, isAdmin);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleUpdateMessage = async (messageId: string) => {
-    if (!editMessageInput.trim() || !activeConversation) return;
+  const handleUpdateMessage = async (messageId: string, customText?: string) => {
+    const textToUse = (customText !== undefined ? customText : editMessageInput).trim();
+    if (!textToUse || !activeConversation) return;
     if (!checkRateLimit()) return;
     setSaving(true);
     
     const updatePromise = (async () => {
+      // Moderation check
+      const moderation = await moderateContent(textToUse);
+      if (!moderation.allowed) {
+        throw new Error(moderation.reason || 'Je bericht is geblokkeerd vanwege negatieve uitlatingen over personen.');
+      }
+
       console.log('Attempting to update message:', messageId);
+      
+      let payloadText = textToUse;
+
       let query = supabaseClient
         .from('messages')
         .update({
-          text: editMessageInput.trim(),
+          text: payloadText,
           updated_at: new Date().toISOString()
         })
         .eq('id', messageId);
@@ -2843,14 +3224,18 @@ export default function App() {
           event: 'update_message',
           payload: { 
             id: messageId, 
-            text: editMessageInput.trim(),
+            text: payloadText,
             updated_at: new Date().toISOString()
           }
         });
       }
 
       // Update local state immediately for better UX
-      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, text: editMessageInput.trim(), updated_at: new Date().toISOString() } : m));
+      setMessages(prev => prev.map(m => m.id === messageId ? { 
+        ...m, 
+        text: textToUse,
+        updated_at: new Date().toISOString() 
+      } : m));
 
       // Update conversation last_message if this was the last message
       // We do this in the background
@@ -2866,10 +3251,17 @@ export default function App() {
             supabaseClient
               .from('conversations')
               .update({ 
-                last_message: editMessageInput.trim(),
+                last_message: payloadText,
                 updated_at: new Date().toISOString()
               })
               .eq('id', activeConversation.id);
+            
+            // Also update local conversations state
+            setConversations(prev => prev.map(c => c.id === activeConversation.id ? {
+              ...c,
+              last_message: textToUse,
+              updated_at: new Date().toISOString()
+            } : c));
           }
         });
 
@@ -2885,7 +3277,7 @@ export default function App() {
     try {
       await updatePromise;
     } catch (err) {
-      handleSupabaseError(err, 'bericht bijwerken', user);
+      handleSupabaseError(err, 'bericht bijwerken', user, isAdmin);
     } finally {
       setSaving(false);
     }
@@ -2954,12 +3346,12 @@ export default function App() {
     try {
       await deletePromise;
     } catch (err) {
-      handleSupabaseError(err, 'bericht verwijderen', user);
+      handleSupabaseError(err, 'bericht verwijderen', user, isAdmin);
     }
   };
 
-  const handleAddToWhitelist = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddToWhitelist = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!isAdmin || !whitelistInput.trim()) return;
     if (!checkRateLimit()) return;
     const email = whitelistInput.trim().toLowerCase();
@@ -2973,7 +3365,7 @@ export default function App() {
       if (error) throw error;
       setWhitelistInput('');
     } catch (err) {
-      handleSupabaseError(err, 'whitelist toevoegen', user);
+      handleSupabaseError(err, 'whitelist toevoegen', user, isAdmin);
     }
   };
 
@@ -2984,7 +3376,106 @@ export default function App() {
       const { error } = await supabaseClient.from('whitelist').delete().eq('email', email);
       if (error) throw error;
     } catch (err) {
-      handleSupabaseError(err, 'whitelist verwijderen', user);
+      handleSupabaseError(err, 'whitelist verwijderen', user, isAdmin);
+    }
+  };
+
+  const handleBlockUser = async (userId: string, isBlocked: boolean) => {
+    if (!isAdmin) {
+      console.warn('[Admin] handleBlockUser called by non-admin');
+      return;
+    }
+
+    const userToBlock = users.find(u => u.id === userId);
+    if (!userToBlock) {
+      console.error('[Admin] User not found for blocking:', userId);
+      toast.error('Gebruiker niet gevonden.');
+      return;
+    }
+
+    setSaving(true);
+    console.log(`[Admin] START ${isBlocked ? 'BLOCK' : 'UNBLOCK'} flow for:`, {
+      userId,
+      name: userToBlock.display_name,
+      email: userToBlock.email
+    });
+    
+    try {
+      const { data, error } = await supabaseClient
+        .from('profiles')
+        .update({ 
+          is_blocked: isBlocked,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select();
+
+      if (error) {
+        console.error('[Admin] Supabase error during block operation:', error);
+        throw error;
+      }
+      
+      console.log('[Admin] Supabase update response:', data);
+      
+      // If it returned no data, it might still have worked but been blocked by RLS read permissions
+      if (!data || data.length === 0) {
+        console.warn('[Admin] Update returned no data (likely RLS select restriction). Continuing with local update.');
+      }
+      
+      // Handle whitelist synchronization
+      if (userToBlock.email) {
+        if (isBlocked) {
+          console.log('[Admin] Also removing from whitelist:', userToBlock.email);
+          try {
+            const { error: wlError } = await supabaseClient.from('whitelist').delete().eq('email', userToBlock.email);
+            if (wlError) console.error('[Admin] Whitelist delete error:', wlError);
+            setWhitelist(prev => prev.filter(w => w.email !== userToBlock.email));
+          } catch (e) {
+            console.error('[Admin] Failed to remove from whitelist during block:', e);
+          }
+        } else {
+          // UNBLOCKING: Add back to whitelist if not already there
+          console.log('[Admin] Also adding back to whitelist:', userToBlock.email);
+          try {
+            // Check if already in whitelist first to avoid unique constraint errors
+            const { data: existingWl } = await supabaseClient
+              .from('whitelist')
+              .select('email')
+              .eq('email', userToBlock.email)
+              .maybeSingle();
+
+            if (!existingWl) {
+              const { error: wlError } = await supabaseClient
+                .from('whitelist')
+                .insert({ email: userToBlock.email, added_at: new Date().toISOString() });
+              
+              if (wlError) {
+                console.error('[Admin] Whitelist add error:', wlError);
+              } else {
+                setWhitelist(prev => [...prev, { email: userToBlock.email!, added_at: new Date().toISOString() }]);
+              }
+            }
+          } catch (e) {
+            console.error('[Admin] Failed to add back to whitelist during unblock:', e);
+          }
+        }
+      }
+      
+      // Update local state immediately for responsiveness
+      setUsers(prev => {
+        const updated = prev.map(u => u.id === userId ? { ...u, is_blocked: isBlocked } : u);
+        return [...updated].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+      });
+      
+      toast.success(isBlocked ? `Gebruiker ${userToBlock.display_name} geblokkeerd` : `Gebruiker ${userToBlock.display_name} gedeblokkeerd`);
+      
+      logAudioEvent('system', 'warning', `Gebruiker ${userToBlock.display_name} is ${isBlocked ? 'geblokkeerd' : 'gedeblokkeerd'} door admin`, user?.uid, profile?.display_name);
+    } catch (err) {
+      console.error('[Admin] CRITICAL catch in handleBlockUser:', err);
+      handleSupabaseError(err, 'gebruiker blokkeren', user, true); // true for isAdmin
+    } finally {
+      setSaving(false);
+      console.log('[Admin] FINISHED block flow');
     }
   };
 
@@ -3010,8 +3501,8 @@ export default function App() {
     setActiveMentionInput(null);
   };
 
-  const handleUpdateStatus = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleUpdateStatus = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!isAdmin) return;
     if (!checkRateLimit()) return;
     try {
@@ -3021,7 +3512,7 @@ export default function App() {
       if (error) throw error;
       toast.success('Website status bijgewerkt');
     } catch (err) {
-      handleSupabaseError(err, 'status bijwerken', user);
+      handleSupabaseError(err, 'status bijwerken', user, isAdmin);
     }
   };
 
@@ -3068,7 +3559,7 @@ export default function App() {
       if (error) throw error;
       toast.success('Rapport gemarkeerd als opgelost');
     } catch (err) {
-      handleSupabaseError(err, 'rapport oplossen');
+      handleSupabaseError(err, 'rapport oplossen', user, isAdmin);
     }
   };
 
@@ -3080,7 +3571,7 @@ export default function App() {
       if (error) throw error;
       toast.success('Rapport verwijderd');
     } catch (err) {
-      handleSupabaseError(err, 'rapport verwijderen');
+      handleSupabaseError(err, 'rapport verwijderen', user, isAdmin);
     }
   };
 
@@ -3090,7 +3581,7 @@ export default function App() {
     // Check if conversation already exists
     const existing = conversations.find(c => c.participants.includes(targetUser.id));
     if (existing) {
-      setActiveConversation(existing);
+      handleSetActiveConversation(existing);
       setMobileChatView('chat');
       setView('messages');
       return;
@@ -3119,7 +3610,13 @@ export default function App() {
         .single();
         
       if (error) throw error;
-      setActiveConversation(data);
+      handleSetActiveConversation(data);
+      
+      // Add to local list immediately
+      setConversations(prev => {
+        if (prev.some(c => c.id === data.id)) return prev;
+        return [data, ...prev].sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+      });
       
       // Broadcast new conversation to target user
       const targetChannel = supabaseClient.channel(`conversations:${targetUser.id}`);
@@ -3132,26 +3629,44 @@ export default function App() {
       setMobileChatView('chat');
       setView('messages');
     } catch (err) {
-      handleSupabaseError(err, 'gesprek starten', user);
+      handleSupabaseError(err, 'gesprek starten', user, isAdmin);
     }
   };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!user || !messageInput.trim() || !activeConversation) return;
+    if (!user || !messageInput.trim() || !activeConversation || isWhitelisted !== true) return;
     
+    if (messageInput.trim().length > MAX_CONTENT_LENGTH) {
+      toast.error(`Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      return;
+    }
+
     if (!checkRateLimit()) return;
     
     const text = messageInput.trim();
 
+    // Moderation check
+    const moderation = await moderateContent(text);
+    if (!moderation.allowed) {
+      toast.error(moderation.reason || 'Je bericht is geblokkeerd vanwege negatieve uitlatingen over personen.', {
+        icon: '🛡️',
+        duration: 5000
+      });
+      return;
+    }
+
     try {
       console.log('Attempting to send message:', { text, conversation_id: activeConversation.id });
+      
+      let payloadText = text;
+
       const { data: insertedMsg, error: msgError } = await supabaseClient
         .from('messages')
         .insert({
           conversation_id: activeConversation.id,
           sender_id: user.uid,
-          text,
+          text: payloadText,
           created_at: new Date().toISOString()
         })
         .select()
@@ -3168,9 +3683,24 @@ export default function App() {
       
       // Update local state immediately for better UX
       if (insertedMsg) {
+        const localMsg = { ...insertedMsg, text: text }; // Use cleartext for the sender's local view
         setMessages(prev => {
-          if (prev.some(m => m.id === insertedMsg.id)) return prev;
-          return [...prev, insertedMsg];
+          if (prev.some(m => m.id === localMsg.id)) return prev;
+          return [localMsg, ...prev];
+        });
+
+        // Also update conversation in local list immediately
+        setConversations(prev => {
+          const index = prev.findIndex(c => c.id === activeConversation.id);
+          if (index === -1) return prev;
+          const next = [...prev];
+          next[index] = {
+            ...next[index],
+            last_message: text,
+            last_message_sender_id: user.uid,
+            updated_at: insertedMsg.created_at
+          };
+          return next.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
         });
       }
 
@@ -3215,11 +3745,11 @@ export default function App() {
       supabaseClient
         .from('conversations')
         .update({
-          last_message: text,
+          last_message: payloadText,
           last_message_sender_id: user.uid,
           updated_at: new Date().toISOString()
         })
-        .eq('id', activeConversation.id);
+        .eq('id', activeConversation.id).then(); // fire and forgetish
 
       // Broadcast conversation update to others
       if (conversationsChannelRef.current) {
@@ -3228,7 +3758,7 @@ export default function App() {
           event: 'conversation_update',
           payload: {
             id: activeConversation.id,
-            last_message: text,
+            last_message: payloadText,
             last_message_sender_id: user.uid,
             updated_at: new Date().toISOString()
           }
@@ -3242,7 +3772,7 @@ export default function App() {
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       }
     } catch (err) {
-      handleSupabaseError(err, 'bericht verzenden', user);
+      handleSupabaseError(err, 'bericht verzenden', user, isAdmin);
     }
   };
 
@@ -3276,13 +3806,29 @@ export default function App() {
       setInput = setEditMessageInput;
     }
 
-    const lastColon = currentInput.lastIndexOf(':');
-    if (lastColon !== -1) {
-      const newValue = currentInput.substring(0, lastColon) + emoji + ' ';
-      setInput(newValue);
+    if (emojiPickerMode === 'suggestion') {
+      const lastColon = currentInput.lastIndexOf(':');
+      if (lastColon !== -1 && currentInput.length - lastColon < 20) {
+        const newValue = currentInput.substring(0, lastColon) + emoji + ' ';
+        setInput(newValue);
+      } else {
+        setInput(currentInput + emoji);
+      }
+    } else {
+      setInput(currentInput + emoji);
     }
-
     setEmojiResults([]);
+  };
+
+  const handleEmojiButtonClick = (e: React.MouseEvent, type: 'post' | 'comment' | 'message' | 'editPost' | 'editMessage') => {
+    setActiveMentionInput(type);
+    setEmojiPickerMode('picker');
+    setEmojiResults([EMOJI_LIST[0]]); // Just to trigger show
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    setEmojiPosition({
+      top: rect.top,
+      left: rect.left
+    });
   };
 
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, conversationId: string) => {
@@ -3328,6 +3874,7 @@ export default function App() {
       const query = value.substring(lastColon + 1, cursorPosition);
       if (!query.includes(' ')) {
         setEmojiSearch(query);
+        setEmojiPickerMode('suggestion');
         const results = EMOJI_LIST.filter(e => 
           e.name.toLowerCase().includes(query.toLowerCase()) ||
           e.keywords.some(k => k.toLowerCase().includes(query.toLowerCase()))
@@ -3364,6 +3911,12 @@ export default function App() {
       } else {
         setPostInput(convertedValue);
       }
+    } else if (conversationId === 'chat') {
+      setPostInput(convertedValue);
+    } else if (conversationId.startsWith('edit-post-')) {
+      setEditPostInput(convertedValue);
+    } else if (conversationId.startsWith('edit-msg-')) {
+      setEditMessageInput(convertedValue);
     } else {
       setMessageInput(convertedValue);
     }
@@ -3415,19 +3968,30 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative overflow-x-hidden">
-      {isQuotaExceeded && (
-        <div className="bg-red-500 text-white px-4 py-2 text-center text-sm font-medium sticky top-0 z-[100] flex items-center justify-center gap-4 shadow-lg">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            <span>Firebase Quota Overschreden. Sommige functies zijn tijdelijk beperkt.</span>
-          </div>
-          <button 
-            onClick={() => window.location.reload()}
-            className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded text-xs transition-colors flex items-center gap-1"
+      {isBlocked && (
+        <div className="fixed inset-0 z-[1000] bg-zinc-950 flex items-center justify-center p-6 text-center">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="max-w-md space-y-8"
           >
-            <Zap className="w-3 h-3" />
-            Verversen
-          </button>
+            <div className="w-24 h-24 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-8 border-4 border-red-500/30">
+              <ShieldAlert className="w-12 h-12 text-red-500" />
+            </div>
+            <div className="space-y-4">
+              <h1 className="text-5xl font-bold text-white uppercase tracking-tight leading-none">Toegang Ontzegd</h1>
+              <div className="h-1 w-20 bg-red-500 mx-auto rounded-full" />
+              <p className="text-zinc-400 font-medium text-lg">Je account is permanent geblokkeerd door een beheerder wegens schending van de platformregels.</p>
+            </div>
+            <div className="pt-8 flex flex-col gap-4">
+              <button 
+                onClick={() => handleLogout()}
+                className="px-8 py-4 bg-white text-black rounded-2xl font-bold uppercase tracking-wide hover:bg-zinc-200 transition-all shadow-xl"
+              >
+                Log Uit
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
       {/* Global Custom Wallpaper Layer */}
@@ -3501,7 +4065,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v1.7.9.6', 'true');
+                      localStorage.setItem('has_seen_menu_v1.8', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -3513,7 +4077,7 @@ export default function App() {
                     <motion.div 
                       animate={{ opacity: [1, 0, 1] }}
                       transition={{ repeat: Infinity, duration: 1 }}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-app-card shadow-lg"
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-app-card shadow-lg"
                     >
                       !
                     </motion.div>
@@ -3537,7 +4101,7 @@ export default function App() {
                         className="absolute right-0 mt-2 w-56 bg-app-card border border-app-border rounded-2xl shadow-2xl z-[120] overflow-hidden p-2"
                       >
                         <div className="px-3 py-2 mb-1">
-                          <p className="text-[10px] font-black text-app-muted uppercase tracking-widest">Navigatie</p>
+                          <p className="text-[10px] font-bold text-app-muted uppercase tracking-wide">Navigatie</p>
                         </div>
                         <button 
                           onClick={() => { setView('forum'); setShowNavDropdown(false); }}
@@ -3552,7 +4116,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v1.7.9.6', 'true');
+                              localStorage.setItem('has_seen_news_v1.8', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -3563,7 +4127,7 @@ export default function App() {
                             <motion.div 
                               animate={{ opacity: [1, 0, 1] }}
                               transition={{ repeat: Infinity, duration: 1 }}
-                              className="absolute right-3 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center shadow-sm"
+                              className="absolute right-3 w-4 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center shadow-sm"
                             >
                               !
                             </motion.div>
@@ -3658,7 +4222,7 @@ export default function App() {
                                 onClick={() => {
                                   if (notif.type === 'dm') {
                                     setView('messages');
-                                    setActiveConversation(conversations.find(c => c.id === notif.resource_id) || null);
+                                    handleSetActiveConversation(conversations.find(c => c.id === notif.resource_id) || null);
                                   } else if (notif.resource_type === 'post') {
                                     setView('chat');
                                   } else {
@@ -3714,7 +4278,7 @@ export default function App() {
               {theme === 'light' ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : theme === 'dark' ? <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
               {useCustomTheme && (
                 <div className="absolute -top-1 -right-1 bg-app-ink text-app-bg p-0.5 rounded-full border border-app-border">
-                  <Lock className="w-2.5 h-2.5" />
+                  <LockIcon className="w-2.5 h-2.5" />
                 </div>
               )}
             </button>
@@ -3825,7 +4389,7 @@ export default function App() {
               <div className="w-24 h-24 bg-red-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-red-100 shadow-xl shadow-red-500/10">
                 <ShieldCheck className="w-12 h-12 text-red-500" />
               </div>
-              <h1 className="text-4xl font-black tracking-tighter text-app-ink mb-4">Geen Toegang</h1>
+              <h1 className="text-4xl font-bold tracking-tight text-app-ink mb-4">Geen Toegang</h1>
               <div className="bg-app-card p-6 rounded-3xl border border-app-border shadow-sm mb-10">
                 <p className="text-app-muted leading-relaxed mb-4">
                   Je account <span className="font-bold text-app-ink">{user.email}</span> staat momenteel niet op de whitelist van het <span className="font-bold text-app-ink">FTJM Besloten Forum</span>.
@@ -3857,7 +4421,7 @@ export default function App() {
               <div className="w-24 h-24 bg-amber-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-amber-100 shadow-xl shadow-amber-500/10">
                 <AlertCircle className="w-12 h-12 text-amber-500" />
               </div>
-              <h1 className="text-4xl font-black tracking-tighter text-app-ink mb-4">Onderhoud</h1>
+              <h1 className="text-4xl font-bold tracking-tight text-app-ink mb-4">Onderhoud</h1>
               <div className="bg-app-card p-6 rounded-3xl border border-app-border shadow-sm mb-10">
                 <p className="text-app-muted leading-relaxed mb-4">
                   Het forum is momenteel in <span className="font-bold text-app-ink">{websiteStatus}</span>.
@@ -3939,1774 +4503,166 @@ export default function App() {
                   </div>
 
                   <div className="lg:col-span-2 space-y-6">
-                    <div 
-                      className={`bg-app-card rounded-3xl p-4 sm:p-8 border border-app-border shadow-sm transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
-                      style={useCustomTheme ? { 
-                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
-                        color: customTheme.text_color
-                      } : {}}
-                    >
-                      <div className="flex items-center gap-2 mb-6 sm:mb-8">
-                        <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-app-ink" />
-                        <h3 className="text-lg sm:text-xl font-bold text-app-ink">General Chat</h3>
-                      </div>
-
-                      <form onSubmit={handleCreatePost} className="mb-6 sm:mb-10 relative pt-6 sm:pt-8">
-                        <AnimatePresence>
-                          {replyingTo && (
-                            <motion.div 
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: 10 }}
-                              className="mb-3 flex items-center justify-between bg-app-accent/50 border border-app-border p-3 rounded-xl backdrop-blur-sm"
-                            >
-                              <div className="flex items-center gap-2 overflow-hidden">
-                                <div className="w-1 h-8 bg-app-ink rounded-full flex-shrink-0" />
-                                <div className="overflow-hidden">
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest">Reageren op {nicknames[replyingTo.author_id] || replyingTo.author_name}</p>
-                                    <span className="text-[10px] text-app-muted/40">•</span>
-                                    <p className="text-[10px] text-app-muted italic truncate max-w-[150px]">"{replyingTo.content}"</p>
-                                  </div>
-                                  <p className="text-xs text-app-ink font-medium">Typ je reactie hieronder...</p>
-                                </div>
-                              </div>
-                              <button 
-                                onClick={() => setReplyingTo(null)}
-                                className="p-1.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </motion.div>
-                          )}
-                          {typingStatuses['forum']?.length > 0 && (
-                            <motion.div 
-                              initial={{ opacity: 0, y: 5 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: 5 }}
-                              className="absolute top-0 left-0 flex items-center gap-2 text-[8px] sm:text-[10px] font-bold text-emerald-700 uppercase tracking-widest bg-emerald-100/80 border border-emerald-200 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-sm z-10 backdrop-blur-sm"
-                            >
-                              <div className="flex gap-0.5 sm:gap-1">
-                                <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-emerald-500 rounded-full" />
-                                <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-emerald-500 rounded-full" />
-                                <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-emerald-500 rounded-full" />
-                              </div>
-                              {typingStatuses['forum'].length === 1 
-                                ? `${typingStatuses['forum'][0]} is aan het typen...` 
-                                : `${typingStatuses['forum'].join(', ')} zijn aan het typen...`}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                        <div className="relative">
-                          <input 
-                            type="text"
-                            value={postInput}
-                            onChange={(e) => handleTyping(e, 'forum')}
-                            placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Deel een bericht..."}
-                            disabled={cooldownRemaining > 0 || uploading}
-                            className="w-full pl-4 sm:pl-6 pr-24 sm:pr-28 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
-                            maxLength={1000}
-                          />
-                          <div className="absolute right-1.5 top-1.5 flex items-center gap-1 sm:gap-2">
-                            <button 
-                              type="button"
-                              onClick={handleImageUrl}
-                              disabled={uploading || cooldownRemaining > 0}
-                              className="p-2 sm:p-2.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all disabled:opacity-50"
-                              title="Afbeelding via URL"
-                            >
-                              <Link className="w-4 h-4 sm:w-5 sm:h-5" />
-                            </button>
-                            <button 
-                              type="submit"
-                              disabled={sending || !postInput.trim() || cooldownRemaining > 0 || uploading}
-                              className="p-2 sm:p-2.5 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all"
-                            >
-                              {sending ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-4 h-4 sm:w-5 sm:h-5" />}
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-
-                      <div className="space-y-4 sm:space-y-6">
-                        {posts.length === 0 ? (
-                          <div className="text-center py-10">
-                            <p className="text-app-muted text-xs sm:text-sm">Nog geen berichten. Deel als eerste iets!</p>
-                          </div>
-                        ) : (
-                          posts.map((post) => (
-                            <motion.div 
-                              layout
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              key={post.id}
-                              id={`post-${post.id}`}
-                              className={`flex gap-3 sm:gap-4 group bg-app-card p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-app-border shadow-sm hover:shadow-md transition-all relative`}
-                            >
-                              <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0">
-                                {post.author_photo ? (
-                                  <button 
-                                    onClick={() => handleOpenProfile(post.author_id)}
-                                    className="w-full h-full rounded-full overflow-hidden border border-app-border object-cover hover:ring-2 hover:ring-app-ink transition-all"
-                                  >
-                                    <img 
-                                      src={post.author_photo} 
-                                      alt={post.author_name} 
-                                      className="w-full h-full object-cover"
-                                      referrerPolicy="no-referrer"
-                                    />
-                                  </button>
-                                ) : (
-                                  <button 
-                                    onClick={() => handleOpenProfile(post.author_id)}
-                                    className="w-full h-full rounded-full bg-app-accent flex items-center justify-center border border-app-border hover:ring-2 hover:ring-app-ink transition-all"
-                                  >
-                                    <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-app-muted" />
-                                  </button>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
-                                  <div className="flex flex-col min-w-0">
-                                    {post.parent_author_name && (
-                                      <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-app-muted mb-1 font-medium bg-app-accent/30 w-fit px-2 py-0.5 rounded-full border border-app-border/50">
-                                        <MessageSquare className="w-3 h-3" />
-                                        <span>Geantwoord op <span className="font-bold text-app-ink">{post.parent_author_name}</span></span>
-                                      </div>
-                                    )}
-                                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                                      <button 
-                                        onClick={() => handleOpenProfile(post.author_id)}
-                                        className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
-                                      >
-                                        {nicknames[post.author_id] || post.author_name}
-                                      </button>
-                                      <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
-                                        {formatDate(post.created_at)} om {formatTime(post.created_at)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button 
-                                      onClick={() => setReplyingTo(post)}
-                                      className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
-                                      title="Reageren"
-                                    >
-                                      <MessageSquare className="w-4 h-4" />
-                                    </button>
-                                    {user.uid !== post.author_id && (
-                                      <button 
-                                        onClick={() => handleOpenReport('post', post.id, post.author_id, post.author_name)}
-                                        className="p-2 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                        title="Rapporteer post"
-                                      >
-                                        <Flag className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                    {(user.uid === post.author_id || isAdmin) && (
-                                      <>
-                                        <button 
-                                          onClick={() => {
-                                            setEditingPostId(post.id);
-                                            setEditPostInput(post.content);
-                                          }}
-                                          className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
-                                          title="Bewerken"
-                                        >
-                                          <Pencil className="w-4 h-4" />
-                                        </button>
-                                        <button 
-                                          onClick={() => handleDeletePost(post.id)}
-                                          className="p-2 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                          title="Verwijderen"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      </>
-                                    )}
-                                    {user.uid !== post.author_id && (
-                                      <button 
-                                        onClick={() => handleStartConversation({ id: post.author_id, display_name: post.author_name })}
-                                        className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
-                                        title="Stuur bericht"
-                                      >
-                                        <Mail className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                                
-                                {editingPostId === post.id ? (
-                                  <div className="mt-3 flex gap-2">
-                                    <input 
-                                      type="text"
-                                      value={editPostInput}
-                                      onChange={(e) => setEditPostInput(e.target.value)}
-                                      className="flex-1 px-3 py-2 sm:px-4 sm:py-3 bg-app-bg border border-app-border rounded-lg sm:rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink"
-                                      autoFocus
-                                    />
-                                    <button 
-                                      onClick={() => handleUpdatePost(post.id)}
-                                      disabled={saving || !editPostInput.trim()}
-                                      className="p-2 sm:p-3 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all"
-                                    >
-                                      {saving ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Check className="w-4 h-4 sm:w-5 sm:h-5" />}
-                                    </button>
-                                    <button 
-                                      onClick={() => setEditingPostId(null)}
-                                      className="p-2 sm:p-3 bg-app-accent text-app-muted rounded-lg sm:rounded-xl hover:opacity-90 transition-all"
-                                    >
-                                      <X className="w-4 h-4 sm:w-5 sm:h-5" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="text-app-ink text-sm sm:text-base leading-relaxed break-words">
-                                    <RichContent content={post.content} />
-                                  </div>
-                                )}
-                              </div>
-                            </motion.div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                    
-                    {posts.length > 5 && (
-                      <button 
-                        onClick={() => {
-                          const forumContainer = document.querySelector('.forum-scroll-container');
-                          if (forumContainer) {
-                            forumContainer.scrollTo({ top: 0, behavior: 'smooth' });
-                          } else {
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }
-                        }}
-                        className="absolute bottom-8 right-8 p-3 bg-app-ink text-app-bg rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all z-40 border border-app-border/20"
-                        title="Terug naar boven"
-                      >
-                        <ChevronLeft className="w-5 h-5 rotate-90" />
-                      </button>
-                    )}
+                    <ChatView 
+                      user={user}
+                      posts={posts}
+                      isAdmin={isAdmin}
+                      postInput={postInput}
+                      handleCreatePost={handleCreatePost}
+                      handleTyping={handleTyping}
+                      cooldownRemaining={cooldownRemaining}
+                      sending={sending}
+                      replyingTo={replyingTo}
+                      setReplyingTo={setReplyingTo}
+                      typingStatuses={typingStatuses}
+                      handleOpenProfile={handleOpenProfile}
+                      handleOpenReport={handleOpenReport}
+                      setEditingPostId={setEditingPostId}
+                      setEditPostInput={setEditPostInput}
+                      handleUpdatePost={handleUpdatePost}
+                      handleDeletePost={handleDeletePost}
+                      handleStartConversation={handleStartConversation}
+                      editingPostId={editingPostId}
+                      editPostInput={editPostInput}
+                      saving={saving}
+                      useCustomTheme={useCustomTheme}
+                      customTheme={customTheme}
+                      uploading={uploading}
+                      handleEmojiButtonClick={handleEmojiButtonClick}
+                      handleImageUrl={handleImageUrl}
+                      nicknames={nicknames}
+                    />
                   </div>
                 </div>
               )}
 
               {view === 'forum' && (
-                <div className="space-y-8">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-2xl sm:text-3xl font-black text-app-ink tracking-tight">Community Forum</h2>
-                      <p className="text-app-muted text-sm mt-1">Deel je gedachten, stel vragen en help anderen.</p>
-                    </div>
-                    <button 
-                      onClick={() => setIsCreatingThread(true)}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-app-ink text-app-bg rounded-xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg"
-                    >
-                      <Plus className="w-5 h-5" />
-                      Nieuw Topic
-                    </button>
-                  </div>
-
-                  {activeThread ? (
-                    <div className="space-y-6">
-                      <button 
-                        onClick={() => setActiveThread(null)}
-                        className="flex items-center gap-2 text-app-muted hover:text-app-ink transition-colors font-bold text-sm uppercase tracking-wider"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                        Terug naar overzicht
-                      </button>
-
-                      <div className="bg-app-card rounded-3xl border border-app-border shadow-sm overflow-hidden">
-                        <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5">
-                          <div className="flex items-center gap-3 mb-4">
-                            {(activeThread.author_photo) ? (
-                              <img src={activeThread.author_photo} alt="" className="w-8 h-8 rounded-full border border-app-border" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                                <UserIcon className="w-4 h-4 text-app-muted" />
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2 text-xs text-app-muted">
-                              <span className="font-bold text-app-ink">{nicknames[activeThread.author_id] || activeThread.author_name}</span>
-                              <span>•</span>
-                              <span>{formatDate(activeThread.created_at)}</span>
-                            </div>
-                          </div>
-                          <h1 className="text-2xl sm:text-3xl font-black text-app-ink mb-4 leading-tight">{activeThread.title}</h1>
-                          <div className="text-app-ink text-base sm:text-lg leading-relaxed whitespace-pre-wrap">
-                            <RichContent content={activeThread.content} />
-                          </div>
-                        </div>
-
-                        <div className="p-6 sm:p-8 space-y-8">
-                          <div className="space-y-4">
-                            <h3 className="font-bold text-app-ink flex items-center gap-2">
-                              <MessageSquare className="w-5 h-5" />
-                              Reacties ({threadComments.length})
-                            </h3>
-                            <div className="relative">
-                              {replyingToComment && (
-                                <div className="mb-2 flex items-center justify-between bg-app-accent/30 border border-app-border p-2 rounded-xl">
-                                  <div className="flex items-center gap-2 overflow-hidden">
-                                    <div className="w-1 h-6 bg-app-ink rounded-full flex-shrink-0" />
-                                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-widest truncate">
-                                      Reageren op <span className="text-app-ink">{replyingToComment.author_name}</span>
-                                    </p>
-                                  </div>
-                                  <button 
-                                    onClick={() => setReplyingToComment(null)}
-                                    className="p-1 text-app-muted hover:text-app-ink transition-colors"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              )}
-                              <textarea 
-                                value={commentInput}
-                                onChange={(e) => handleTyping(e, 'forum')}
-                                placeholder="Wat vind jij hiervan?"
-                                disabled={uploading}
-                                className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[120px] resize-none pr-16"
-                              />
-                              <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-                                <button 
-                                  type="button"
-                                  onClick={handleImageUrl}
-                                  disabled={uploading}
-                                  className="p-2 bg-app-accent text-app-ink rounded-xl hover:bg-app-border transition-all disabled:opacity-50"
-                                  title="Afbeelding via URL"
-                                >
-                                  <Link className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  onClick={() => handleCreateComment(activeThread.id)}
-                                  disabled={sending || !commentInput.trim() || uploading}
-                                  className="px-6 py-2 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all"
-                                >
-                                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Plaatsen'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-6">
-                            {threadComments.length === 0 ? (
-                              <div className="text-center py-12 bg-app-accent/5 rounded-2xl border border-dashed border-app-border">
-                                <p className="text-app-muted text-sm">Nog geen reacties. Wees de eerste!</p>
-                              </div>
-                            ) : (
-                              threadComments.map(comment => (
-                                <div key={comment.id} className="flex gap-4 group">
-                                  <div className="w-10 h-10 flex-shrink-0">
-                                    {comment.author_photo ? (
-                                      <img src={comment.author_photo} alt="" className="w-full h-full rounded-full border border-app-border object-cover" />
-                                    ) : (
-                                      <div className="w-full h-full rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                                        <UserIcon className="w-5 h-5 text-app-muted" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex-1 space-y-2">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex flex-col">
-                                        {comment.parent_author_name && (
-                                          <div className="flex items-center gap-1 text-[10px] text-app-muted mb-0.5 font-medium">
-                                            <MessageSquare className="w-2.5 h-2.5" />
-                                            <span>Geantwoord op <span className="font-bold text-app-ink">{comment.parent_author_name}</span></span>
-                                          </div>
-                                        )}
-                                        <div className="flex items-center gap-2 text-xs">
-                                          <span className="font-bold text-app-ink">{nicknames[comment.author_id] || comment.author_name}</span>
-                                          <span className="text-app-muted">{formatDate(comment.created_at)}</span>
-                                        </div>
-                                      </div>
-                                      <button 
-                                        onClick={() => setReplyingToComment(comment)}
-                                        className="p-1.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                        title="Reageren"
-                                      >
-                                        <MessageSquare className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                    <div className="text-app-ink text-sm sm:text-base leading-relaxed bg-app-accent/5 p-4 rounded-2xl border border-app-border/50">
-                                      <RichContent content={comment.content} />
-                                    </div>
-                                  </div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                      {isCreatingThread && (
-                        <motion.div 
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          className="bg-app-card rounded-3xl p-6 sm:p-8 border-2 border-app-ink shadow-xl space-y-6"
-                        >
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-xl font-black text-app-ink">Nieuw Topic Starten</h3>
-                            <button onClick={() => setIsCreatingThread(false)} className="p-2 hover:bg-app-accent rounded-full transition-colors">
-                              <X className="w-5 h-5" />
-                            </button>
-                          </div>
-                          <div className="space-y-4">
-                            <input 
-                              type="text"
-                              value={threadTitleInput}
-                              onChange={(e) => setThreadTitleInput(convertEmoticons(e.target.value))}
-                              placeholder="Titel van je topic"
-                              className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all font-bold text-lg text-app-ink"
-                            />
-                            <div className="relative">
-                              <textarea 
-                                value={threadContentInput}
-                                onChange={(e) => setThreadContentInput(e.target.value)}
-                                placeholder="Waar wil je het over hebben?"
-                                disabled={uploading}
-                                className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[200px] resize-none"
-                              />
-                              <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-                                <button 
-                                  type="button"
-                                  onClick={handleImageUrl}
-                                  disabled={uploading}
-                                  className="p-2 bg-app-accent text-app-ink rounded-xl hover:bg-app-border transition-all disabled:opacity-50"
-                                  title="Afbeelding via URL"
-                                >
-                                  <Link className="w-5 h-5" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex justify-end gap-3">
-                              <button 
-                                onClick={() => setIsCreatingThread(false)}
-                                className="px-6 py-2.5 bg-app-accent text-app-muted rounded-xl font-bold hover:bg-app-border transition-all"
-                              >
-                                Annuleren
-                              </button>
-                              <button 
-                                onClick={handleCreateThread}
-                                disabled={sending || !threadTitleInput.trim() || !threadContentInput.trim()}
-                                className="px-8 py-2.5 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg"
-                              >
-                                {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Topic Publiceren'}
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {threads.length === 0 ? (
-                        <div className="text-center py-20 bg-app-card rounded-3xl border border-dashed border-app-border">
-                          <Layout className="w-12 h-12 text-app-muted mx-auto mb-4 opacity-20" />
-                          <p className="text-app-muted font-medium">Nog geen topics gevonden. Start jij de eerste?</p>
-                        </div>
-                      ) : (
-                        threads.map(thread => (
-                          <motion.div 
-                            key={thread.id}
-                            layout
-                            onClick={() => handleOpenThread(thread)}
-                            className="bg-app-card p-6 sm:p-8 rounded-3xl border border-app-border shadow-sm hover:shadow-md hover:border-app-ink/20 transition-all cursor-pointer group"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="space-y-3 flex-1">
-                                <div className="flex items-center gap-2 text-xs text-app-muted">
-                                  <span className="font-bold text-app-ink">{nicknames[thread.author_id] || thread.author_name}</span>
-                                  <span>•</span>
-                                  <span>{formatDate(thread.created_at)}</span>
-                                </div>
-                                <h3 className="text-xl font-black text-app-ink group-hover:text-app-ink/80 transition-colors leading-tight">{thread.title}</h3>
-                                <p className="text-app-muted text-sm line-clamp-2 leading-relaxed">{thread.content}</p>
-                                <div className="flex items-center gap-4 pt-2">
-                                  <div className="flex items-center gap-1.5 text-xs font-bold text-app-muted">
-                                    <MessageSquare className="w-4 h-4" />
-                                    {thread.comment_count || 0} reacties
-                                  </div>
-                                  <div className="flex items-center gap-1.5 text-xs font-bold text-app-muted">
-                                    <Clock className="w-4 h-4" />
-                                    Laatste update {formatDate(thread.updated_at)}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="hidden sm:block">
-                                <div className="p-3 bg-app-accent rounded-2xl group-hover:bg-app-ink group-hover:text-app-bg transition-all">
-                                  <ChevronLeft className="w-5 h-5 rotate-180" />
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                <ForumView 
+                  activeThread={activeThread}
+                  setActiveThread={setActiveThread}
+                  isCreatingThread={isCreatingThread}
+                  setIsCreatingThread={setIsCreatingThread}
+                  threadTitleInput={threadTitleInput}
+                  setThreadTitleInput={setThreadTitleInput}
+                  threadContentInput={threadContentInput}
+                  setThreadContentInput={setThreadContentInput}
+                  handleCreateThread={handleCreateThread}
+                  threads={threads}
+                  threadComments={threadComments}
+                  commentInput={commentInput}
+                  setCommentInput={setCommentInput}
+                  handleCreateComment={handleCreateComment}
+                  replyingToComment={replyingToComment}
+                  setReplyingToComment={setReplyingToComment}
+                  handleOpenThread={handleOpenThread}
+                  nicknames={nicknames}
+                  handleOpenProfile={handleOpenProfile}
+                  sending={sending}
+                  handleTyping={handleTyping}
+                  handleEmojiButtonClick={handleEmojiButtonClick}
+                  handleImageUrl={handleImageUrl}
+                  uploading={uploading}
+                />
               )}
 
               {view === 'messages' && (
-                <div 
-                  className={`bg-app-card rounded-3xl border border-app-border shadow-sm overflow-hidden h-[calc(100vh-12rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
-                  style={useCustomTheme ? { 
-                    backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
-                    color: customTheme.text_color
-                  } : {}}
-                >
-                  {/* Conversations List */}
-                  <div className={`${mobileChatView === 'chat' ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 border-r border-app-border flex-col bg-app-bg/50`}>
-                    <div className="p-6 border-b border-app-border flex items-center justify-between">
-                      <h3 className="font-bold text-lg text-app-ink">Berichten</h3>
-                      <button 
-                        onClick={() => setShowUserSearch(true)}
-                        className="p-2 bg-app-ink text-app-bg rounded-xl hover:scale-105 transition-all active:scale-95"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="flex-grow overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                      {conversations.map(conv => {
-                        const otherParticipantUid = conv.participants.find(uid => uid !== user.uid);
-                        const otherParticipantProfile = users.find(u => u.id === otherParticipantUid);
-                        const originalName = otherParticipantProfile?.display_name || (otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend');
-                        const otherParticipantName = otherParticipantUid ? (nicknames[otherParticipantUid] || originalName) : originalName;
-                        const otherParticipantPhoto = otherParticipantProfile?.photo_url || (otherParticipantUid ? conv.participant_photos[otherParticipantUid] : '');
-                        const isActive = activeConversation?.id === conv.id;
-                        return (
-                          <button
-                            key={conv.id}
-                            onClick={() => {
-                              setActiveConversation(conv);
-                              setMobileChatView('chat');
-                            }}
-                            className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all text-left group ${
-                              isActive 
-                                ? 'bg-app-ink text-app-bg shadow-lg shadow-app-ink/10' 
-                                : 'hover:bg-app-accent text-app-muted hover:text-app-ink'
-                            }`}
-                          >
-                            <div className="relative">
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all duration-300 ${isActive ? 'bg-app-bg/20 scale-110' : 'bg-app-accent group-hover:scale-105'}`}>
-                                {otherParticipantPhoto ? (
-                                  <img src={otherParticipantPhoto} alt="" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />
-                                ) : (
-                                  <UserIcon className={`w-6 h-6 ${isActive ? 'text-app-bg' : 'text-app-muted'}`} />
-                                )}
-                              </div>
-                              {otherParticipantUid && onlineUsers.has(otherParticipantUid) && (
-                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-app-card rounded-full shadow-sm" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex justify-between items-start mb-1">
-                                <p className="font-bold text-sm truncate">{otherParticipantName}</p>
-                                <div className="flex flex-col items-end gap-1">
-                                  <p className={`text-[10px] font-medium ${isActive ? 'opacity-60' : 'text-app-muted'}`}>
-                                    {formatDate(conv.updated_at)}
-                                  </p>
-                                  {notifications.some(n => n.type === 'dm' && n.resource_id === conv.id && !n.is_read) && (
-                                    <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-sm shadow-emerald-500/20" />
-                                  )}
-                                </div>
-                              </div>
-                              {typingStatuses[conv.id]?.length > 0 ? (
-                                <div className="flex items-center gap-1.5">
-                                  <div className="flex gap-0.5">
-                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-app-bg' : 'bg-emerald-500'}`} />
-                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-app-bg' : 'bg-emerald-500'}`} />
-                                    <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className={`w-1 h-1 rounded-full ${isActive ? 'bg-app-bg' : 'bg-emerald-500'}`} />
-                                  </div>
-                                  <p className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-app-bg' : 'text-emerald-500'}`}>Typen...</p>
-                                </div>
-                              ) : (
-                                <p className={`text-xs truncate ${isActive ? 'opacity-70' : 'text-app-muted'}`}>{conv.last_message || 'Geen berichten'}</p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                      {conversations.length === 0 && (
-                        <div className="p-12 text-center">
-                          <div className="w-16 h-16 bg-app-accent rounded-3xl flex items-center justify-center mx-auto mb-4">
-                            <Mail className="w-8 h-8 text-app-muted" />
-                          </div>
-                          <p className="text-sm font-bold text-app-ink mb-1">Geen gesprekken</p>
-                          <p className="text-xs text-app-muted">Start een nieuw gesprek om te chatten.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Active Conversation */}
-                  <div 
-                    className={`${mobileChatView === 'chat' ? 'flex' : 'hidden sm:flex'} flex-grow flex-col transition-all duration-500 bg-app-bg/50`}
-                    style={useCustomTheme ? { backgroundColor: customTheme.body_bg_color ? `${customTheme.body_bg_color}80` : 'rgba(249, 250, 251, 0.5)' } : {}}
-                  >
-                    {activeConversation ? (
-                      <>
-                        <div 
-                          className="p-4 sm:p-6 border-b border-app-border flex items-center justify-between bg-app-card/80 backdrop-blur-md sticky top-0 z-10 transition-all duration-500"
-                          style={useCustomTheme ? { 
-                            backgroundColor: customTheme.header_bg_color,
-                            borderColor: customTheme.card_bg_color ? `${customTheme.card_bg_color}20` : 'rgba(244, 244, 245, 1)'
-                          } : {}}
-                        >
-                          <div className="flex items-center gap-3">
-                            <button 
-                              onClick={() => setMobileChatView('list')}
-                              className="sm:hidden p-2 hover:bg-app-accent rounded-xl transition-colors text-app-muted"
-                            >
-                              <ChevronLeft className="w-6 h-6" />
-                            </button>
-                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border border-app-border transition-all duration-500 overflow-hidden bg-app-card"
-                              style={useCustomTheme ? { 
-                                backgroundColor: customTheme.card_bg_color,
-                                borderColor: customTheme.accent_color ? `${customTheme.accent_color}20` : 'rgba(228, 228, 231, 1)'
-                              } : {}}
-                            >
-                              {(() => {
-                                const otherUid = activeConversation?.participants.find(uid => uid !== user.uid);
-                                const otherProfile = users.find(u => u.id === otherUid);
-                                const photo = otherProfile?.photo_url || (otherUid ? activeConversation?.participant_photos[otherUid] : null);
-                                return photo ? (
-                                  <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                ) : (
-                                  <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-zinc-400" style={useCustomTheme ? { color: customTheme.text_color } : {}} />
-                                );
-                              })()}
-                            </div>
-                            <div>
-                              <h4 className="font-bold text-sm sm:text-lg dark:text-zinc-100" style={useCustomTheme ? { color: customTheme.text_color } : {}}>
-                                {(() => {
-                                  const otherUid = activeConversation?.participants.find(uid => uid !== user.uid);
-                                  const originalName = otherUid ? activeConversation?.participant_names[otherUid] : 'Onbekend';
-                                  return otherUid ? (nicknames[otherUid] || originalName) : originalName;
-                                })()}
-                              </h4>
-                              {(() => {
-                                const otherUid = activeConversation?.participants.find(uid => uid !== user.uid);
-                                const isOnline = otherUid && onlineUsers.has(otherUid);
-                                return isOnline ? (
-                                  <p className="text-[10px] sm:text-xs font-bold text-emerald-500 flex items-center gap-1.5 uppercase tracking-wider">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                    Online
-                                  </p>
-                                ) : (
-                                  <p className="text-[10px] sm:text-xs font-bold text-zinc-400 flex items-center gap-1.5 uppercase tracking-wider">
-                                    <span className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700"></span>
-                                    Offline
-                                  </p>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex-grow overflow-y-auto p-4 sm:p-8 space-y-6 custom-scrollbar">
-                          {hasMoreMessages && (
-                            <button 
-                              onClick={loadMoreMessages}
-                              disabled={loadingMoreMessages}
-                              className="w-full py-2 text-[10px] font-bold text-app-muted uppercase tracking-widest hover:text-app-ink transition-colors disabled:opacity-50"
-                            >
-                              {loadingMoreMessages ? 'Laden...' : 'Oudere berichten laden'}
-                            </button>
-                          )}
-                          {messages.map((msg, idx) => {
-                            const isMe = msg.sender_id === user.uid;
-                            const prevMsg = idx > 0 ? messages[idx - 1] : null;
-                            const showAvatar = !isMe && (!prevMsg || prevMsg.sender_id !== msg.sender_id);
-                            
-                            return (
-                              <div 
-                                key={msg.id}
-                                className={`flex items-end gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'} group`}
-                              >
-                                {!isMe && (
-                                  <div className="w-8 flex-shrink-0">
-                                    {showAvatar && (
-                                      <button 
-                                        onClick={() => handleOpenProfile(msg.sender_id)}
-                                        className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-800 flex-shrink-0 overflow-hidden border border-zinc-200 dark:border-zinc-800 hover:ring-2 hover:ring-zinc-900 dark:hover:ring-zinc-100 transition-all mb-1 shadow-sm"
-                                      >
-                                        {(() => {
-                                          const senderProfile = users.find(u => u.id === msg.sender_id);
-                                          const photo = senderProfile?.photo_url || activeConversation.participant_photos?.[msg.sender_id];
-                                          return photo ? (
-                                            <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                          ) : (
-                                            <UserIcon className="w-4 h-4 text-zinc-400 m-auto" />
-                                          );
-                                        })()}
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                                <div 
-                                  className={`max-w-[80%] p-4 rounded-3xl text-[15px] leading-relaxed relative shadow-sm transition-all duration-500 ${
-                                    isMe 
-                                      ? 'bg-app-ink text-app-bg rounded-br-lg' 
-                                      : 'bg-app-card text-app-ink border border-app-border rounded-bl-lg'
-                                  }`}
-                                  style={useCustomTheme ? {
-                                    backgroundColor: isMe ? customTheme.primary_color : customTheme.card_bg_color,
-                                    color: isMe ? '#ffffff' : customTheme.text_color,
-                                    borderColor: isMe ? 'transparent' : customTheme.accent_color ? `${customTheme.accent_color}20` : 'rgba(228, 228, 231, 1)'
-                                  } : {}}
-                                >
-                                  {editingMessageId === msg.id ? (
-                                    <div className="space-y-3 min-w-[240px]">
-                                      <textarea 
-                                        value={editMessageInput}
-                                        onChange={(e) => handleTyping(e, `edit-msg-${msg.id}`)}
-                                        className={`w-full p-3 rounded-xl text-sm focus:ring-2 outline-none resize-none transition-all duration-500 ${
-                                          isMe 
-                                            ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/40 focus:ring-white/50' 
-                                            : 'bg-app-card border border-app-border text-app-ink focus:ring-app-ink'
-                                        }`}
-                                        rows={3}
-                                        autoFocus
-                                      />
-                                      <div className="flex justify-end gap-2">
-                                        <button 
-                                          onClick={() => setEditingMessageId(null)}
-                                          className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
-                                            isMe ? 'hover:bg-white/10 text-white/70 hover:text-white' : 'hover:bg-app-accent text-app-muted hover:text-app-ink'
-                                          }`}
-                                        >
-                                          Annuleren
-                                        </button>
-                                        <button 
-                                          onClick={() => handleUpdateMessage(msg.id)}
-                                          disabled={saving || !editMessageInput.trim()}
-                                          className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
-                                            isMe ? 'bg-white text-app-ink hover:bg-zinc-200' : 'bg-app-ink text-app-bg hover:opacity-90'
-                                          }`}
-                                          style={useCustomTheme ? {
-                                            backgroundColor: isMe ? '#ffffff' : customTheme.primary_color,
-                                            color: isMe ? customTheme.primary_color : '#ffffff'
-                                          } : {}}
-                                        >
-                                          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Opslaan'}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <RichContent content={msg.text} />
-                                      <div className={`flex items-center justify-between mt-2 gap-4 ${isMe ? 'opacity-60' : 'opacity-40'}`}>
-                                        <p className="text-[10px] font-bold uppercase tracking-tight">
-                                          {formatTime(msg.created_at)}
-                                        </p>
-                                        {(isMe || isAdmin) && (
-                                          <div className="flex items-center gap-1">
-                                            <button 
-                                              onClick={() => {
-                                                setEditingMessageId(msg.id);
-                                                setEditMessageInput(msg.text);
-                                              }}
-                                              className="opacity-0 group-hover:opacity-100 p-1 hover:scale-110 transition-all"
-                                              title="Bewerken"
-                                            >
-                                              <Pencil className="w-3 h-3" />
-                                            </button>
-                                            <button 
-                                              onClick={() => handleDeleteMessage(msg.id)}
-                                              className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 hover:scale-110 transition-all"
-                                              title="Verwijderen"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <div ref={messagesEndRef} />
-                        </div>
- 
-                        <div 
-                          className="p-6 border-t border-app-border relative pt-14 bg-app-card/80 backdrop-blur-md transition-all duration-500"
-                          style={useCustomTheme ? { 
-                            backgroundColor: customTheme.header_bg_color,
-                            borderColor: customTheme.card_bg_color ? `${customTheme.card_bg_color}20` : 'rgba(244, 244, 245, 1)'
-                          } : {}}
-                        >
-                          <AnimatePresence>
-                            {activeConversation && typingStatuses[activeConversation.id]?.length > 0 && (
-                              <motion.div 
-                                initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                                className="absolute top-4 left-6 flex items-center gap-2.5 text-[10px] font-black text-emerald-700 uppercase tracking-[0.15em] bg-emerald-50/80 border border-emerald-200 px-4 py-1.5 rounded-full shadow-sm z-10 backdrop-blur-sm"
-                              >
-                                <div className="flex gap-1">
-                                  <motion.span animate={{ scale: [1, 1.4, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                  <motion.span animate={{ scale: [1, 1.4, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                  <motion.span animate={{ scale: [1, 1.4, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                </div>
-                                {typingStatuses[activeConversation.id].length === 1 
-                                  ? `${typingStatuses[activeConversation.id][0]} typt...` 
-                                  : `${typingStatuses[activeConversation.id].length} mensen typen...`}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                          <form onSubmit={handleSendMessage} className="flex gap-3 max-w-5xl mx-auto">
-                            <div className="flex-grow relative">
-                              <input 
-                                type="text"
-                                value={messageInput}
-                                onChange={(e) => handleTyping(e, activeConversation.id)}
-                                placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Typ een bericht..."}
-                                disabled={cooldownRemaining > 0 || uploading}
-                                className="w-full p-4 pr-24 bg-app-bg border border-app-border rounded-2xl transition-all outline-none focus:ring-2 focus:ring-app-ink focus:border-transparent disabled:opacity-50 shadow-sm text-app-ink"
-                                style={useCustomTheme ? { 
-                                  backgroundColor: customTheme.card_bg_color,
-                                  borderColor: customTheme.accent_color ? `${customTheme.accent_color}20` : undefined,
-                                  color: customTheme.text_color
-                                } : {}}
-                              />
-                              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                <button 
-                                  type="button"
-                                  onClick={handleImageUrl}
-                                  disabled={uploading || cooldownRemaining > 0}
-                                  className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all disabled:opacity-50"
-                                  title="Afbeelding via URL"
-                                >
-                                  <Link className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  type="submit"
-                                  disabled={!messageInput.trim() || cooldownRemaining > 0 || uploading}
-                                  className="p-2 bg-app-ink text-app-bg rounded-xl disabled:opacity-50 transition-all active:scale-90 hover:scale-105 shadow-lg"
-                                  style={useCustomTheme ? { backgroundColor: customTheme.primary_color } : {}}
-                                >
-                                  <Send className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          </form>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex-grow flex flex-col items-center justify-center text-center p-12 bg-zinc-50 dark:bg-zinc-950">
-                        <motion.div 
-                          initial={{ scale: 0.9, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          className="w-24 h-24 bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-xl shadow-zinc-200/50 dark:shadow-none border border-zinc-100 dark:border-zinc-800 flex items-center justify-center mb-8"
-                        >
-                          <Mail className="w-10 h-10 text-zinc-300 dark:text-zinc-600" />
-                        </motion.div>
-                        <h3 className="text-2xl font-black tracking-tight mb-2 dark:text-zinc-100">Jouw Berichten</h3>
-                        <p className="text-zinc-500 dark:text-zinc-400 max-w-xs font-medium">Selecteer een gesprek uit de lijst of start een nieuwe chat om te beginnen.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <MessagesView 
+                  user={user}
+                  conversations={conversations}
+                  activeConversation={activeConversation}
+                  setActiveConversation={handleSetActiveConversation}
+                  messages={messages}
+                  messageInput={messageInput}
+                  setMessageInput={setMessageInput}
+                  handleSendMessage={handleSendMessage}
+                  handleTyping={handleTyping}
+                  handleEmojiButtonClick={handleEmojiButtonClick}
+                  handleImageUrl={handleImageUrl}
+                  hasSharedKey={false}
+                  typingStatuses={typingStatuses}
+                  mobileChatView={mobileChatView}
+                  setMobileChatView={setMobileChatView}
+                  setShowUserSearch={setShowUserSearch}
+                  onlineUsers={onlineUsers}
+                  sending={sending}
+                  useCustomTheme={useCustomTheme}
+                  customTheme={customTheme}
+                />
               )}
 
               {view === 'settings' && (
-                <div 
-                  className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] transition-all duration-500"
-                  style={useCustomTheme ? { 
-                    color: customTheme.text_color
-                  } : {}}
-                >
-                  <div className="flex items-center justify-between mb-8">
-                    <div>
-                      <h2 className="text-3xl font-black tracking-tighter mb-1 dark:text-zinc-100" style={useCustomTheme ? { color: customTheme.text_color } : {}}>Instellingen</h2>
-                      <p className="text-zinc-500 dark:text-zinc-400 font-medium text-sm">Beheer je account en voorkeuren</p>
-                    </div>
-                    <button 
-                      onClick={() => setView('forum')}
-                      className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all active:scale-95"
-                    >
-                      <ArrowLeft className="w-5 h-5" />
-                    </button>
+                <div className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
+                  <div className="mb-8 font-primary">
+                      <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">Instellingen</h2>
+                    <p className="text-app-muted font-medium text-sm">Beheer je account en app voorkeuren</p>
                   </div>
-
-                    <div className="flex flex-col md:flex-row gap-6 sm:gap-8 h-full">
-                    {/* Sidebar */}
-                    <div 
-                      className={`w-full md:w-64 flex-shrink-0 flex md:flex-col gap-1 p-1 sm:p-2 rounded-2xl transition-all duration-500 overflow-x-auto sm:overflow-x-visible no-scrollbar ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : 'bg-zinc-50 dark:bg-zinc-900/50'}`}
-                      style={useCustomTheme ? { 
-                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.sidebar_bg_color,
-                      } : {}}
-                    >
-                      <button
-                        onClick={() => setSettingsTab('profile')}
-                        className={`flex-shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${settingsTab === 'profile' ? 'shadow-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
-                        style={useCustomTheme ? { 
-                          backgroundColor: settingsTab === 'profile' ? customTheme.primary_color : 'transparent',
-                          color: settingsTab === 'profile' ? '#ffffff' : customTheme.text_color
-                        } : {
-                          backgroundColor: settingsTab === 'profile' ? undefined : 'transparent'
-                        }}
-                      >
-                        <UserCog className="w-4 h-4 sm:w-5 sm:h-5" />
-                        Profiel
-                      </button>
-                      <button
-                        onClick={() => setSettingsTab('notifications')}
-                        className={`flex-shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${settingsTab === 'notifications' ? 'shadow-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
-                        style={useCustomTheme ? { 
-                          backgroundColor: settingsTab === 'notifications' ? customTheme.primary_color : 'transparent',
-                          color: settingsTab === 'notifications' ? '#ffffff' : customTheme.text_color
-                        } : {
-                          backgroundColor: settingsTab === 'notifications' ? undefined : 'transparent'
-                        }}
-                      >
-                        <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-                        Meldingen
-                      </button>
-                      <button
-                        onClick={() => setSettingsTab('theme')}
-                        className={`flex-shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${settingsTab === 'theme' ? 'shadow-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
-                        style={useCustomTheme ? { 
-                          backgroundColor: settingsTab === 'theme' ? customTheme.primary_color : 'transparent',
-                          color: settingsTab === 'theme' ? '#ffffff' : customTheme.text_color
-                        } : {
-                          backgroundColor: settingsTab === 'theme' ? undefined : 'transparent'
-                        }}
-                      >
-                        <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
-                        Thema
-                      </button>
-                      <button
-                        onClick={() => setSettingsTab('app')}
-                        className={`flex-shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${settingsTab === 'app' ? 'shadow-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
-                        style={useCustomTheme ? { 
-                          backgroundColor: settingsTab === 'app' ? customTheme.primary_color : 'transparent',
-                          color: settingsTab === 'app' ? '#ffffff' : customTheme.text_color
-                        } : {
-                          backgroundColor: settingsTab === 'app' ? undefined : 'transparent'
-                        }}
-                      >
-                        <Layout className="w-4 h-4 sm:w-5 sm:h-5" />
-                        App
-                      </button>
-                      {isAdmin && (
-                        <button
-                          onClick={() => setSettingsTab('admin')}
-                          className={`flex-shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${settingsTab === 'admin' ? 'shadow-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
-                          style={useCustomTheme ? { 
-                            backgroundColor: settingsTab === 'admin' ? customTheme.primary_color : 'transparent',
-                            color: settingsTab === 'admin' ? '#ffffff' : customTheme.text_color
-                          } : {
-                            backgroundColor: settingsTab === 'admin' ? undefined : 'transparent'
-                          }}
-                        >
-                          <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
-                          Admin
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Content Area */}
-                    <div 
-                      className={`flex-1 bg-app-card rounded-[2rem] border border-app-border shadow-sm overflow-hidden flex flex-col h-full max-h-[calc(100vh-20rem)] sm:max-h-[calc(100vh-16rem)] transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
-                      style={useCustomTheme ? { 
-                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
-                        color: customTheme.text_color
-                      } : {}}
-                    >
-                      <div className="p-4 sm:p-8 overflow-y-auto custom-scrollbar">
-                        {settingsTab === 'profile' && (
-                          <div className="space-y-8 max-w-2xl">
-                            <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-app-accent rounded-2xl">
-                                <UserCog className="w-6 h-6 text-app-ink" />
-                              </div>
-                              <h3 className="text-xl font-bold text-app-ink">Profiel Aanpassen</h3>
-                            </div>
-
-                            <div className="space-y-6">
-                              <div className="flex items-center gap-6 pb-8 border-b border-zinc-100">
-                                <div className="relative group">
-                                  <div className="w-24 h-24 rounded-3xl overflow-hidden border-4 border-white shadow-md">
-                                    <img 
-                                      src={photoURLInput || profile?.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.id}`} 
-                                      alt="Profile" 
-                                      className="w-full h-full object-cover"
-                                      referrerPolicy="no-referrer"
-                                    />
-                                  </div>
-                                  <div className="absolute -bottom-2 -right-2 p-2 bg-zinc-900 text-white rounded-xl shadow-lg">
-                                    <Camera className="w-4 h-4" />
-                                  </div>
-                                </div>
-                                <div className="flex-1">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <label className="block text-xs font-bold text-app-muted uppercase tracking-widest">Nickname</label>
-                                    <button 
-                                      onClick={handleResetToGoogle}
-                                      className="text-[10px] font-bold text-app-ink uppercase tracking-widest hover:underline flex items-center gap-1"
-                                    >
-                                      <Sparkles className="w-3 h-3" />
-                                      Reset naar Google
-                                    </button>
-                                  </div>
-                                  <input 
-                                    type="text"
-                                    value={displayNameInput}
-                                    onChange={(e) => setDisplayNameInput(e.target.value)}
-                                    placeholder="Kies een bijnaam..."
-                                    className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all outline-none font-medium text-app-ink"
-                                  />
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="flex items-center justify-between mb-2 ml-1">
-                                  <label className="block text-xs font-bold text-app-muted uppercase tracking-widest">Profielfoto URL</label>
-                                  <label className="cursor-pointer text-[10px] font-bold text-app-ink uppercase tracking-widest hover:underline flex items-center gap-1">
-                                    <Upload className="w-3 h-3" />
-                                    Upload Foto
-                                    <input 
-                                      type="file" 
-                                      className="hidden" 
-                                      accept="image/*"
-                                      onChange={handlePhotoUpload}
-                                    />
-                                  </label>
-                                </div>
-                                <input 
-                                  type="text"
-                                  value={photoURLInput}
-                                  onChange={(e) => setPhotoURLInput(e.target.value)}
-                                  placeholder="https://example.com/photo.jpg"
-                                  className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all outline-none font-medium text-app-ink"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-xs font-bold text-app-muted uppercase tracking-widest mb-2 ml-1">Over Mij (Bio)</label>
-                                <textarea 
-                                  value={bioInput}
-                                  onChange={(e) => setBioInput(e.target.value)}
-                                  placeholder="Vertel iets over jezelf..."
-                                  rows={4}
-                                  className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all outline-none font-medium resize-none text-app-ink"
-                                  maxLength={500}
-                                />
-                                <div className="flex justify-end mt-1">
-                                  <span className="text-[10px] text-app-muted font-bold uppercase tracking-tighter">{bioInput.length}/500</span>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col sm:flex-row gap-4">
-                                <button 
-                                  onClick={handleUpdateProfile}
-                                  disabled={saving || cooldownRemaining > 0}
-                                  className="flex-1 p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/10"
-                                >
-                                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                  {cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : 'Profiel Bijwerken'}
-                                </button>
-                                <button 
-                                  onClick={handleClearCache}
-                                  className="p-4 bg-red-50 text-red-600 rounded-2xl font-bold hover:bg-red-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                                  title="Cache wissen en herladen"
-                                >
-                                  <Trash2 className="w-5 h-5" />
-                                  Cache Wissen
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {settingsTab === 'notifications' && (
-                          <div className="space-y-8 max-w-2xl">
-                            <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-app-accent rounded-2xl">
-                                <Bell className="w-6 h-6 text-app-ink" />
-                              </div>
-                              <h3 className="text-xl font-bold text-app-ink">Meldingen & Geluiden</h3>
-                            </div>
-
-                            <div className="space-y-6">
-                              <div className="flex items-center justify-between p-4 bg-app-bg rounded-2xl border border-app-border">
-                                <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-app-card rounded-xl shadow-sm">
-                                    <MessageSquare className="w-4 h-4 text-app-ink" />
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-bold text-app-ink">Vermeldingen</p>
-                                    <p className="text-xs text-app-muted">Ontvang meldingen wanneer je wordt genoemd (@naam)</p>
-                                  </div>
-                                </div>
-                                <button 
-                                  onClick={() => setNotificationSettings(prev => ({ ...prev, notify_mentions: !prev.notify_mentions }))}
-                                  className="w-12 h-6 rounded-full transition-all relative"
-                                  style={{ backgroundColor: notificationSettings.notify_mentions ? (customTheme.accent_color || 'var(--accent)') : 'var(--card-border)' }}
-                                >
-                                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notificationSettings.notify_mentions ? 'left-7' : 'left-1'}`} />
-                                </button>
-                              </div>
-
-                              <div className="flex items-center justify-between p-4 bg-app-bg rounded-2xl border border-app-border">
-                                <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-app-card rounded-xl shadow-sm">
-                                    {notificationSettings.enable_sounds ? <Volume2 className="w-4 h-4 text-app-ink" /> : <VolumeX className="w-4 h-4 text-app-muted" />}
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-bold text-app-ink">Geluiden inschakelen</p>
-                                    <p className="text-xs text-app-muted">Speel een geluid af bij nieuwe meldingen</p>
-                                  </div>
-                                </div>
-                                <button 
-                                  onClick={() => setNotificationSettings(prev => ({ ...prev, enable_sounds: !prev.enable_sounds }))}
-                                  className="w-12 h-6 rounded-full transition-all relative"
-                                  style={{ backgroundColor: notificationSettings.enable_sounds ? (customTheme.accent_color || 'var(--accent)') : 'var(--card-border)' }}
-                                >
-                                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notificationSettings.enable_sounds ? 'left-7' : 'left-1'}`} />
-                                </button>
-                              </div>
-
-                              <div className="space-y-4">
-                                <div className="space-y-3">
-                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Custom Geluid Toevoegen</label>
-                                  <div className="flex flex-col sm:flex-row gap-2">
-                                    <input 
-                                      type="text" 
-                                      placeholder="Naam (bv. Mijn Geluid)"
-                                      value={newSoundName}
-                                      onChange={(e) => setNewSoundName(e.target.value)}
-                                      className="flex-1 p-2.5 bg-app-bg border border-app-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-app-ink text-app-ink"
-                                    />
-                                    <div className="flex-1 flex flex-col gap-1">
-                                      <div className="flex gap-2">
-                                        <input 
-                                          type="text" 
-                                          placeholder="URL (mp3/wav/YouTube)"
-                                          value={newSoundUrl}
-                                          onChange={(e) => setNewSoundUrl(e.target.value)}
-                                          className="flex-1 p-2.5 bg-app-bg border border-app-border rounded-xl text-sm outline-none focus:ring-2 focus:ring-app-ink text-app-ink"
-                                        />
-                                        <button 
-                                          onClick={() => {
-                                            if (!newSoundUrl) return toast.error('Vul eerst een URL in');
-                                            playSound(newSoundUrl, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
-                                            toast.info('Geluid testen...');
-                                          }}
-                                          className="px-3 bg-app-card border border-app-border rounded-xl hover:bg-app-accent transition-colors"
-                                          title="Test geluid"
-                                        >
-                                          <Play className="w-3 h-3 text-app-ink" />
-                                        </button>
-                                      </div>
-                                      <p className="text-[9px] text-app-muted ml-1">Gebruik een directe link naar een .mp3, .wav of YouTube video</p>
-                                    </div>
-                                    <button 
-                                      onClick={handleAddCustomSound}
-                                      disabled={uploadingSound}
-                                      className="px-4 py-2.5 bg-app-ink text-app-bg rounded-xl font-bold text-[10px] uppercase tracking-widest hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                                    >
-                                      {uploadingSound ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                                      Toevoegen
-                                    </button>
-                                  </div>
-                                </div>
-                                
-                                {customSounds.length > 0 && (
-                                  <div className="flex flex-wrap gap-2">
-                                    {customSounds.map((sound, idx) => (
-                                      <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-app-card border border-app-border rounded-xl group">
-                                        <button 
-                                          onClick={() => playSound(sound.url, true, user.uid, profile?.display_name || user.displayName || 'Anoniem')}
-                                          className="p-1 hover:bg-app-accent rounded-lg transition-colors"
-                                        >
-                                          <Volume2 className="w-3 h-3 text-app-ink" />
-                                        </button>
-                                        <span className="text-xs font-medium truncate max-w-[100px] text-app-ink">{sound.name}</span>
-                                        <button 
-                                          onClick={async () => {
-                                            const updated = customSounds.filter((_, i) => i !== idx);
-                                            setCustomSounds(updated);
-                                            await supabaseClient.from('profiles').update({ custom_sounds: updated }).eq('id', user.uid);
-                                            toast.info('Geluid verwijderd');
-                                          }}
-                                          className="p-1 hover:bg-red-50 text-app-muted hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Bericht Geluid</label>
-                                  <select 
-                                    value={notificationSettings.message_sound}
-                                    onChange={(e) => {
-                                      const soundUrl = e.target.value;
-                                      setNotificationSettings(prev => ({ ...prev, message_sound: soundUrl }));
-                                      playSound(soundUrl, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
-                                    }}
-                                    className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
-                                  >
-                                    <optgroup label="Standaard">
-                                      {SOUND_OPTIONS.map(opt => (
-                                        <option key={opt.url} value={opt.url}>{opt.name}</option>
-                                      ))}
-                                    </optgroup>
-                                    {customSounds.length > 0 && (
-                                      <optgroup label="Custom">
-                                        {customSounds.map((opt, idx) => (
-                                          <option key={idx} value={opt.url}>{opt.name}</option>
-                                        ))}
-                                      </optgroup>
-                                    )}
-                                  </select>
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Post Geluid</label>
-                                  <select 
-                                    value={notificationSettings.post_sound}
-                                    onChange={(e) => {
-                                      const soundUrl = e.target.value;
-                                      setNotificationSettings(prev => ({ ...prev, post_sound: soundUrl }));
-                                      playSound(soundUrl, true, user.uid, profile?.display_name || user.displayName || 'Anoniem');
-                                    }}
-                                    className="w-full p-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
-                                  >
-                                    <optgroup label="Standaard">
-                                      {SOUND_OPTIONS.map(opt => (
-                                        <option key={opt.url} value={opt.url}>{opt.name}</option>
-                                      ))}
-                                    </optgroup>
-                                    {customSounds.length > 0 && (
-                                      <optgroup label="Custom">
-                                        {customSounds.map((opt, idx) => (
-                                          <option key={idx} value={opt.url}>{opt.name}</option>
-                                        ))}
-                                      </optgroup>
-                                    )}
-                                  </select>
-                                </div>
-                              </div>
-
-                              <button 
-                                onClick={handleUpdateProfile}
-                                disabled={saving}
-                                className="w-full p-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg mt-6"
-                              >
-                                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                Instellingen Opslaan
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {settingsTab === 'theme' && (
-                          <div className="space-y-8 max-w-2xl">
-                            <div className="flex flex-col sm:flex-row items-center justify-between p-6 bg-app-bg rounded-[2rem] border border-app-border mb-4 gap-4">
-                              <div className="flex items-center gap-4">
-                                <div className={`p-3 rounded-2xl transition-all duration-300 ${useCustomTheme ? 'bg-app-ink text-app-bg shadow-lg' : 'bg-app-accent text-app-muted'}`}>
-                                  <Sparkles className="w-6 h-6" />
-                                </div>
-                                <div>
-                                  <p className="text-base font-bold text-app-ink">Custom Thema Inschakelen</p>
-                                  <p className="text-xs text-app-muted font-medium">Activeer je persoonlijke thema instellingen</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                {!useCustomTheme && (
-                                  <button 
-                                    onClick={() => {
-                                      const isDark = theme === 'dark' || theme === 'enhanced';
-                                      const syncedTheme = {
-                                        ...customTheme,
-                                        primary_color: isDark ? '#fafafa' : '#18181b',
-                                        secondary_color: isDark ? '#f4f4f5' : '#27272a',
-                                        accent_color: isDark ? '#fafafa' : '#18181b',
-                                        text_color: isDark ? '#fafafa' : '#18181b',
-                                        card_bg_color: isDark ? '#18181b' : '#ffffff',
-                                        sidebar_bg_color: isDark ? '#18181b' : '#ffffff',
-                                        header_bg_color: isDark ? '#18181b' : '#ffffff',
-                                        body_bg_color: isDark ? '#09090b' : '#f4f4f5',
-                                      };
-                                      setCustomTheme(syncedTheme);
-                                      setUseCustomTheme(true);
-                                      toast.success('Thema gesynchroniseerd met huidige modus!');
-                                    }}
-                                    className="px-3 py-1.5 bg-app-card border border-app-border rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-app-accent transition-all text-app-ink"
-                                  >
-                                    Sync met {theme === 'light' ? 'Licht' : 'Donker'}
-                                  </button>
-                                )}
-                                <button 
-                                  onClick={() => setUseCustomTheme(!useCustomTheme)}
-                                  className={`relative w-14 h-7 rounded-full transition-all duration-300 ${useCustomTheme ? 'bg-app-ink' : 'bg-app-accent'}`}
-                                >
-                                  <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-300 ${useCustomTheme ? 'left-8' : 'left-1'}`} />
-                                </button>
-                              </div>
-                            </div>
-
-                            {useCustomTheme && (
-                              <motion.div 
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="p-4 bg-amber-50 border border-amber-100 rounded-2xl mb-8 flex items-start gap-3"
-                              >
-                                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                                <div>
-                                  <p className="text-sm font-bold text-amber-900">Let op!</p>
-                                  <p className="text-xs text-amber-700 leading-relaxed">Wanneer een custom thema is ingeschakeld, werken de standaard Lichte en Donkere modus niet meer. Schakel dit uit om weer terug te gaan naar de standaard modi.</p>
-                                </div>
-                              </motion.div>
-                            )}
-
-                            <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-app-accent rounded-2xl">
-                                <Sparkles className="w-6 h-6 text-app-ink" />
-                              </div>
-                              <h3 className="text-xl font-bold text-app-ink">Custom Thema</h3>
-                            </div>
-
-                            <div className="space-y-8">
-                              {/* Wallpaper Section */}
-                              <div className="space-y-4">
-                                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Achtergrond Afbeelding</label>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div className="space-y-2">
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">URL</p>
-                                    <input 
-                                      type="text"
-                                      value={customTheme.wallpaper || ''}
-                                      onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaper: e.target.value }))}
-                                      placeholder="https://example.com/wallpaper.jpg"
-                                      className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink outline-none font-medium text-sm text-app-ink"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Uploaden (Max 800KB)</p>
-                                    <label className="flex items-center justify-center w-full h-[54px] px-4 bg-app-bg border border-app-border border-dashed rounded-2xl cursor-pointer hover:bg-app-accent transition-all">
-                                      <div className="flex items-center gap-2 text-app-muted">
-                                        <Camera className="w-5 h-5" />
-                                        <span className="text-sm font-bold">Kies bestand</span>
-                                      </div>
-                                      <input 
-                                        type="file" 
-                                        className="hidden" 
-                                        accept="image/*"
-                                        onChange={handleWallpaperUpload}
-                                      />
-                                    </label>
-                                  </div>
-                                </div>
-                                {customTheme.wallpaper && (
-                                  <button 
-                                    onClick={() => setCustomTheme(prev => ({ ...prev, wallpaper: '' }))}
-                                    className="text-[10px] font-bold text-red-500 uppercase tracking-widest hover:underline ml-1"
-                                  >
-                                    Verwijder achtergrond
-                                  </button>
-                                )}
-                              </div>
-
-                              {/* Pattern Section */}
-                              <div className="space-y-4">
-                                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Achtergrond Patroon</label>
-                                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                                  {PATTERNS.map((p) => (
-                                    <button
-                                      key={p.id}
-                                      onClick={() => setCustomTheme(prev => ({ ...prev, pattern: p.id }))}
-                                      className={`aspect-square rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1 p-2 ${customTheme.pattern === p.id ? 'border-app-ink bg-app-ink text-app-bg shadow-md' : 'border-app-border bg-app-card text-app-muted hover:border-app-ink/20'}`}
-                                    >
-                                      <div 
-                                        className="w-full flex-1 rounded-md border border-app-border"
-                                        style={{ 
-                                          backgroundImage: p.style,
-                                          backgroundSize: p.size,
-                                          backgroundColor: customTheme.pattern === p.id ? 'transparent' : 'var(--bg)'
-                                        }}
-                                      />
-                                      <span className="text-[8px] font-bold uppercase tracking-tighter">{p.name}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* Colors Section */}
-                              <div className="space-y-4">
-                                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Kleuren Aanpassen</label>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                  {[
-                                    { label: 'Primaire Kleur', key: 'primary_color', default: '#18181b' },
-                                    { label: 'Secundaire Kleur', key: 'secondary_color', default: '#27272a' },
-                                    { label: 'Accent Kleur', key: 'accent_color', default: '#18181b' },
-                                    { label: 'Tekst Kleur', key: 'text_color', default: '#18181b' },
-                                    { label: 'Kaart Achtergrond', key: 'card_bg_color', default: '#ffffff' },
-                                    { label: 'Sidebar Achtergrond', key: 'sidebar_bg_color', default: '#ffffff' },
-                                    { label: 'Header Achtergrond', key: 'header_bg_color', default: '#ffffff' },
-                                    { label: 'Body Achtergrond', key: 'body_bg_color', default: '#f4f4f5' },
-                                  ].map((color) => (
-                                    <div key={color.key}>
-                                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">{color.label}</label>
-                                      <div className="flex gap-2">
-                                        <input 
-                                          type="color"
-                                          value={(customTheme as any)[color.key] || color.default}
-                                          onChange={(e) => setCustomTheme(prev => ({ ...prev, [color.key]: e.target.value }))}
-                                          className="w-12 h-12 rounded-xl border-none cursor-pointer"
-                                        />
-                                        <input 
-                                          type="text"
-                                          value={(customTheme as any)[color.key] || color.default}
-                                          onChange={(e) => setCustomTheme(prev => ({ ...prev, [color.key]: e.target.value }))}
-                                          className="flex-1 p-3 bg-zinc-50 border border-zinc-200 rounded-xl outline-none font-mono text-sm"
-                                        />
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                                {customTheme.wallpaper && (
-                                  <div className="space-y-6 p-6 bg-zinc-50 rounded-2xl border border-zinc-100">
-                                    <div className="space-y-4">
-                                      <div className="flex items-center justify-between">
-                                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Achtergrond Positie (X)</label>
-                                        <span className="text-xs font-mono bg-zinc-100 px-2 py-1 rounded">{customTheme.wallpaper_x || 50}%</span>
-                                      </div>
-                                      <input 
-                                        type="range"
-                                        min="0"
-                                        max="100"
-                                        value={customTheme.wallpaper_x || 50}
-                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaper_x: parseInt(e.target.value) }))}
-                                        className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
-                                        style={{ accentColor: customTheme.accent_color }}
-                                      />
-                                    </div>
-
-                                    <div className="space-y-4">
-                                      <div className="flex items-center justify-between">
-                                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Achtergrond Positie (Y)</label>
-                                        <span className="text-xs font-mono bg-zinc-100 px-2 py-1 rounded">{customTheme.wallpaper_y || 50}%</span>
-                                      </div>
-                                      <input 
-                                        type="range"
-                                        min="0"
-                                        max="100"
-                                        value={customTheme.wallpaper_y || 50}
-                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, wallpaper_y: parseInt(e.target.value) }))}
-                                        className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
-                                        style={{ accentColor: customTheme.accent_color }}
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Glass Effect Section */}
-                              <div className="space-y-4 p-6 bg-zinc-50 rounded-2xl border border-zinc-100">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-sm font-bold">Glass Effect</p>
-                                      <span className="text-[8px] font-black bg-zinc-900 text-white px-1.5 py-0.5 rounded-full tracking-tighter">BETA</span>
-                                    </div>
-                                    <p className="text-xs text-zinc-500">Maak kaarten semi-transparant</p>
-                                  </div>
-                                  <button 
-                                    onClick={() => setCustomTheme(prev => ({ ...prev, glass_effect: !prev.glass_effect }))}
-                                    className="w-12 h-6 rounded-full transition-all relative"
-                                    style={{ backgroundColor: customTheme.glass_effect ? customTheme.accent_color : '#e4e4e7' }}
-                                  >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${customTheme.glass_effect ? 'left-7' : 'left-1'}`} />
-                                  </button>
-                                </div>
-
-                                {customTheme.glass_effect && (
-                                  <div className="space-y-4 pt-4 border-t border-zinc-200">
-                                    <div>
-                                      <div className="flex justify-between mb-2">
-                                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Blur Sterkte</label>
-                                        <span className="text-[10px] font-bold text-zinc-900">{customTheme.blur_amount}px</span>
-                                      </div>
-                                      <input 
-                                        type="range"
-                                        min="0"
-                                        max="40"
-                                        value={customTheme.blur_amount || 10}
-                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, blur_amount: parseInt(e.target.value) }))}
-                                        className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-zinc-900"
-                                      />
-                                    </div>
-                                    <div>
-                                      <div className="flex justify-between mb-2">
-                                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Transparantie</label>
-                                        <span className="text-[10px] font-bold text-zinc-900">{customTheme.opacity}%</span>
-                                      </div>
-                                      <input 
-                                        type="range"
-                                        min="10"
-                                        max="100"
-                                        value={customTheme.opacity || 100}
-                                        onChange={(e) => setCustomTheme(prev => ({ ...prev, opacity: parseInt(e.target.value) }))}
-                                        className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-zinc-900"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="flex flex-col sm:flex-row gap-4">
-                                <button 
-                                  onClick={handleUpdateProfile}
-                                  disabled={saving}
-                                  className="flex-1 p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/10"
-                                >
-                                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                  Thema Opslaan
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    if (confirm('Weet je zeker dat je alle thema instellingen wilt resetten naar de standaard waarden?')) {
-                                      const defaultTheme = {
-                                        wallpaper: '',
-                                        pattern: 'none',
-                                        primary_color: '#18181b',
-                                        secondary_color: '#27272a',
-                                        accent_color: '#18181b',
-                                        text_color: '#18181b',
-                                        card_bg_color: '#ffffff',
-                                        sidebar_bg_color: '#ffffff',
-                                        header_bg_color: '#ffffff',
-                                        body_bg_color: '#f4f4f5',
-                                        glass_effect: false,
-                                        blur_amount: 10,
-                                        opacity: 100,
-                                        wallpaper_x: 50,
-                                        wallpaper_y: 50
-                                      };
-                                      setCustomTheme(defaultTheme);
-                                      setUseCustomTheme(false);
-                                      localStorage.setItem('cached_customTheme', JSON.stringify(defaultTheme));
-                                      localStorage.setItem('cached_useCustomTheme', 'false');
-                                      toast.success('Thema gereset naar standaard!');
-                                    }
-                                  }}
-                                  className="p-4 bg-zinc-100 text-zinc-500 rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                                >
-                                  <Trash2 className="w-5 h-5" />
-                                  Reset
-                                </button>
-                                <button 
-                                  onClick={handleUpdateProfile}
-                                  disabled={saving}
-                                  className="flex-1 p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/10"
-                                >
-                                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                  Thema Opslaan
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {settingsTab === 'app' && (
-                          <div className="space-y-8 max-w-2xl">
-                            <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-app-accent rounded-2xl">
-                                <Layout className="w-6 h-6 text-app-ink" />
-                              </div>
-                              <h3 className="text-xl font-bold text-app-ink">App Instellingen</h3>
-                            </div>
-
-                            <div className="space-y-6">
-                              <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
-                                <h4 className="font-bold text-app-ink mb-2">Desktop App Installeren</h4>
-                                <p className="text-sm text-app-muted mb-6">
-                                  Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.
-                                </p>
-                                
-                                {showInstallButton ? (
-                                  <button 
-                                    onClick={handleInstallClick}
-                                    className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2"
-                                  >
-                                    <Plus className="w-5 h-5" />
-                                    Nu Installeren
-                                  </button>
-                                ) : (
-                                  <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 flex items-center gap-3">
-                                    <ShieldCheck className="w-5 h-5" />
-                                    <p className="text-xs font-bold">De app is al geïnstalleerd of je browser ondersteunt dit momenteel niet.</p>
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="p-6 bg-app-accent/10 rounded-3xl border border-app-border border-dashed">
-                                <h4 className="text-xs font-black text-app-muted uppercase tracking-widest mb-2">App Info</h4>
-                                <div className="space-y-2">
-                                  <div className="flex justify-between text-xs">
-                                    <span className="text-app-muted">Versie</span>
-                                    <span className="font-bold text-app-ink">1.8.0</span>
-                                  </div>
-                                  <div className="flex justify-between text-xs">
-                                    <span className="text-app-muted">Platform</span>
-                                    <span className="font-bold text-app-ink">Progressive Web App</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {settingsTab === 'admin' && isAdmin && (
-                          <div className="space-y-8 max-w-2xl">
-                            <div className="flex items-center gap-4 mb-8">
-                              <div className="p-3 bg-app-ink rounded-2xl">
-                                <ShieldCheck className="w-6 h-6 text-app-bg" />
-                              </div>
-                              <h3 className="text-xl font-bold text-app-ink">Admin Paneel</h3>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div className="p-6 bg-zinc-50 rounded-3xl border border-zinc-100 space-y-4 col-span-full">
-                                <h4 className="font-bold text-sm text-zinc-900 flex items-center gap-2">
-                                  <Zap className="w-4 h-4 text-amber-500" />
-                                  Systeem Tools
-                                </h4>
-                                <button 
-                                  onClick={startAdminPrank}
-                                  disabled={isPranking}
-                                  className="w-full p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
-                                >
-                                  {isPranking ? <Loader2 className="w-5 h-5 animate-spin" /> : <AlertTriangle className="w-5 h-5" />}
-                                  Systeem Diagnose (Prank)
-                                </button>
-                                <p className="text-[10px] text-zinc-400 font-medium text-center italic">Trigger een nep terminal-hack sequence</p>
-                              </div>
-
-                              <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Website Status</label>
-                                <form onSubmit={handleUpdateStatus} className="flex gap-2">
-                                  <select 
-                                    value={statusInput}
-                                    onChange={(e) => setStatusInput(e.target.value)}
-                                    className="flex-grow p-3 bg-app-bg border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink outline-none font-medium appearance-none text-app-ink"
-                                  >
-                                    <option value="Online">Online</option>
-                                    <option value="Onderhoud">Onderhoud</option>
-                                    <option value="Offline">Offline</option>
-                                  </select>
-                                  <button type="submit" className="p-3 bg-app-ink text-app-bg rounded-xl hover:opacity-90 transition-all">
-                                    <Save className="w-5 h-5" />
-                                  </button>
-                                </form>
-                              </div>
-
-                              <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Whitelist Toevoegen</label>
-                                <form onSubmit={handleAddToWhitelist} className="flex gap-2">
-                                  <input 
-                                    type="email"
-                                    value={whitelistInput}
-                                    onChange={(e) => setWhitelistInput(e.target.value)}
-                                    placeholder="email@voorbeeld.com"
-                                    className="flex-grow p-3 bg-app-bg border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink outline-none font-medium text-app-ink"
-                                  />
-                                  <button type="submit" className="p-3 bg-app-ink text-app-bg rounded-xl hover:opacity-90 transition-all">
-                                    <Plus className="w-5 h-5" />
-                                  </button>
-                                </form>
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest ml-1">Huidige Whitelist</label>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                                {whitelist.map(item => (
-                                  <div key={item.email} className="flex items-center justify-between p-3 bg-app-bg border border-app-border rounded-xl">
-                                    <span className="text-sm font-medium text-app-ink truncate">{item.email}</span>
-                                    {item.email !== user.email && (
-                                      <button onClick={() => handleRemoveFromWhitelist(item.email)} className="text-zinc-400 hover:text-red-500 transition-colors p-1">
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between ml-1">
-                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-widest">Rapporten ({reports.filter(r => r.status === 'pending').length} open)</label>
-                                  <button 
-                                    onClick={fetchAdminData}
-                                    className="p-1 px-2 text-[10px] font-bold bg-app-accent text-app-muted rounded-lg hover:text-app-ink transition-all flex items-center gap-1"
-                                  >
-                                    <RefreshCw className="w-3 h-3" />
-                                    Verversen
-                                  </button>
-                                </div>
-                                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                  {reports.length === 0 ? (
-                                    <p className="text-sm text-app-muted p-4 bg-app-bg rounded-xl border border-app-border text-center">Geen rapporten gevonden.</p>
-                                  ) : (
-                                    reports.map(report => (
-                                      <div key={report.id} className={`p-4 rounded-xl border ${report.status === 'pending' ? 'bg-red-50/10 border-red-100/20' : 'bg-app-bg border-app-border'}`}>
-                                        <div className="flex items-start justify-between mb-3">
-                                          <div>
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md ${report.status === 'pending' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                              {report.status}
-                                            </span>
-                                            <p className="text-sm font-bold mt-2 text-app-ink">Reden: {report.reason}</p>
-                                          </div>
-                                          <div className="flex gap-1">
-                                            {report.status === 'pending' && (
-                                              <button onClick={() => handleResolveReport(report.id)} className="p-2 text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title="Markeer als opgelost">
-                                                <Check className="w-4 h-4" />
-                                              </button>
-                                            )}
-                                            <button onClick={() => handleDeleteReport(report.id)} className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Verwijder rapport">
-                                              <Trash2 className="w-4 h-4" />
-                                            </button>
-                                          </div>
-                                        </div>
-                                        {report.details && <p className="text-sm text-zinc-600 mb-3 bg-white p-3 rounded-lg border border-zinc-100">"{report.details}"</p>}
-                                        <div className="text-[10px] text-zinc-400 flex justify-between font-medium uppercase tracking-wider">
-                                          <span>Door: {report.reporter_id.substring(0, 8)}...</span>
-                                          <span>Over: {report.reported_id.substring(0, 8)}...</span>
-                                        </div>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  
+                  <SettingsView 
+                    user={user}
+                    profile={profile}
+                    settingsTab={settingsTab}
+                    setSettingsTab={setSettingsTab}
+                    isAdmin={isAdmin}
+                    displayNameInput={displayNameInput}
+                    setDisplayNameInput={setDisplayNameInput}
+                    photoURLInput={photoURLInput}
+                    setPhotoURLInput={setPhotoURLInput}
+                    bioInput={bioInput}
+                    setBioInput={setBioInput}
+                    handleUpdateProfile={handleUpdateProfile}
+                    handleUpdateNotifications={handleUpdateNotifications}
+                    handleUpdateTheme={handleUpdateTheme}
+                    handleResetToGoogle={handleResetToGoogle}
+                    notificationSettings={notificationSettings}
+                    setNotificationSettings={setNotificationSettings}
+                    customSounds={customSounds}
+                    newSoundName={newSoundName}
+                    setNewSoundName={setNewSoundName}
+                    newSoundUrl={newSoundUrl}
+                    setNewSoundUrl={setNewSoundUrl}
+                    handleAddCustomSound={handleAddCustomSound}
+                    handleDeleteCustomSound={handleDeleteCustomSound}
+                    playSound={playSound}
+                    customTheme={customTheme}
+                    setCustomTheme={setCustomTheme}
+                    useCustomTheme={useCustomTheme}
+                    setUseCustomTheme={setUseCustomTheme}
+                    whitelist={whitelist}
+                    whitelistInput={whitelistInput}
+                    setWhitelistInput={setWhitelistInput}
+                    handleAddWhitelist={handleAddToWhitelist}
+                    handleRemoveWhitelist={handleRemoveFromWhitelist}
+                    websiteStatus={websiteStatus}
+                    statusInput={statusInput}
+                    setStatusInput={setStatusInput}
+                    handleUpdateStatus={handleUpdateStatus}
+                    reports={reports}
+                    handleDeleteReport={handleDeleteReport}
+                    fetchAdminData={fetchAdminData}
+                    users={users}
+                    handleBlockUser={handleBlockUser}
+                    saving={saving}
+                    uploadingSound={uploadingSound}
+                    showInstallButton={deferredPrompt !== null}
+                    handleInstallClick={handleInstallClick}
+                  />
                 </div>
               )}
               {view === 'audiologs' && (
-                <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
-                  <AudioLogsView />
+                <div className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
+                  <div className="mb-8">
+                    <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">Audio Logs</h2>
+                    <p className="text-app-muted font-medium text-sm">Overzicht van alle geluidsgebeurtenissen</p>
+                  </div>
+                  <div className="bg-app-card rounded-[2rem] border border-app-border p-6 shadow-sm h-full overflow-hidden flex flex-col">
+                    <AudioLogsView />
+                  </div>
                 </div>
               )}
               {view === 'news' && (
                 <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
                   <div className="mb-8">
-                    <h2 className="text-3xl font-black tracking-tighter mb-1 text-app-ink">Laatste Nieuws</h2>
+                    <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">Laatste Nieuws</h2>
                     <p className="text-app-muted font-medium text-sm">Blijf op de hoogte van de laatste ontwikkelingen</p>
                   </div>
                   
@@ -5739,11 +4695,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {view === 'audiologs' && (
-                <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
-                  <AudioLogsView />
-                </div>
-              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -5762,17 +4713,17 @@ export default function App() {
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+                className="relative w-full max-w-md bg-app-card rounded-3xl shadow-2xl border border-app-border overflow-hidden"
               >
-                <div className="p-6 border-b border-zinc-100">
+                <div className="p-6 border-b border-app-border bg-app-accent/10">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-lg">Nieuw Bericht</h3>
+                    <h3 className="font-bold text-lg text-app-ink">Nieuw Bericht</h3>
                     <button 
                       onClick={() => {
                         setShowUserSearch(false);
                         setUserSearchQuery('');
                       }}
-                      className="p-2 hover:bg-zinc-100 rounded-xl transition-all"
+                      className="p-2 hover:bg-app-accent rounded-xl transition-all text-app-ink"
                     >
                       <X className="w-5 h-5" />
                     </button>
@@ -5783,16 +4734,16 @@ export default function App() {
                       value={userSearchQuery}
                       onChange={(e) => setUserSearchQuery(e.target.value)}
                       placeholder="Zoek op naam of e-mail..."
-                      className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                      className="w-full pl-10 pr-4 py-2 bg-app-bg border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink placeholder:text-app-muted/50"
                       autoFocus
                     />
-                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-app-muted" />
                   </div>
                 </div>
-                <div className="p-2 max-h-[400px] overflow-y-auto space-y-1">
+                <div className="p-2 max-h-[400px] overflow-y-auto space-y-1 custom-scrollbar">
                   {filteredUsers.length === 0 ? (
                     <div className="text-center py-12">
-                      <p className="text-zinc-400 text-sm">Geen gebruikers gevonden voor "{userSearchQuery}"</p>
+                      <p className="text-app-muted text-sm font-medium">Geen gebruikers gevonden voor "{userSearchQuery}"</p>
                     </div>
                   ) : (
                     filteredUsers.map(u => (
@@ -5803,21 +4754,21 @@ export default function App() {
                           setShowUserSearch(false);
                           setUserSearchQuery('');
                         }}
-                        className="w-full p-3 rounded-xl flex items-center gap-3 hover:bg-zinc-50 transition-all text-left group cursor-pointer"
+                        className="w-full p-3 rounded-xl flex items-center gap-3 hover:bg-app-accent transition-all text-left group cursor-pointer border border-transparent hover:border-app-border"
                       >
-                        <div className="relative w-10 h-10 bg-zinc-100 rounded-xl flex items-center justify-center group-hover:bg-white transition-colors">
+                        <div className="relative w-10 h-10 bg-app-bg rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform overflow-hidden shadow-sm border border-app-border">
                           {u.photo_url ? (
-                            <img src={u.photo_url} alt="" className="w-full h-full rounded-xl object-cover" referrerPolicy="no-referrer" />
+                            <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
-                            <UserIcon className="w-5 h-5 text-zinc-400" />
+                            <UserIcon className="w-5 h-5 text-app-muted" />
                           )}
                           {onlineUsers.has(u.id) && (
-                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full shadow-sm" />
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-app-card rounded-full shadow-sm" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm truncate">{nicknames[u.id] || u.display_name}</p>
-                          <p className="text-xs text-zinc-400 truncate">
+                          <p className="font-bold text-sm text-app-ink truncate">{nicknames[u.id] || u.display_name}</p>
+                          <p className="text-[10px] text-app-muted truncate font-medium uppercase tracking-wide">
                             {nicknames[u.id] ? `@${u.display_name}` : u.email}
                           </p>
                         </div>
@@ -5827,7 +4778,7 @@ export default function App() {
                               e.stopPropagation();
                               handleOpenProfile(u.id);
                             }}
-                            className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition-all"
+                            className="p-2 text-app-muted hover:text-app-ink hover:bg-app-bg rounded-xl transition-all shadow-sm"
                             title="Bekijk profiel"
                           >
                             <UserIcon className="w-4 h-4" />
@@ -5838,14 +4789,14 @@ export default function App() {
                                 e.stopPropagation();
                                 handleOpenReport('user', u.id, u.id, u.display_name);
                               }}
-                              className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                              className="p-2 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl transition-all shadow-sm"
                               title="Rapporteer gebruiker"
                             >
                               <Flag className="w-4 h-4" />
                             </button>
                           )}
-                          <div className="w-8 h-8 rounded-full bg-zinc-50 flex items-center justify-center">
-                            <Send className="w-3.5 h-3.5 text-zinc-900" />
+                          <div className="w-8 h-8 rounded-full bg-app-ink flex items-center justify-center shadow-lg">
+                            <Send className="w-3.5 h-3.5 text-app-bg" />
                           </div>
                         </div>
                       </div>
@@ -5869,31 +4820,34 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
                 onClick={(e) => e.stopPropagation()}
-                className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar"
+                className="relative w-full max-w-md bg-app-card rounded-[2.5rem] shadow-2xl border border-app-border overflow-y-auto max-h-[90vh] custom-scrollbar"
               >
-                <div className="h-32 bg-gradient-to-br from-zinc-900 to-zinc-800 relative">
+                <div className="h-32 bg-app-ink relative overflow-hidden">
+                  <div className="absolute inset-0 opacity-10">
+                    <Shield className="w-64 h-64 -rotate-12 -translate-x-12 -translate-y-12" />
+                  </div>
                   <button 
                     onClick={() => setSelectedUser(null)}
-                    className="absolute top-16 right-8 p-3 bg-white/20 hover:bg-white/30 rounded-2xl transition-all text-white backdrop-blur-md shadow-lg border border-white/10 active:scale-95 z-10"
+                    className="absolute top-6 right-6 p-3 bg-app-bg/20 hover:bg-app-bg/30 rounded-2xl transition-all text-app-bg backdrop-blur-md shadow-lg border border-app-bg/10 active:scale-95 z-10"
                     title="Sluiten"
                   >
-                    <X className="w-6 h-6" />
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
                 
                 <div className="px-8 pb-8">
                   <div className="relative -mt-16 mb-6">
-                    <div className="w-32 h-32 rounded-[2rem] bg-white p-2 shadow-xl">
-                      <div className="w-full h-full rounded-[1.5rem] bg-zinc-100 flex items-center justify-center overflow-hidden border border-zinc-100">
+                    <div className="w-32 h-32 rounded-[2rem] bg-app-card p-2 shadow-xl border border-app-border">
+                      <div className="w-full h-full rounded-[1.5rem] bg-app-accent flex items-center justify-center overflow-hidden border border-app-border">
                         {selectedUser.photo_url ? (
                           <img src={selectedUser.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
-                          <UserIcon className="w-12 h-12 text-zinc-400" />
+                          <UserIcon className="w-12 h-12 text-app-muted" />
                         )}
                       </div>
                     </div>
                     {selectedUser.role === 'admin' && (
-                      <div className="absolute bottom-2 left-24 bg-emerald-500 text-white p-1.5 rounded-lg shadow-lg border-2 border-white">
+                      <div className="absolute bottom-2 left-24 bg-emerald-500 text-white p-1.5 rounded-lg shadow-lg border-2 border-app-card">
                         <ShieldCheck className="w-4 h-4" />
                       </div>
                     )}
@@ -5903,45 +4857,45 @@ export default function App() {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex-1">
-                          <h3 className="text-2xl font-black text-zinc-900 tracking-tight">
+                          <h3 className="text-2xl font-bold text-app-ink tracking-tight">
                             {selectedUser.display_name}
                           </h3>
                         </div>
                         {onlineUsers.has(selectedUser.id) ? (
-                          <div className="px-3 py-1 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                          <div className="px-3 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 border border-emerald-500/20">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                             Online
                           </div>
                         ) : (
-                          <div className="px-3 py-1 bg-zinc-100 text-zinc-400 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-zinc-300"></span>
+                          <div className="px-3 py-1 bg-app-accent text-app-muted rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 border border-app-border">
+                            <span className="w-1.5 h-1.5 rounded-full bg-app-muted/30"></span>
                             Offline
                           </div>
                         )}
                       </div>
                       {selectedUser.original_name && selectedUser.original_name !== selectedUser.display_name && (
-                        <p className="text-sm text-zinc-400 font-medium mt-1">Oorspronkelijke naam: {selectedUser.original_name}</p>
+                        <p className="text-sm text-app-muted font-medium mt-1">Oorspronkelijke naam: {selectedUser.original_name}</p>
                       )}
-                      <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest mt-2 flex items-center gap-2">
+                      <p className="text-xs text-app-muted font-bold uppercase tracking-widest mt-2 flex items-center gap-2">
                         <Sparkles className="w-3 h-3" />
                         Lid sinds {formatDate(selectedUser.created_at)}
                       </p>
                     </div>
 
                     {selectedUser.bio ? (
-                      <div className="p-6 bg-zinc-50 rounded-3xl border border-zinc-100">
-                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3">Over mij</label>
-                        <p className="text-zinc-600 leading-relaxed font-medium">{selectedUser.bio}</p>
+                      <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest mb-3">Over mij</label>
+                        <p className="text-app-ink leading-relaxed font-medium">{selectedUser.bio}</p>
                       </div>
                     ) : (
-                      <div className="p-6 bg-zinc-50 rounded-3xl border border-zinc-100 border-dashed flex flex-col items-center justify-center text-center py-10">
-                        <p className="text-zinc-400 text-sm font-medium italic">Geen bio beschikbaar</p>
+                      <div className="p-6 bg-app-accent/20 rounded-3xl border border-app-border border-dashed flex flex-col items-center justify-center text-center py-10 text-app-muted">
+                        <p className="text-sm font-medium italic">Geen bio beschikbaar</p>
                       </div>
                     )}
 
                     {user && user.uid !== selectedUser.id && (
-                      <div className="p-6 bg-zinc-900/5 rounded-3xl border border-zinc-200/50">
-                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3">Persoonlijke Bijnaam</label>
+                      <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest mb-3">Persoonlijke Bijnaam</label>
                         {isEditingNickname ? (
                           <div className="flex gap-2">
                             <input 
@@ -5949,7 +4903,7 @@ export default function App() {
                               value={nicknameInput}
                               onChange={(e) => setNicknameInput(convertEmoticons(e.target.value))}
                               placeholder="Geef deze persoon een bijnaam..."
-                              className="flex-1 p-3 bg-white border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-zinc-900 outline-none font-bold text-zinc-900"
+                              className="flex-1 p-3 bg-app-bg border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink outline-none font-bold text-app-ink"
                               autoFocus
                             />
                             <button 
@@ -5957,35 +4911,35 @@ export default function App() {
                                 handleSetNickname(selectedUser.id, nicknameInput);
                                 setIsEditingNickname(false);
                               }}
-                              className="p-3 bg-zinc-900 text-white rounded-xl hover:bg-zinc-800 transition-all"
+                              className="p-3 bg-app-ink text-app-bg rounded-xl hover:opacity-90 transition-all"
                             >
                               <Check className="w-5 h-5" />
                             </button>
                             <button 
                               onClick={() => setIsEditingNickname(false)}
-                              className="p-3 bg-zinc-100 text-zinc-400 rounded-xl hover:bg-zinc-200 transition-all"
+                              className="p-3 bg-app-accent text-app-muted rounded-xl hover:text-app-ink transition-all"
                             >
                               <X className="w-5 h-5" />
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center justify-between">
-                            <p className="text-zinc-900 font-bold">
-                              {nicknames[selectedUser.id] || <span className="text-zinc-400 font-normal italic">Geen bijnaam ingesteld</span>}
+                            <p className="text-app-ink font-bold">
+                              {nicknames[selectedUser.id] || <span className="text-app-muted font-normal italic">Geen bijnaam ingesteld</span>}
                             </p>
                             <button 
                               onClick={() => {
                                 setNicknameInput(nicknames[selectedUser.id] || '');
                                 setIsEditingNickname(true);
                               }}
-                              className="flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-900 rounded-xl text-xs font-bold hover:bg-zinc-50 transition-all shadow-sm"
+                              className="flex items-center gap-2 px-4 py-2 bg-app-card border border-app-border text-app-ink rounded-xl text-xs font-bold hover:bg-app-accent transition-all shadow-sm"
                             >
                               <Pencil className="w-3.5 h-3.5" />
                               {nicknames[selectedUser.id] ? 'Aanpassen' : 'Instellen'}
                             </button>
                           </div>
                         )}
-                        <p className="text-[9px] text-zinc-400 mt-3 italic">
+                        <p className="text-[9px] text-app-muted mt-3 italic">
                           * Deze bijnaam is alleen voor jou zichtbaar en wordt overal in de app gebruikt.
                         </p>
                       </div>
@@ -5999,7 +4953,7 @@ export default function App() {
                               handleStartConversation({ id: selectedUser.id, display_name: selectedUser.display_name });
                               setSelectedUser(null);
                             }}
-                            className="flex-1 p-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-zinc-900/20"
+                            className="flex-1 p-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg"
                           >
                             <Mail className="w-5 h-5" />
                             Bericht
@@ -6009,7 +4963,7 @@ export default function App() {
                               handleOpenReport('user', selectedUser.id, selectedUser.id, selectedUser.display_name);
                               setSelectedUser(null);
                             }}
-                            className="p-4 bg-red-50 text-red-600 rounded-2xl font-bold hover:bg-red-100 transition-all active:scale-[0.98]"
+                            className="p-4 bg-red-500/10 text-red-500 rounded-2xl font-bold hover:bg-red-500/20 transition-all active:scale-[0.98] border border-red-500/20"
                             title="Rapporteer"
                           >
                             <Flag className="w-5 h-5" />
@@ -6018,10 +4972,10 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="mt-8 pt-6 border-t border-zinc-100">
+                    <div className="mt-8 pt-6 border-t border-app-border">
                       <button 
                         onClick={() => setSelectedUser(null)}
-                        className="w-full p-4 bg-zinc-100 text-zinc-600 rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                        className="w-full p-4 bg-app-accent text-app-muted rounded-2xl font-bold hover:text-app-ink transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                       >
                         <X className="w-4 h-4" />
                         Sluiten
@@ -6049,63 +5003,63 @@ export default function App() {
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden"
+                className="relative w-full max-w-md bg-app-card rounded-[2.5rem] shadow-2xl border border-app-border overflow-hidden"
               >
-                <div className="p-8 border-b border-zinc-100 bg-red-50/50">
+                <div className="p-8 border-b border-app-border bg-red-500/5">
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
-                      <div className="p-3 bg-red-100 rounded-2xl">
+                      <div className="p-3 bg-red-500/10 rounded-2xl border border-red-500/20">
                         <Flag className="w-6 h-6 text-red-600" />
                       </div>
-                      <h3 className="font-black text-xl tracking-tight">
+                      <h3 className="font-bold text-xl tracking-tight text-app-ink">
                         Rapporteer {reportTarget.type === 'user' ? 'Gebruiker' : reportTarget.type === 'post' ? 'Post' : 'Bericht'}
                       </h3>
                     </div>
                     <button 
                       onClick={() => setReportTarget(null)}
-                      className="p-2 hover:bg-red-100 rounded-xl transition-all"
+                      className="p-2 hover:bg-red-500/10 rounded-xl transition-all"
                     >
                       <X className="w-5 h-5 text-red-600" />
                     </button>
                   </div>
-                  <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-red-100 shadow-sm">
-                    <div className="w-12 h-12 rounded-xl bg-zinc-100 flex items-center justify-center overflow-hidden">
-                      <UserIcon className="w-6 h-6 text-zinc-400" />
+                  <div className="flex items-center gap-4 p-4 bg-app-bg rounded-2xl border border-app-border shadow-sm">
+                    <div className="w-12 h-12 rounded-xl bg-app-accent flex items-center justify-center overflow-hidden border border-app-border">
+                      <UserIcon className="w-6 h-6 text-app-muted" />
                     </div>
                     <div>
-                      <p className="font-bold text-zinc-900">{reportTarget.displayName}</p>
-                      <p className="text-xs text-zinc-400 font-medium">ID: {reportTarget.id.substring(0, 12)}...</p>
+                      <p className="font-bold text-app-ink">{reportTarget.displayName}</p>
+                      <p className="text-[10px] text-app-muted font-bold uppercase tracking-widest mt-1">ID: {reportTarget.id.substring(0, 12)}...</p>
                     </div>
                   </div>
                 </div>
 
                 <form onSubmit={handleReport} className="p-8 space-y-6">
                   <div>
-                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Reden van rapportage</label>
+                    <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest mb-2 ml-1">Reden van rapportage</label>
                     <select 
                       value={reportReason}
                       onChange={(e) => setReportReason(e.target.value)}
                       required
-                      className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all outline-none font-medium appearance-none text-zinc-900"
+                      className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-red-500/50 focus:border-transparent transition-all outline-none font-medium appearance-none text-app-ink"
                     >
-                      <option value="" className="text-zinc-900">Selecteer een reden...</option>
-                      <option value="spam" className="text-zinc-900">Spam of ongewenste reclame</option>
-                      <option value="harassment" className="text-zinc-900">Intimidatie of pesten</option>
-                      <option value="hate_speech" className="text-zinc-900">Haatzaaiende uitlatingen</option>
-                      <option value="inappropriate" className="text-zinc-900">Ongepaste inhoud</option>
-                      <option value="impersonation" className="text-zinc-900">Impersonatie</option>
-                      <option value="other" className="text-zinc-900">Anders</option>
+                      <option value="" className="text-app-ink">Selecteer een reden...</option>
+                      <option value="spam" className="text-app-ink">Spam of ongewenste reclame</option>
+                      <option value="harassment" className="text-app-ink">Intimidatie of pesten</option>
+                      <option value="hate_speech" className="text-app-ink">Haatzaaiende uitlatingen</option>
+                      <option value="inappropriate" className="text-app-ink">Ongepaste inhoud</option>
+                      <option value="impersonation" className="text-app-ink">Impersonatie</option>
+                      <option value="other" className="text-app-ink">Anders</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">Details (optioneel)</label>
+                    <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest mb-2 ml-1">Details (optioneel)</label>
                     <textarea 
                       value={reportDetails}
                       onChange={(e) => setReportDetails(convertEmoticons(e.target.value))}
                       placeholder="Geef meer context over de situatie..."
                       rows={4}
-                      className="w-full p-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all outline-none font-medium resize-none text-zinc-900 placeholder:text-zinc-400"
+                      className="w-full p-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-red-500/50 focus:border-transparent transition-all outline-none font-medium resize-none text-app-ink placeholder:text-app-muted/50"
                     />
                   </div>
 
@@ -6113,7 +5067,7 @@ export default function App() {
                     <button 
                       type="button"
                       onClick={() => setReportTarget(null)}
-                      className="flex-1 p-4 bg-zinc-100 text-zinc-600 rounded-2xl font-bold hover:bg-zinc-200 transition-all active:scale-[0.98]"
+                      className="flex-1 p-4 bg-app-accent text-app-muted rounded-2xl font-bold hover:text-app-ink transition-all active:scale-[0.98]"
                     >
                       Annuleren
                     </button>
@@ -6153,7 +5107,7 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     className="bg-red-600 text-white p-4 rounded-xl shadow-2xl h-fit max-w-xs border-2 border-white/20"
                   >
-                    <div className="flex items-center gap-2 mb-2 font-black uppercase tracking-tighter italic">
+                    <div className="flex items-center gap-2 mb-2 font-bold uppercase tracking-tight italic">
                       <AlertCircle className="w-5 h-5" />
                       System Failure
                     </div>
@@ -6162,6 +5116,76 @@ export default function App() {
                 ))}
               </div>
             </div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showWhatsNew && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="bg-app-bg w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-app-border overflow-hidden"
+              >
+                <div className="relative p-8 sm:p-10 space-y-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 bg-app-ink rounded-[1.5rem] flex items-center justify-center shadow-xl">
+                      <Sparkles className="w-8 h-8 text-app-bg" />
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-bold text-app-ink tracking-tight uppercase leading-none">V1.8 Update</h2>
+                      <p className="text-app-muted text-sm font-bold uppercase tracking-widest mt-1">Wat is er nieuw?</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 py-4">
+                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
+                      <Shield className="w-6 h-6 text-indigo-500 shrink-0" />
+                      <div>
+                        <h4 className="font-bold text-sm text-app-ink">Slimme Moderatie</h4>
+                        <p className="text-xs text-app-muted">Context-bewust filter voor een gezellig forum zonder gescheld.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
+                      <Volume2 className="w-6 h-6 text-emerald-500 shrink-0" />
+                      <div>
+                        <h4 className="font-bold text-sm text-app-ink">Realtime Sounds</h4>
+                        <p className="text-xs text-app-muted">Direct melding-geluiden voor alle gebruikers, overal in het forum.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
+                      <Activity className="w-6 h-6 text-amber-500 shrink-0" />
+                      <div>
+                        <h4 className="font-bold text-sm text-app-ink">Audio & Admin Logs</h4>
+                        <p className="text-xs text-app-muted">Transparantie met live logs en een krachtig nieuw admin dashboard.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
+                      <Palette className="w-6 h-6 text-purple-500 shrink-0" />
+                      <div>
+                        <h4 className="font-bold text-sm text-app-ink">Custom Geluiden</h4>
+                        <p className="text-xs text-app-muted">Voeg je eigen unieke meldingsgeluiden toe via de instellingen.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      setShowWhatsNew(false);
+                      localStorage.setItem('has_seen_whats_new_v1.8', 'true');
+                    }}
+                    className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold uppercase tracking-wide hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
+                  >
+                    Aan de slag!
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
 
@@ -6179,8 +5203,18 @@ export default function App() {
           position={emojiPosition}
           onSelect={handleEmojiSelect}
           onClose={() => setEmojiResults([])}
+          mode={emojiPickerMode}
         />
-        <Toaster position="top-right" richColors closeButton />
+        <Toaster 
+          position="top-right" 
+          richColors 
+          expand={true}
+          visibleToasts={5}
+          theme={theme === 'dark' || (useCustomTheme && customTheme.body_bg_color && isDarkColor(customTheme.body_bg_color)) ? 'dark' : 'light'}
+          toastOptions={{
+            duration: 3000,
+          }}
+        />
       </div>
     </div>
   );
