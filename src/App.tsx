@@ -53,7 +53,9 @@ import {
   ArrowRight,
   ArrowLeft,
   Link,
-  Bot
+  Bot,
+  Phone,
+  PhoneOff
 } from 'lucide-react';
 
 // Components
@@ -71,6 +73,8 @@ import { ReportModal } from './components/ReportModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { AudioLogsView } from './components/AudioLogsView';
 import { MessageEditArea } from './components/MessageEditArea';
+import { useVoiceCall } from './hooks/useVoiceCall';
+import { VoiceCallUI } from './components/VoiceCallUI';
 
 // Constants & Helpers
 import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
@@ -601,6 +605,9 @@ export default function App() {
   const [newSoundName, setNewSoundName] = useState('');
   const [newSoundUrl, setNewSoundUrl] = useState('');
   const [supabaseClient, setSupabaseClient] = useState(supabase);
+  const voiceCall = useVoiceCall(user, profile, supabaseClient);
+  const activeCallUserId = voiceCall.activeCall ? (voiceCall.isInitiator ? voiceCall.activeCall.targetId : voiceCall.activeCall.callerId) : undefined;
+
 
   useEffect(() => {
     // Preload custom sounds
@@ -4587,6 +4594,9 @@ export default function App() {
                   sending={sending}
                   useCustomTheme={useCustomTheme}
                   customTheme={customTheme}
+                  onStartCall={voiceCall.initiateCall}
+                  onEndCall={voiceCall.endCall}
+                  activeCallUserId={activeCallUserId}
                 />
               )}
 
@@ -4958,6 +4968,32 @@ export default function App() {
                             <Mail className="w-5 h-5" />
                             Bericht
                           </button>
+                          
+                          {(() => {
+                            const isCurrentPeer = activeCallUserId && selectedUser.id === activeCallUserId;
+                            
+                            return (
+                              <button 
+                                onClick={() => {
+                                  if (isCurrentPeer) {
+                                    voiceCall.endCall();
+                                  } else {
+                                    voiceCall.initiateCall(selectedUser.id, selectedUser.display_name, selectedUser.photo_url || undefined);
+                                    setSelectedUser(null);
+                                  }
+                                }}
+                                className={`flex-1 p-4 rounded-2xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg ${
+                                  isCurrentPeer 
+                                    ? 'bg-red-500 text-white hover:bg-red-600' 
+                                    : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                                }`}
+                              >
+                                {isCurrentPeer ? <PhoneOff className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
+                                {isCurrentPeer ? 'Ophangen' : 'Bellen'}
+                              </button>
+                            );
+                          })()}
+
                           <button 
                             onClick={() => {
                               handleOpenReport('user', selectedUser.id, selectedUser.id, selectedUser.display_name);
@@ -5085,6 +5121,10 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
+        
+        <VoiceCallUI 
+          {...voiceCall} 
+        />
       </main>
         <AnimatePresence>
           {showAdminPrank && (

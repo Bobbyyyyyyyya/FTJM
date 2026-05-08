@@ -1,5 +1,7 @@
 {
   "name": "FTJM Forum",
   "description": "Besloten forum voor FTJM leden.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

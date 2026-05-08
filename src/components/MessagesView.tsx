@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Mail, Plus, User as UserIcon, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -26,6 +26,9 @@ interface MessagesViewProps {
   useCustomTheme: boolean;
   customTheme: CustomTheme;
   hasSharedKey?: boolean;
+  onStartCall?: (targetId: string, targetName: string, targetAvatar?: string) => void;
+  onEndCall?: () => void;
+  activeCallUserId?: string;
 }
 
 export const MessagesView: React.FC<MessagesViewProps> = ({
@@ -48,7 +51,10 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   sending,
   useCustomTheme,
   customTheme,
-  hasSharedKey
+  hasSharedKey,
+  onStartCall,
+  onEndCall,
+  activeCallUserId
 }) => {
   return (
     <div 
@@ -253,6 +259,35 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {activeConversation && onStartCall && (() => {
+                  const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
+                  const isActivePeer = activeCallUserId && otherUid === activeCallUserId;
+                  
+                  return (
+                    <button
+                      onClick={() => {
+                        const otherName = otherUid ? activeConversation.participant_names[otherUid] : 'Onbekend';
+                        const otherAvatar = otherUid ? activeConversation.participant_photos[otherUid] : undefined;
+                        if (otherUid) {
+                          if (isActivePeer && onEndCall) {
+                            onEndCall();
+                          } else {
+                            onStartCall(otherUid, otherName, otherAvatar);
+                          }
+                        }
+                      }}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ml-auto active:scale-95 ${
+                        isActivePeer 
+                          ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
+                          : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                      }`}
+                      title={isActivePeer ? "Ophangen" : "Start spraakoproep"}
+                    >
+                      {isActivePeer ? <PhoneOff size={18} /> : <Phone size={18} />}
+                    </button>
+                  );
+                })()}
               </div>
             </header>
 

@@ -38,7 +38,7 @@ export const createSupabaseClient = (uid: string | null = null) => {
       }
     },
     realtime: {
-      headers: uid ? { 'x-firebase-uid': uid } : {}
+      params: uid ? { 'x-firebase-uid': uid } : {}
     }
   });
 
