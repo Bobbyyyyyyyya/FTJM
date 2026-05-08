@@ -1485,12 +1485,18 @@ export default function App() {
                 updatedConv.last_message_sender_id !== user.uid && 
                 new Date(updatedConv.updated_at).getTime() > new Date(initialLoadTime.current).getTime()) {
               
-              const otherParticipantUid = updatedConv.participants.find((uid: string) => uid !== user.uid);
-              const senderName = otherParticipantUid ? updatedConv.participant_names[otherParticipantUid] : 'Iemand';
+              let senderName = 'Iemand';
+              if (updatedConv.is_group) {
+                const authorName = updatedConv.last_message_sender_id ? updatedConv.participant_names[updatedConv.last_message_sender_id] : null;
+                senderName = authorName ? `${authorName} in ${updatedConv.name || 'Groep'}` : (updatedConv.name || 'Groep');
+              } else {
+                const otherParticipantUid = updatedConv.participants.find((uid: string) => uid !== user.uid);
+                senderName = otherParticipantUid ? updatedConv.participant_names[otherParticipantUid] : 'Iemand';
+              }
               
               if (notificationSettingsRef.current.notify_new_messages && (activeConversationRef.current?.id !== updatedConv.id || viewRef.current !== 'messages')) {
-                toast.success(`Nieuw bericht van ${senderName}`, {
-                  description: updatedConv.last_message?.substring(0, 50) + (updatedConv.last_message && updatedConv.last_message.length > 50 ? '...' : ''),
+                toast.success(updatedConv.is_group ? `Groepsbericht` : `Nieuw bericht van ${senderName}`, {
+                  description: updatedConv.is_group ? `${senderName}: ${updatedConv.last_message?.substring(0, 40)}...` : updatedConv.last_message?.substring(0, 50) + (updatedConv.last_message && updatedConv.last_message.length > 50 ? '...' : ''),
                   action: {
                     label: 'Beantwoorden',
                     onClick: () => {
@@ -1610,7 +1616,7 @@ export default function App() {
     const fetchConversations = async () => {
       const { data, error } = await supabaseClient
         .from('conversations')
-        .select('id, participants, participant_names, participant_photos, last_message, last_message_sender_id, updated_at')
+        .select('id, participants, participant_names, participant_photos, last_message, last_message_sender_id, updated_at, is_group, name, created_by')
         .contains('participants', [user.uid]);
       
       if (error) {
@@ -3582,11 +3588,83 @@ export default function App() {
     }
   };
 
+  const handleStartGroupConversation = async (selectedUsers: UserProfile[], groupName: string) => {
+    if (!user || selectedUsers.length < 2) return;
+    if (!checkRateLimit()) return;
+
+    const participantUids = [user.uid, ...selectedUsers.map(u => u.id)];
+    const participantNames: Record<string, string> = {
+      [user.uid]: user.displayName || 'Me'
+    };
+    const participantPhotos: Record<string, string> = {
+      [user.uid]: user.photoURL || ''
+    };
+
+    selectedUsers.forEach(u => {
+      participantNames[u.id] = u.display_name;
+      participantPhotos[u.id] = u.photo_url || '';
+    });
+
+    const newGroupConv = {
+      participants: participantUids,
+      participant_names: participantNames,
+      participant_photos: participantPhotos,
+      is_group: true,
+      name: groupName,
+      created_by: user.uid,
+      updated_at: new Date().toISOString()
+    };
+
+    console.log('Starting group conversation with payload:', newGroupConv);
+
+    try {
+      const { data, error } = await supabaseClient
+        .from('conversations')
+        .insert(newGroupConv)
+        .select();
+        
+      console.log('Group insert result:', { data, error });
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Geen data teruggekregen van de server na aanmaken groep. Controleer RLS beleid.');
+      }
+
+      const createdConv = data[0];
+      handleSetActiveConversation(createdConv);
+      
+      // Add to local list immediately
+      setConversations(prev => {
+        if (prev.some(c => c.id === createdConv.id)) return prev;
+        return [createdConv, ...prev].sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+      });
+      
+      // Broadcast new conversation to all participants
+      participantUids.forEach(uid => {
+        if (uid === user.uid) return;
+        const targetChannel = supabaseClient.channel(`conversations:${uid}`);
+        targetChannel.send({
+          type: 'broadcast',
+          event: 'new_conversation',
+          payload: createdConv
+        });
+      });
+
+      setShowUserSearch(false);
+      setUserSearchQuery('');
+      setMobileChatView('chat');
+      setView('messages');
+      toast.success(`Groep "${groupName}" aangemaakt!`);
+    } catch (err) {
+      handleSupabaseError(err, 'groep starten', user, isAdmin);
+    }
+  };
+
   const handleStartConversation = async (targetUser: UserProfile | {id: string, display_name: string}) => {
     if (!user) return;
     
-    // Check if conversation already exists
-    const existing = conversations.find(c => c.participants.includes(targetUser.id));
+    // Check if conversation already exists (1-on-1)
+    const existing = conversations.find(c => !c.is_group && c.participants.length === 2 && c.participants.includes(targetUser.id));
     if (existing) {
       handleSetActiveConversation(existing);
       setMobileChatView('chat');
@@ -3606,23 +3684,32 @@ export default function App() {
         [user.uid]: user.photoURL || '',
         [targetUser.id]: (targetUser as any).photo_url || ''
       },
+      is_group: false,
       updated_at: new Date().toISOString()
     };
+
+    console.log('Starting 1-on-1 conversation with payload:', newConv);
 
     try {
       const { data, error } = await supabaseClient
         .from('conversations')
         .insert(newConv)
-        .select()
-        .single();
+        .select();
         
+      console.log('1-on-1 insert result:', { data, error });
+
       if (error) throw error;
-      handleSetActiveConversation(data);
+      if (!data || data.length === 0) {
+        throw new Error('Geen data teruggekregen van de server. Controleer RLS beleid.');
+      }
+
+      const createdConv = data[0];
+      handleSetActiveConversation(createdConv);
       
       // Add to local list immediately
       setConversations(prev => {
-        if (prev.some(c => c.id === data.id)) return prev;
-        return [data, ...prev].sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+        if (prev.some(c => c.id === createdConv.id)) return prev;
+        return [createdConv, ...prev].sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
       });
       
       // Broadcast new conversation to target user
@@ -3630,7 +3717,7 @@ export default function App() {
       targetChannel.send({
         type: 'broadcast',
         event: 'new_conversation',
-        payload: data
+        payload: createdConv
       });
 
       setMobileChatView('chat');
@@ -4709,114 +4796,19 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <AnimatePresence>
-          {showUserSearch && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowUserSearch(false)}
-                className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
-              />
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative w-full max-w-md bg-app-card rounded-3xl shadow-2xl border border-app-border overflow-hidden"
-              >
-                <div className="p-6 border-b border-app-border bg-app-accent/10">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-lg text-app-ink">Nieuw Bericht</h3>
-                    <button 
-                      onClick={() => {
-                        setShowUserSearch(false);
-                        setUserSearchQuery('');
-                      }}
-                      className="p-2 hover:bg-app-accent rounded-xl transition-all text-app-ink"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <input 
-                      type="text"
-                      value={userSearchQuery}
-                      onChange={(e) => setUserSearchQuery(e.target.value)}
-                      placeholder="Zoek op naam of e-mail..."
-                      className="w-full pl-10 pr-4 py-2 bg-app-bg border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink placeholder:text-app-muted/50"
-                      autoFocus
-                    />
-                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-app-muted" />
-                  </div>
-                </div>
-                <div className="p-2 max-h-[400px] overflow-y-auto space-y-1 custom-scrollbar">
-                  {filteredUsers.length === 0 ? (
-                    <div className="text-center py-12">
-                      <p className="text-app-muted text-sm font-medium">Geen gebruikers gevonden voor "{userSearchQuery}"</p>
-                    </div>
-                  ) : (
-                    filteredUsers.map(u => (
-                      <div
-                        key={u.id}
-                        onClick={() => {
-                          handleStartConversation(u as UserProfile);
-                          setShowUserSearch(false);
-                          setUserSearchQuery('');
-                        }}
-                        className="w-full p-3 rounded-xl flex items-center gap-3 hover:bg-app-accent transition-all text-left group cursor-pointer border border-transparent hover:border-app-border"
-                      >
-                        <div className="relative w-10 h-10 bg-app-bg rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform overflow-hidden shadow-sm border border-app-border">
-                          {u.photo_url ? (
-                            <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <UserIcon className="w-5 h-5 text-app-muted" />
-                          )}
-                          {onlineUsers.has(u.id) && (
-                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-app-card rounded-full shadow-sm" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm text-app-ink truncate">{nicknames[u.id] || u.display_name}</p>
-                          <p className="text-[10px] text-app-muted truncate font-medium uppercase tracking-wide">
-                            {nicknames[u.id] ? `@${u.display_name}` : u.email}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenProfile(u.id);
-                            }}
-                            className="p-2 text-app-muted hover:text-app-ink hover:bg-app-bg rounded-xl transition-all shadow-sm"
-                            title="Bekijk profiel"
-                          >
-                            <UserIcon className="w-4 h-4" />
-                          </button>
-                          {u.id !== user.uid && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenReport('user', u.id, u.id, u.display_name);
-                              }}
-                              className="p-2 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl transition-all shadow-sm"
-                              title="Rapporteer gebruiker"
-                            >
-                              <Flag className="w-4 h-4" />
-                            </button>
-                          )}
-                          <div className="w-8 h-8 rounded-full bg-app-ink flex items-center justify-center shadow-lg">
-                            <Send className="w-3.5 h-3.5 text-app-bg" />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+        <UserSearchModal 
+          show={showUserSearch}
+          onClose={() => setShowUserSearch(false)}
+          searchQuery={userSearchQuery}
+          setSearchQuery={setUserSearchQuery}
+          users={users.filter(u => u.id !== user?.uid)}
+          onSelectUser={(u) => {
+            handleStartConversation(u);
+            setShowUserSearch(false);
+          }}
+          onStartGroup={handleStartGroupConversation}
+          onlineUsers={onlineUsers}
+        />
 
         {/* User Profile Modal */}
         <AnimatePresence>

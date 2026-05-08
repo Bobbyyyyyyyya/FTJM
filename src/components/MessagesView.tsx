@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Mail, Plus, User as UserIcon, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -104,10 +104,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           {conversations.length > 0 ? (
             <div className="divide-y divide-app-border/50">
               {conversations.map(conv => {
-                const otherParticipantUid = conv.participants.find(uid => uid !== user.uid);
-                const otherParticipantName = otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend';
+                const otherParticipants = conv.participants.filter(uid => uid !== user.uid);
+                const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : null;
+                const displayName = conv.is_group ? (conv.name || 'Groepsgesprek') : (otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend');
                 const isActive = activeConversation?.id === conv.id;
-                const isOnline = otherParticipantUid && onlineUsers.has(otherParticipantUid);
+                const isOnline = !conv.is_group && otherParticipantUid && onlineUsers.has(otherParticipantUid);
                 
                 return (
                   <button
@@ -133,7 +134,25 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                       <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all duration-500 overflow-hidden ${
                         isActive ? 'bg-app-bg/20 ring-2 ring-app-bg/30' : 'bg-app-accent ring-1 ring-app-border group-hover:ring-app-ink/30'
                       }`}>
-                        {conv.participant_photos[otherParticipantUid || ''] ? (
+                        {conv.is_group ? (
+                          <div className="grid grid-cols-2 gap-0.5 p-1 w-full h-full">
+                            {conv.participants.slice(0, 4).map((uid, idx) => {
+                              const photo = conv.participant_photos[uid];
+                              return (
+                                <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
+                                  {photo ? (
+                                    <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <UserIcon className="w-2 h-2 text-app-muted" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {conv.participants.length < 4 && Array.from({ length: 4 - conv.participants.length }).map((_, i) => (
+                              <div key={`empty-${i}`} className="w-full h-full bg-app-bg/20 rounded-md" />
+                            ))}
+                          </div>
+                        ) : conv.participant_photos[otherParticipantUid || ''] ? (
                           <img 
                             src={conv.participant_photos[otherParticipantUid || '']} 
                             alt="" 
@@ -151,7 +170,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-0.5">
-                        <p className="font-bold text-sm tracking-tight truncate">{otherParticipantName}</p>
+                        <p className="font-bold text-sm tracking-tight truncate">{displayName}</p>
                         <p className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'opacity-60 text-app-bg' : 'text-app-muted'}`}>
                           {formatTime(conv.updated_at)}
                         </p>
@@ -165,10 +184,19 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                               <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1 h-1 rounded-full bg-emerald-500" />
                               <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1 h-1 rounded-full bg-emerald-500" />
                             </div>
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Typing</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 truncate">
+                              {typingStatuses[conv.id].length > 1 
+                                ? `${typingStatuses[conv.id].length} mensen typen...` 
+                                : `${typingStatuses[conv.id][0]} typt...`}
+                            </span>
                           </div>
                         ) : (
                           <p className={`text-xs truncate font-medium ${isActive ? 'opacity-70 text-app-bg' : 'text-app-muted'}`}>
+                            {conv.is_group && conv.last_message && conv.last_message_sender_id && (
+                              <span className="font-bold mr-1">
+                                {conv.last_message_sender_id === user.uid ? 'Jij' : (conv.participant_names[conv.last_message_sender_id] || 'Iemand')}:
+                              </span>
+                            )}
                             {conv.last_message || 'Start het gesprek...'}
                           </p>
                         )}
@@ -208,9 +236,25 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                 </button>
                 
                 <div className="flex items-center gap-4 group">
-                  <div className="w-12 h-12 rounded-2xl overflow-hidden ring-2 ring-app-border group-hover:ring-app-ink/20 transition-all duration-300 bg-app-accent">
-                    {(() => {
-                      const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
+                  <div className="w-12 h-12 rounded-2xl overflow-hidden ring-2 ring-app-border group-hover:ring-app-ink/20 transition-all duration-300 bg-app-accent flex items-center justify-center">
+                    {activeConversation.is_group ? (
+                      <div className="grid grid-cols-2 gap-0.5 p-1 w-full h-full">
+                        {activeConversation.participants.slice(0, 4).map((uid, idx) => {
+                          const photo = activeConversation.participant_photos[uid];
+                          return (
+                            <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
+                              {photo ? (
+                                <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <UserIcon className="w-2 h-2 text-app-muted" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (() => {
+                      const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
+                      const otherUid = otherParticipants[0];
                       const photo = otherUid ? activeConversation.participant_photos[otherUid] : null;
                       return photo ? (
                         <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -221,14 +265,26 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   </div>
                   <div>
                     <h4 className="font-bold text-lg text-app-ink tracking-tight">
-                      {(() => {
-                        const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
-                        return otherUid ? activeConversation.participant_names[otherUid] : 'Onbekend';
-                      })()}
+                      {activeConversation.is_group 
+                        ? (activeConversation.name || 'Groepsgesprek') 
+                        : (() => {
+                            const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
+                            const otherUid = otherParticipants[0];
+                            return otherUid ? activeConversation.participant_names[otherUid] : 'Onbekend';
+                          })()
+                      }
                     </h4>
                     <div className="flex items-center gap-2 mt-1">
-                      {(() => {
-                        const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
+                      {activeConversation.is_group ? (
+                        <div className="flex items-center gap-1.5 bg-app-accent px-2.5 py-1 rounded-full border border-app-border">
+                          <Users className="w-3 h-3 text-app-muted" />
+                          <span className="text-[10px] font-bold text-app-muted uppercase tracking-wide">
+                            {activeConversation.participants.length} deelnemers
+                          </span>
+                        </div>
+                      ) : (() => {
+                        const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
+                        const otherUid = otherParticipants[0];
                         const isOnline = otherUid && onlineUsers.has(otherUid);
                         return (
                           <div className="flex items-center gap-3">
@@ -260,7 +316,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   </div>
                 </div>
 
-                {activeConversation && onStartCall && (() => {
+                {activeConversation && !activeConversation.is_group && onStartCall && (() => {
                   const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
                   const isActivePeer = activeCallUserId && otherUid === activeCallUserId;
                   
@@ -312,8 +368,29 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                         </div>
                       )}
                       
-                      <div className={`flex group ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`flex items-end gap-3 group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        {activeConversation.is_group && !isMe && (
+                          <div className="w-8 h-8 rounded-xl overflow-hidden ring-1 ring-app-border bg-app-card flex-shrink-0 mb-6">
+                            {activeConversation.participant_photos[msg.sender_id] ? (
+                              <img 
+                                src={activeConversation.participant_photos[msg.sender_id]} 
+                                alt="" 
+                                className="w-full h-full object-cover" 
+                                referrerPolicy="no-referrer" 
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-app-muted">
+                                {activeConversation.participant_names[msg.sender_id]?.charAt(0) || '?'}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                          {activeConversation.is_group && !isMe && (
+                            <span className="text-[10px] font-black text-app-muted uppercase tracking-widest mb-1.5 ml-1">
+                              {activeConversation.participant_names[msg.sender_id] || 'Onbekend'}
+                            </span>
+                          )}
                           <div className={`
                             px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative group/msg font-medium
                             ${isMe 

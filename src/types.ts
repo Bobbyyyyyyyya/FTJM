@@ -118,6 +118,9 @@ export interface Conversation {
   last_message_sender_id?: string;
   last_message_is_encrypted?: boolean;
   last_message_iv?: string;
+  is_group?: boolean;
+  name?: string;
+  created_by?: string;
   updated_at: string;
 }
 
