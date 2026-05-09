@@ -617,6 +617,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <Play className="w-3 h-3" /> Test geluid
                       </button>
                     </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Ringtone URL (Nieuw)</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={notificationSettings.ringtone_url || ''}
+                          onChange={(e) => setNotificationSettings({...notificationSettings, ringtone_url: e.target.value})}
+                          placeholder="https://example.com/ringtone.mp3"
+                          className="flex-1 px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink font-bold"
+                        />
+                        <button 
+                          onClick={() => {
+                            if (notificationSettings.ringtone_url) {
+                              const testAudio = new Audio(notificationSettings.ringtone_url);
+                              testAudio.play().catch(e => toast.error("Kan audio niet afspelen: " + e.message));
+                              setTimeout(() => testAudio.pause(), 5000); // Stop after 5s for testing
+                            }
+                          }}
+                          className="px-4 py-3 bg-app-ink text-app-bg rounded-xl font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center"
+                          title="Test Ringtone"
+                        >
+                          <Play className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <p className="mt-2 text-[10px] text-app-muted font-medium italic">
+                        Plak hier een directe link naar een MP3 of WAV bestand.
+                      </p>
+                    </div>
                   </div>
                 </div>
 

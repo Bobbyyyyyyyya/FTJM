@@ -28,6 +28,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const channelRef = useRef<any>(null); // Inbound channel
   const outboundChannelRef = useRef<any>(null); // Outbound channel
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
+  const dialingSoundRef = useRef<HTMLAudioElement | null>(null);
 
   // We need an audio element to play the remote stream
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -35,26 +36,37 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const endCallSoundRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    incomingSoundRef.current = new Audio('https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3');
+    const defaultRingtone = 'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3';
+    const ringtoneUrl = profile?.notification_settings?.ringtone_url || defaultRingtone;
+    
+    if (incomingSoundRef.current) {
+      incomingSoundRef.current.pause();
+    }
+    
+    incomingSoundRef.current = new Audio(ringtoneUrl);
     incomingSoundRef.current.loop = true;
     
+    dialingSoundRef.current = new Audio('https://www.image2url.com/r2/default/audio/1778251393856-e7883015-89e0-4fdd-b691-55e72fa929c6.mp3');
+    dialingSoundRef.current.loop = true;
+
     endCallSoundRef.current = new Audio('https://www.image2url.com/r2/default/audio/1778154897391-0eb0695d-b4bc-41be-bf5d-a09441cc3af6.mp3');
     
     return () => {
-      if (incomingSoundRef.current) {
-        incomingSoundRef.current.pause();
-        incomingSoundRef.current = null;
-      }
-      if (endCallSoundRef.current) {
-        endCallSoundRef.current.pause();
-        endCallSoundRef.current = null;
-      }
+      [incomingSoundRef, dialingSoundRef, endCallSoundRef].forEach(ref => {
+        if (ref.current) {
+          ref.current.pause();
+          ref.current = null;
+        }
+      });
     };
-  }, []);
+  }, [profile?.notification_settings?.ringtone_url]);
 
   const cleanupCall = (shouldPlayEndSound = true) => {
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        track.enabled = false;
+      });
       localStreamRef.current = null;
     }
     if (peerConnectionRef.current) {
@@ -62,10 +74,16 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       peerConnectionRef.current = null;
     }
     setIsInitiator(false);
+    
     if (incomingSoundRef.current) {
       incomingSoundRef.current.pause();
       incomingSoundRef.current.currentTime = 0;
     }
+    if (dialingSoundRef.current) {
+      dialingSoundRef.current.pause();
+      dialingSoundRef.current.currentTime = 0;
+    }
+
     if (shouldPlayEndSound && endCallSoundRef.current) {
        endCallSoundRef.current.currentTime = 0;
        endCallSoundRef.current.play().catch(() => {});
@@ -204,9 +222,17 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     pc.oniceconnectionstatechange = () => {
       console.log('ICE Connection State:', pc.iceConnectionState);
       if (pc.iceConnectionState === 'failed') {
-        console.error('ICE Connection failed. Check network/firewall.');
-        toast.error('Verbinding mislukt (Netwerk beperking)');
-        cleanupCall();
+        console.warn('ICE Connection failed. Attempting to restart ICE...');
+        pc.restartIce();
+        
+        // Give it 5 seconds to recover before closing
+        setTimeout(() => {
+          if (pc.iceConnectionState === 'failed') {
+            console.error('ICE Connection failed permanently.');
+            toast.error('Verbinding mislukt (Netwerk beperking)');
+            cleanupCall();
+          }
+        }, 5000);
       }
     };
 
@@ -221,16 +247,16 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     pc.ontrack = (event) => {
       console.log('Received remote track:', event.track.kind, 'ReadyState:', event.track.readyState);
       
-      const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-      
-      if (remoteStreamRef.current?.id !== stream.id) {
-        console.log('New remote stream established');
-        remoteStreamRef.current = stream;
+      let stream = event.streams[0];
+      if (!stream) {
+        stream = new MediaStream([event.track]);
       }
       
+      remoteStreamRef.current = stream;
+      
       if (remoteAudioRef.current) {
-        console.log('Attaching stream to audio element. Track:', event.track.kind);
         const audioElement = remoteAudioRef.current;
+        console.log('Attaching stream to audio element');
         
         if (audioElement.srcObject !== stream) {
           audioElement.srcObject = stream;
@@ -239,21 +265,19 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
         audioElement.muted = false;
         audioElement.volume = 1.0;
 
-        // Ensure tracks are enabled
+        // Force enable tracks
         stream.getAudioTracks().forEach(track => {
-          console.log('Remote audio track enabled state:', track.enabled);
           track.enabled = true;
         });
 
         const playAudio = async () => {
           try {
             await audioElement.play();
-            console.log('Audio playback started successfully');
+            console.log('Audio playback started');
           } catch (e) {
-            console.warn('Audio playback failed, possibly autoplay policy:', e);
+            console.warn('Audio playback failed:', e);
           }
         };
-        
         playAudio();
       }
     };
@@ -370,6 +394,11 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
           await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
           setCallState('connected');
           
+          if (dialingSoundRef.current) {
+            dialingSoundRef.current.pause();
+            dialingSoundRef.current.currentTime = 0;
+          }
+          
           // Wait briefly for candidates from the answer side
           await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -403,7 +432,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       
       console.log('Received ICE candidate from peer');
       const pc = peerConnectionRef.current;
-      if (pc && pc.remoteDescription && pc.signalingState !== 'closed') {
+      if (pc && pc.remoteDescription && pc.remoteDescription.type && pc.signalingState !== 'closed') {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
           console.log('ICE candidate applied successfully');
@@ -411,7 +440,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
           console.error("Error adding ice candidate", err);
         }
       } else {
-        console.log('ICE candidate queued');
+        console.log('ICE candidate queued (Waiting for remote description)');
         pendingCandidatesRef.current.push(payload.candidate);
       }
     })
@@ -464,6 +493,11 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       localStreamRef.current = stream;
       
       setCallState('calling');
+      if (dialingSoundRef.current) {
+        dialingSoundRef.current.currentTime = 0;
+        dialingSoundRef.current.play().catch(e => console.warn('Dialing sound failed:', e));
+      }
+
       setActiveCall({
         callerId: user.uid,
         callerName: (profile?.display_name || user?.displayName || 'Anoniem').trim(),

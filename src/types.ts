@@ -5,6 +5,7 @@ export interface NotificationSettings {
   notify_mentions: boolean;
   message_sound: string;
   post_sound: string;
+  ringtone_url?: string;
 }
 
 export interface AppNotification {

@@ -75,6 +75,8 @@ import { AudioLogsView } from './components/AudioLogsView';
 import { MessageEditArea } from './components/MessageEditArea';
 import { useVoiceCall } from './hooks/useVoiceCall';
 import { VoiceCallUI } from './components/VoiceCallUI';
+import { useGroupVoiceCall } from './hooks/useGroupVoiceCall';
+import { GroupVoiceCallUI } from './components/GroupVoiceCallUI';
 
 // Constants & Helpers
 import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
@@ -216,7 +218,8 @@ export default function App() {
       notify_new_messages: true,
       notify_mentions: true,
       message_sound: SOUND_OPTIONS[0].url,
-      post_sound: SOUND_OPTIONS[1].url
+      post_sound: SOUND_OPTIONS[1].url,
+      ringtone_url: 'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3'
     };
 
     if (!settings) return defaultSettings;
@@ -228,7 +231,8 @@ export default function App() {
       notify_new_messages: settings.notify_new_messages !== undefined ? settings.notify_new_messages : (settings.notifyNewMessages !== undefined ? settings.notifyNewMessages : defaultSettings.notify_new_messages),
       notify_mentions: settings.notify_mentions !== undefined ? settings.notify_mentions : (settings.notifyMentions !== undefined ? settings.notifyMentions : defaultSettings.notify_mentions),
       message_sound: settings.message_sound || settings.messageSound || defaultSettings.message_sound,
-      post_sound: settings.post_sound || settings.postSound || defaultSettings.post_sound
+      post_sound: settings.post_sound || settings.postSound || defaultSettings.post_sound,
+      ringtone_url: settings.ringtone_url || defaultSettings.ringtone_url
     };
 
     // Migration: Reset problematic old Mixkit URLs
@@ -606,6 +610,30 @@ export default function App() {
   const [newSoundUrl, setNewSoundUrl] = useState('');
   const [supabaseClient, setSupabaseClient] = useState(supabase);
   const voiceCall = useVoiceCall(user, profile, supabaseClient);
+  const [groupVoiceCallActiveRooms, setGroupVoiceCallActiveRooms] = useState<Set<string>>(new Set());
+
+  // Listen for group call activity across all rooms
+  useEffect(() => {
+    if (!user) return;
+    
+    // This is a global channel to listen for group call signals
+    const channel = supabaseClient.channel('group_calls_monitor');
+    
+    channel.on('broadcast', { event: 'group_join' }, ({ payload }) => {
+      if (payload.roomId) {
+        setGroupVoiceCallActiveRooms(prev => new Set(prev).add(payload.roomId));
+      }
+    }).on('broadcast', { event: 'group_leave' }, ({ payload }) => {
+      // In a real app we'd need more logic to know if ANYONE is left, 
+      // but for this demo we'll just periodically clear or rely on presence.
+    }).subscribe();
+
+    return () => {
+      supabaseClient.removeChannel(channel);
+    };
+  }, [user]);
+
+  const groupVoiceCall = useGroupVoiceCall(user, profile, supabaseClient);
   const activeCallUserId = voiceCall.activeCall ? (voiceCall.isInitiator ? voiceCall.activeCall.targetId : voiceCall.activeCall.callerId) : undefined;
 
 
@@ -3773,7 +3801,6 @@ export default function App() {
       
       console.log('Message sent successfully:', insertedMsg);
       logAudioEvent('system', 'success', `Bericht verzonden naar conversatie ${activeConversation.id}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
-      playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       
       // Update local state immediately for better UX
       if (insertedMsg) {
@@ -4682,8 +4709,11 @@ export default function App() {
                   useCustomTheme={useCustomTheme}
                   customTheme={customTheme}
                   onStartCall={voiceCall.initiateCall}
+                  onStartGroupCall={groupVoiceCall.joinGroupCall}
+                  groupVoiceCallActiveRooms={groupVoiceCallActiveRooms}
                   onEndCall={voiceCall.endCall}
                   activeCallUserId={activeCallUserId}
+                  playSound={playSound}
                 />
               )}
 
@@ -5116,6 +5146,16 @@ export default function App() {
         
         <VoiceCallUI 
           {...voiceCall} 
+        />
+
+        <GroupVoiceCallUI
+          state={groupVoiceCall.groupCallState}
+          participants={groupVoiceCall.groupParticipants}
+          isMuted={groupVoiceCall.isGroupMuted}
+          leaveCall={groupVoiceCall.leaveGroupCall}
+          toggleMute={groupVoiceCall.toggleGroupMute}
+          roomName={groupVoiceCall.roomName}
+          user={user}
         />
       </main>
         <AnimatePresence>

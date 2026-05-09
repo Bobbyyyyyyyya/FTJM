@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2 } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -27,8 +27,11 @@ interface MessagesViewProps {
   customTheme: CustomTheme;
   hasSharedKey?: boolean;
   onStartCall?: (targetId: string, targetName: string, targetAvatar?: string) => void;
+  onStartGroupCall?: (roomId: string, roomName: string) => void;
   onEndCall?: () => void;
   activeCallUserId?: string;
+  groupVoiceCallActiveRooms?: Set<string>;
+  playSound?: (url: string, enabled: boolean, uid: string, name: string) => void;
 }
 
 export const MessagesView: React.FC<MessagesViewProps> = ({
@@ -53,8 +56,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   customTheme,
   hasSharedKey,
   onStartCall,
+  onStartGroupCall,
   onEndCall,
-  activeCallUserId
+  activeCallUserId,
+  groupVoiceCallActiveRooms,
+  playSound
 }) => {
   return (
     <div 
@@ -109,6 +115,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                 const displayName = conv.is_group ? (conv.name || 'Groepsgesprek') : (otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend');
                 const isActive = activeConversation?.id === conv.id;
                 const isOnline = !conv.is_group && otherParticipantUid && onlineUsers.has(otherParticipantUid);
+                const isGroupCallActive = conv.is_group && groupVoiceCallActiveRooms?.has(conv.id);
                 
                 return (
                   <button
@@ -165,6 +172,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                       </div>
                       {isOnline && (
                         <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-4 border-app-card rounded-full shadow-lg" />
+                      )}
+                      {isGroupCallActive && (
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-4 border-app-card rounded-full shadow-lg flex items-center justify-center animate-pulse">
+                          <Phone className="w-2 h-2 text-white fill-white" />
+                        </div>
                       )}
                     </div>
                     
@@ -276,11 +288,21 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     </h4>
                     <div className="flex items-center gap-2 mt-1">
                       {activeConversation.is_group ? (
-                        <div className="flex items-center gap-1.5 bg-app-accent px-2.5 py-1 rounded-full border border-app-border">
-                          <Users className="w-3 h-3 text-app-muted" />
-                          <span className="text-[10px] font-bold text-app-muted uppercase tracking-wide">
-                            {activeConversation.participants.length} deelnemers
-                          </span>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5 bg-app-accent px-2.5 py-1 rounded-full border border-app-border">
+                            <Users className="w-3 h-3 text-app-muted" />
+                            <span className="text-[10px] font-bold text-app-muted uppercase tracking-wide">
+                              {activeConversation.participants.length} deelnemers
+                            </span>
+                          </div>
+                          {groupVoiceCallActiveRooms?.has(activeConversation.id) && (
+                            <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 animate-pulse">
+                              <Volume2 className="w-3 h-3 text-emerald-600" />
+                              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
+                                Live Call Gaande
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ) : (() => {
                         const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
@@ -316,34 +338,56 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   </div>
                 </div>
 
-                {activeConversation && !activeConversation.is_group && onStartCall && (() => {
-                  const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
-                  const isActivePeer = activeCallUserId && otherUid === activeCallUserId;
-                  
-                  return (
+                <div className="flex items-center gap-2 ml-auto">
+                  {activeConversation && activeConversation.is_group && onStartGroupCall && (
                     <button
                       onClick={() => {
-                        const otherName = otherUid ? activeConversation.participant_names[otherUid] : 'Onbekend';
-                        const otherAvatar = otherUid ? activeConversation.participant_photos[otherUid] : undefined;
-                        if (otherUid) {
-                          if (isActivePeer && onEndCall) {
-                            onEndCall();
-                          } else {
-                            onStartCall(otherUid, otherName, otherAvatar);
-                          }
+                        if (playSound) {
+                          playSound('https://www.image2url.com/r2/default/audio/1778155099351-512c1936-e820-4e67-8af0-a035a92a54ea.mp3', true, user.uid, user.displayName || 'Anoniem');
                         }
+                        onStartGroupCall(activeConversation.id, activeConversation.name || 'Groepsgesprek');
                       }}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ml-auto active:scale-95 ${
-                        isActivePeer 
-                          ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
-                          : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
-                      }`}
-                      title={isActivePeer ? "Ophangen" : "Start spraakoproep"}
+                      className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-all shadow-lg active:scale-95 shadow-emerald-500/20"
+                      title="Start Groepscall"
                     >
-                      {isActivePeer ? <PhoneOff size={18} /> : <Phone size={18} />}
+                      <Phone size={18} />
                     </button>
-                  );
-                })()}
+                  )}
+
+                  {activeConversation && !activeConversation.is_group && onStartCall && (() => {
+                    const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
+                    const isActivePeer = activeCallUserId && otherUid === activeCallUserId;
+                    
+                    return (
+                      <button
+                        onClick={() => {
+                          const otherName = otherUid ? activeConversation.participant_names[otherUid] : 'Onbekend';
+                          const otherAvatar = otherUid ? activeConversation.participant_photos[otherUid] : undefined;
+                          
+                          if (playSound && !isActivePeer) {
+                            playSound('https://www.image2url.com/r2/default/audio/1778155099351-512c1936-e820-4e67-8af0-a035a92a54ea.mp3', true, user.uid, user.displayName || 'Anoniem');
+                          }
+                          
+                          if (otherUid) {
+                            if (isActivePeer && onEndCall) {
+                              onEndCall();
+                            } else {
+                              onStartCall(otherUid, otherName, otherAvatar);
+                            }
+                          }
+                        }}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
+                          isActivePeer 
+                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
+                            : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                        }`}
+                        title={isActivePeer ? "Ophangen" : "Start spraakoproep"}
+                      >
+                        {isActivePeer ? <PhoneOff size={18} /> : <Phone size={18} />}
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
             </header>
 
