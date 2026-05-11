@@ -3222,9 +3222,9 @@ export default function App() {
     }
   };
 
-  const handleUpdateMessage = async (messageId: string, customText?: string) => {
+  const handleUpdateDirectMessage = async (messageId: string, customText?: string) => {
     const textToUse = (customText !== undefined ? customText : editMessageInput).trim();
-    if (!textToUse || !activeConversation) return;
+    if (!textToUse || !activeConversation || !user) return;
     if (!checkRateLimit()) return;
     setSaving(true);
     
@@ -3324,12 +3324,12 @@ export default function App() {
     }
   };
 
-  const handleDeleteMessage = async (messageId: string) => {
-    if (!activeConversation) return;
+  const handleDeleteDirectMessage = async (messageId: string) => {
+    if (!activeConversation || !user) return;
     if (!checkRateLimit()) return;
     
     const deletePromise = (async () => {
-      console.log('Attempting to delete message:', messageId);
+      console.log('Attempting to delete direct message:', messageId);
       let query = supabaseClient
         .from('messages')
         .delete()
@@ -4714,6 +4714,8 @@ export default function App() {
                   onEndCall={voiceCall.endCall}
                   activeCallUserId={activeCallUserId}
                   playSound={playSound}
+                  onDeleteMessage={handleDeleteDirectMessage}
+                  onEditMessage={handleUpdateDirectMessage}
                 />
               )}
 

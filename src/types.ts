@@ -133,6 +133,7 @@ export interface DirectMessage {
   created_at: string;
   is_encrypted?: boolean;
   iv?: string; // Initialization vector for AES-GCM
+  is_edited?: boolean;
 }
 
 export interface Nickname {

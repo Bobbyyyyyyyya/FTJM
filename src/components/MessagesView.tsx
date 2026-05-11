@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2 } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -32,6 +32,8 @@ interface MessagesViewProps {
   activeCallUserId?: string;
   groupVoiceCallActiveRooms?: Set<string>;
   playSound?: (url: string, enabled: boolean, uid: string, name: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, newText: string) => void;
 }
 
 export const MessagesView: React.FC<MessagesViewProps> = ({
@@ -60,8 +62,13 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   onEndCall,
   activeCallUserId,
   groupVoiceCallActiveRooms,
-  playSound
+  playSound,
+  onDeleteMessage,
+  onEditMessage
 }) => {
+  const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null);
+  const [editInput, setEditInput] = React.useState('');
+
   return (
     <div 
       className={`bg-app-card rounded-[2.5rem] border border-app-border shadow-2xl overflow-hidden h-[calc(100vh-14rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
@@ -435,13 +442,82 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                               {activeConversation.participant_names[msg.sender_id] || 'Onbekend'}
                             </span>
                           )}
-                          <div className={`
-                            px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative group/msg font-medium
-                            ${isMe 
-                              ? 'bg-app-ink text-app-bg rounded-br-none hover:shadow-xl' 
-                              : 'bg-app-card text-app-ink border border-app-border rounded-bl-none hover:border-app-border'}
-                          `}>
-                            <RichContent content={msg.text} />
+                          <div className={`flex items-center gap-2 group/msg ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                            <div className={`
+                              px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative font-medium
+                              ${isMe 
+                                ? 'bg-app-ink text-app-bg rounded-br-none hover:shadow-xl' 
+                                : 'bg-app-card text-app-ink border border-app-border rounded-bl-none hover:border-app-border'}
+                            `}>
+                              {editingMessageId === msg.id ? (
+                                <div className="flex flex-col gap-3 min-w-[200px]">
+                                  <input 
+                                    value={editInput}
+                                    onChange={(e) => setEditInput(e.target.value)}
+                                    className="w-full bg-app-bg/10 border-none focus:ring-2 focus:ring-app-bg/30 text-app-bg text-sm p-2 rounded-xl"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        onEditMessage?.(msg.id, editInput);
+                                        setEditingMessageId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingMessageId(null);
+                                      }
+                                    }}
+                                  />
+                                  <div className="flex justify-end gap-3">
+                                    <button 
+                                      onClick={() => setEditingMessageId(null)} 
+                                      className="p-1.5 hover:bg-app-bg/20 rounded-lg transition-colors"
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        onEditMessage?.(msg.id, editInput);
+                                        setEditingMessageId(null);
+                                      }} 
+                                      className="p-1.5 bg-app-bg/20 hover:bg-app-bg/30 rounded-lg transition-colors"
+                                    >
+                                      <Check size={16} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <RichContent content={msg.text} />
+                                  {msg.is_edited && (
+                                    <span className={`text-[8px] font-black uppercase tracking-widest mt-1 block ${isMe ? 'opacity-50' : 'text-app-muted opacity-70'}`}>
+                                      (Bewerkt)
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </div>
+
+                            {/* Action Buttons beside bubble */}
+                            {isMe && !editingMessageId && (
+                              <div className="flex flex-col gap-1 opacity-0 group-hover/msg:opacity-100 transition-all duration-200">
+                                <button 
+                                  onClick={() => { setEditingMessageId(msg.id); setEditInput(msg.text); }}
+                                  className="p-1.5 bg-app-card border border-app-border rounded-lg text-app-muted hover:text-app-ink hover:bg-app-accent transition-colors shadow-sm"
+                                  title="Bewerken"
+                                >
+                                  <Edit3 size={12} />
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    if (confirm('Weet je zeker dat je dit bericht wilt verwijderen?')) {
+                                      onDeleteMessage?.(msg.id);
+                                    }
+                                  }}
+                                  className="p-1.5 bg-app-card border border-app-border rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm"
+                                  title="Verwijderen"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <span className="mt-2 text-[8px] font-mono text-app-muted opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest">
                             {formatTime(msg.created_at)}
