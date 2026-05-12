@@ -482,14 +482,7 @@ export default function App() {
     return localStorage.getItem('cached_websiteStatus') || 'Online';
   });
   const [statusInput, setStatusInput] = useState('');
-  const [reports, setReports] = useState<Report[]>(() => {
-    try {
-      const cached = localStorage.getItem('cached_reports');
-      return cached ? JSON.parse(cached) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  const [reports, setReports] = useState<Report[]>([]); // Reports state remains but we don't fetch for admin UI anymore
   
   const hasFetchedConversations = useRef(false);
   const hasFetchedPosts = useRef(false);
@@ -530,8 +523,7 @@ export default function App() {
       'cached_profile', 'cached_posts', 'cached_whitelist', 
       'cached_isWhitelisted', 'cached_conversations', 
       'cached_notifications', 'cached_customTheme', 
-      'cached_useCustomTheme', 'cached_websiteStatus',
-      'cached_reports'
+      'cached_useCustomTheme', 'cached_websiteStatus'
     ];
     keysToRemove.forEach(key => localStorage.removeItem(key));
     toast.success('Cache gewist! De pagina wordt herladen...');
@@ -793,6 +785,8 @@ export default function App() {
       root.style.removeProperty('--custom-wallpaper-x');
       root.style.removeProperty('--custom-wallpaper-y');
       root.style.removeProperty('--custom-glass-bg');
+      root.style.removeProperty('--custom-glass-chat-bg');
+      root.style.removeProperty('--custom-glass-profile-bg');
       root.style.removeProperty('--custom-glass-blur');
       root.style.removeProperty('--custom-pattern');
       root.style.removeProperty('--custom-pattern-size');
@@ -834,12 +828,29 @@ export default function App() {
       const r = parseInt(customTheme.card_bg_color?.slice(1,3) || 'ff', 16);
       const g = parseInt(customTheme.card_bg_color?.slice(3,5) || 'ff', 16);
       const b = parseInt(customTheme.card_bg_color?.slice(5,7) || 'ff', 16);
-      const a = (customTheme.opacity || 100) / 100;
+      const a = (100 - (customTheme.opacity || 0)) / 100;
+      const chatA = (100 - (customTheme.chat_opacity ?? 0)) / 100;
+      const profileA = (100 - (customTheme.profile_card_opacity ?? 0)) / 100;
+      
       root.style.setProperty('--custom-glass-bg', `rgba(${r}, ${g}, ${b}, ${a})`);
+      root.style.setProperty('--custom-glass-chat-bg', `rgba(${r}, ${g}, ${b}, ${chatA})`);
+      root.style.setProperty('--custom-glass-profile-bg', `rgba(${r}, ${g}, ${b}, ${profileA})`);
       root.style.setProperty('--custom-glass-blur', `blur(${customTheme.blur_amount || 10}px)`);
+
+      // Handle borders and shadows for transparency
+      root.style.setProperty('--custom-glass-chat-border', chatA === 0 ? 'transparent' : 'var(--app-border)');
+      root.style.setProperty('--custom-glass-chat-shadow', chatA === 0 ? 'none' : 'var(--shadow-sm)');
+      root.style.setProperty('--custom-glass-profile-border', profileA === 0 ? 'transparent' : 'var(--app-border)');
+      root.style.setProperty('--custom-glass-profile-shadow', profileA === 0 ? 'none' : 'var(--shadow-sm)');
     } else {
       root.style.setProperty('--custom-glass-bg', customTheme.card_bg_color || '#ffffff');
+      root.style.setProperty('--custom-glass-chat-bg', customTheme.card_bg_color || '#ffffff');
+      root.style.setProperty('--custom-glass-profile-bg', customTheme.card_bg_color || '#ffffff');
       root.style.setProperty('--custom-glass-blur', 'none');
+      root.style.setProperty('--custom-glass-chat-border', 'var(--app-border)');
+      root.style.setProperty('--custom-glass-chat-shadow', 'var(--shadow-sm)');
+      root.style.setProperty('--custom-glass-profile-border', 'var(--app-border)');
+      root.style.setProperty('--custom-glass-profile-shadow', 'var(--shadow-sm)');
     }
     
     // Apply pattern
@@ -925,7 +936,7 @@ export default function App() {
       try {
         const { data, error } = await supabaseClient
           .from('notifications')
-          .select('*')
+          .select('id, user_id, actor_id, actor_name, actor_photo, type, resource_id, resource_type, content, is_read, created_at')
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -1034,7 +1045,7 @@ export default function App() {
           try {
             const { data, error } = await newClient
               .from('profiles')
-              .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, updated_at')
+              .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at')
               .eq('id', currentUser.uid)
               .single();
               
@@ -1280,51 +1291,19 @@ export default function App() {
       })
       .subscribe();
 
-    const reportsChannel = supabaseClient
-      .channel('reports_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, async (payload) => {
-        console.log('Admin: Real-time report change:', payload);
-        if (payload.eventType === 'INSERT') {
-          setReports(prev => {
-            const updated = [payload.new as Report, ...prev];
-            localStorage.setItem('cached_reports', JSON.stringify(updated));
-            return updated;
-          });
-          toast.info('Nieuw rapport binnengekomen');
-        } else if (payload.eventType === 'UPDATE') {
-          setReports(prev => {
-            const updated = prev.map(r => r.id === payload.new.id ? payload.new as Report : r);
-            localStorage.setItem('cached_reports', JSON.stringify(updated));
-            return updated;
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setReports(prev => {
-            const updated = prev.filter(r => r.id !== payload.old.id);
-            localStorage.setItem('cached_reports', JSON.stringify(updated));
-            return updated;
-          });
-        }
-      })
-      .subscribe();
-
     // Initial fetch if in admin view or not yet fetched
     if (isAdmin && user && (view === 'settings' && (settingsTab === 'admin' || settingsTab === 'profile'))) {
       const fetchAdminData = async () => {
         console.log('Admin: Fetching data (Explicit trigger)...');
         try {
-          const [wRes, rRes, uRes] = await Promise.all([
-            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
-            supabaseClient.from('reports').select('*').order('created_at', { ascending: false }),
-            supabaseClient.from('profiles').select('id, display_name, photo_url, email, created_at, updated_at, is_blocked').limit(200)
+          const [wRes, uRes] = await Promise.all([
+            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
+            supabaseClient.from('profiles').select('id, display_name, photo_url, email, created_at, is_blocked').limit(200)
           ]);
           
           if (wRes.error) {
             console.error('Admin: Error fetching whitelist:', wRes.error);
             toast.error('Fout bij ophalen whitelist');
-          }
-          if (rRes.error) {
-            console.error('Admin: Error fetching reports:', rRes.error);
-            toast.error('Fout bij ophalen rapporten');
           }
           if (uRes.error) {
             console.error('Admin: Error fetching users:', uRes.error);
@@ -1333,11 +1312,6 @@ export default function App() {
           if (wRes.data) {
             setWhitelist(wRes.data);
             localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
-          }
-          if (rRes.data) {
-            console.log('Admin: Reports fetched:', rRes.data.length);
-            setReports(rRes.data);
-            localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
           }
           if (uRes.data) {
             const sorted = [...uRes.data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
@@ -1353,17 +1327,12 @@ export default function App() {
       // Background fetch if admin but not in view yet
       const fetchAdminData = async () => {
         try {
-          const [wRes, rRes] = await Promise.all([
-            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
-            supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+          const [wRes] = await Promise.all([
+            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100)
           ]);
           if (wRes.data) {
             setWhitelist(wRes.data);
             localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
-          }
-          if (rRes.data) {
-            setReports(rRes.data);
-            localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
           }
           hasFetchedAdminData.current = true;
         } catch (e) {
@@ -1375,30 +1344,28 @@ export default function App() {
 
     return () => {
       supabaseClient.removeChannel(whitelistChannel);
-      supabaseClient.removeChannel(reportsChannel);
     };
   }, [isAdmin, user?.uid, view, settingsTab]);
 
   const fetchAdminData = async () => {
     if (!isAdmin || !user) return;
-    console.log('Admin: Fetching reports and whitelist...');
+    console.log('Admin: Fetching data...');
     try {
-      const [wRes, rRes] = await Promise.all([
-        supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }),
-        supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+      const [wRes, uRes] = await Promise.all([
+        supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
+        supabaseClient.from('profiles').select('id, display_name, photo_url, email, created_at, is_blocked').limit(200)
       ]);
       
       if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
-      if (rRes.error) console.error('Admin: Error fetching reports:', rRes.error);
+      if (uRes.error) console.error('Admin: Error fetching users:', uRes.error);
 
       if (wRes.data) {
         setWhitelist(wRes.data);
         localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
       }
-      if (rRes.data) {
-        console.log('Admin: Reports fetched:', rRes.data.length);
-        setReports(rRes.data);
-        localStorage.setItem('cached_reports', JSON.stringify(rRes.data));
+      if (uRes.data) {
+        const sorted = [...uRes.data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+        setUsers(sorted);
       }
       hasFetchedAdminData.current = true;
     } catch (err) {
@@ -1806,7 +1773,7 @@ export default function App() {
       setLoadingMoreMessages(true);
       const { data } = await supabaseClient
         .from('messages')
-        .select('id, conversation_id, sender_id, text, created_at, updated_at')
+        .select('id, conversation_id, sender_id, text, created_at')
         .eq('conversation_id', activeConversation.id)
         .order('created_at', { ascending: false })
         .limit(messagesLimit);
@@ -2190,7 +2157,7 @@ export default function App() {
       
       const { data, error } = await supabaseClient
         .from('posts')
-        .select('id, content, author_id, author_name, author_photo, created_at, updated_at, parent_id')
+        .select('id, content, author_id, author_name, author_photo, created_at, parent_id')
         .order('created_at', { ascending: false })
         .limit(100);
       
@@ -2222,8 +2189,9 @@ export default function App() {
       try {
         const { data, error } = await supabaseClient
           .from('forum_threads')
-          .select('*')
-          .order('updated_at', { ascending: false });
+          .select('id, author_id, author_name, author_photo, title, content, created_at, updated_at, comment_count')
+          .order('updated_at', { ascending: false })
+          .limit(50);
         
         if (data) {
           const decryptedThreads = (data as ForumThread[]).map(t => ({ 
@@ -2326,7 +2294,7 @@ export default function App() {
     
     const { data } = await supabaseClient
       .from('messages')
-      .select('id, conversation_id, sender_id, text, created_at, updated_at')
+      .select('id, conversation_id, sender_id, text, created_at')
       .eq('conversation_id', activeConversation.id)
       .lt('created_at', oldestMessage.created_at)
       .order('created_at', { ascending: false })
@@ -3003,7 +2971,7 @@ export default function App() {
     try {
       const { data, error } = await supabaseClient
         .from('forum_comments')
-        .select('*')
+        .select('id, thread_id, author_id, author_name, author_photo, content, created_at, parent_id')
         .eq('thread_id', thread.id)
         .order('created_at', { ascending: true });
         
@@ -3165,8 +3133,7 @@ export default function App() {
       let query = supabaseClient
         .from('posts')
         .update({
-          content: encryptedUpdate,
-          updated_at: new Date().toISOString()
+          content: encryptedUpdate
         })
         .eq('id', postId);
       
@@ -3189,15 +3156,14 @@ export default function App() {
           event: 'update_post',
           payload: { 
             id: postId, 
-            content: editPostInput.trim(),
-            updated_at: new Date().toISOString()
+            content: editPostInput.trim()
           }
         });
       }
 
       // Update local state immediately for better UX
       setPosts(prev => {
-        const newPosts = prev.map(p => p.id === postId ? { ...p, content: editPostInput.trim(), updated_at: new Date().toISOString() } : p);
+        const newPosts = prev.map(p => p.id === postId ? { ...p, content: editPostInput.trim() } : p);
         localStorage.setItem('cached_posts', JSON.stringify(newPosts));
         return newPosts;
       });
@@ -3593,27 +3559,11 @@ export default function App() {
   };
 
   const handleResolveReport = async (reportId: string) => {
-    if (!isAdmin) return;
-    if (!checkRateLimit()) return;
-    try {
-      const { error } = await supabaseClient.from('reports').update({ status: 'resolved' }).eq('id', reportId);
-      if (error) throw error;
-      toast.success('Rapport gemarkeerd als opgelost');
-    } catch (err) {
-      handleSupabaseError(err, 'rapport oplossen', user, isAdmin);
-    }
+    // Hidden functionality if needed later, but removed from UI
   };
 
   const handleDeleteReport = async (reportId: string) => {
-    if (!isAdmin) return;
-    if (!checkRateLimit()) return;
-    try {
-      const { error } = await supabaseClient.from('reports').delete().eq('id', reportId);
-      if (error) throw error;
-      toast.success('Rapport verwijderd');
-    } catch (err) {
-      handleSupabaseError(err, 'rapport verwijderen', user, isAdmin);
-    }
+    // Hidden functionality if needed later, but removed from UI
   };
 
   const handleStartGroupConversation = async (selectedUsers: UserProfile[], groupName: string) => {
@@ -4571,9 +4521,11 @@ export default function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="hidden lg:block lg:col-span-1 space-y-6">
                     <div 
-                      className={`bg-app-card rounded-3xl p-8 border border-app-border shadow-sm sticky top-24 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+                      className={`bg-app-card rounded-3xl p-8 border border-app-border shadow-sm sticky top-24 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-profile' : ''}`}
                       style={useCustomTheme ? { 
-                        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
+                        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.profile_card_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                        borderColor: customTheme.profile_card_opacity === 100 ? 'transparent' : undefined,
+                        boxShadow: customTheme.profile_card_opacity === 100 ? 'none' : undefined,
                         color: customTheme.text_color
                       } : {}}
                     >
@@ -4683,6 +4635,8 @@ export default function App() {
                   handleEmojiButtonClick={handleEmojiButtonClick}
                   handleImageUrl={handleImageUrl}
                   uploading={uploading}
+                  useCustomTheme={useCustomTheme}
+                  customTheme={customTheme}
                 />
               )}
 
@@ -4765,8 +4719,6 @@ export default function App() {
                     statusInput={statusInput}
                     setStatusInput={setStatusInput}
                     handleUpdateStatus={handleUpdateStatus}
-                    reports={reports}
-                    handleDeleteReport={handleDeleteReport}
                     fetchAdminData={fetchAdminData}
                     users={users}
                     handleBlockUser={handleBlockUser}

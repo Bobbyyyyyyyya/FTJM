@@ -84,6 +84,24 @@
   transition: background-color 0.3s ease, backdrop-filter 0.3s ease;
 }
 
+.custom-glass-chat {
+  background-color: var(--custom-glass-chat-bg) !important;
+  backdrop-filter: var(--custom-glass-blur) !important;
+  -webkit-backdrop-filter: var(--custom-glass-blur) !important;
+  border-color: var(--custom-glass-chat-border) !important;
+  box-shadow: var(--custom-glass-chat-shadow) !important;
+  transition: all 0.3s ease;
+}
+
+.custom-glass-profile {
+  background-color: var(--custom-glass-profile-bg) !important;
+  backdrop-filter: var(--custom-glass-blur) !important;
+  -webkit-backdrop-filter: var(--custom-glass-blur) !important;
+  border-color: var(--custom-glass-profile-border) !important;
+  box-shadow: var(--custom-glass-profile-shadow) !important;
+  transition: all 0.3s ease;
+}
+
 .custom-wallpaper {
   will-change: transform, opacity, filter;
   transform: translateZ(0);

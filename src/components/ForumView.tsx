@@ -30,6 +30,8 @@ interface ForumViewProps {
   replyingToComment: ForumComment | null;
   setReplyingToComment: (comment: ForumComment | null) => void;
   nicknames: Record<string, string>;
+  useCustomTheme: boolean;
+  customTheme: any;
 }
 
 export const ForumView: React.FC<ForumViewProps> = ({
@@ -56,7 +58,9 @@ export const ForumView: React.FC<ForumViewProps> = ({
   uploading,
   replyingToComment,
   setReplyingToComment,
-  nicknames
+  nicknames,
+  useCustomTheme,
+  customTheme
 }) => {
   return (
     <div className="space-y-8">
@@ -86,8 +90,16 @@ export const ForumView: React.FC<ForumViewProps> = ({
             Terug naar overzicht
           </button>
 
-          <div className="bg-app-card rounded-3xl border border-app-border shadow-sm overflow-hidden">
-            <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5">
+          <div 
+            className={`bg-app-card rounded-3xl border border-app-border shadow-sm overflow-hidden transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
+            style={useCustomTheme ? { 
+              backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+              borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+              boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
+              color: customTheme.text_color
+            } : {}}
+          >
+            <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5" style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent', borderColor: 'transparent' } : {}}>
                 <div className="flex items-center gap-3 mb-4">
                   {(activeThread.author_photo) ? (
                     <img src={activeThread.author_photo} alt="" className="w-8 h-8 rounded-full border border-app-border" />
@@ -123,6 +135,7 @@ export const ForumView: React.FC<ForumViewProps> = ({
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
                         className="flex items-center justify-between bg-app-accent/30 border border-app-border p-2 rounded-xl overflow-hidden"
+                        style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent', borderColor: 'transparent' } : {}}
                       >
                         <div className="flex items-center gap-2 overflow-hidden">
                           <div className="w-1 h-6 bg-app-ink rounded-full flex-shrink-0" />
@@ -145,8 +158,13 @@ export const ForumView: React.FC<ForumViewProps> = ({
                     placeholder="Wat vind jij hiervan?"
                     disabled={uploading}
                     className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[120px] resize-none"
+                    style={useCustomTheme ? { 
+                      backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                      borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+                      color: customTheme.text_color
+                    } : {}}
                   />
-                  <div className="flex items-center justify-between gap-2 bg-app-accent/20 p-2 rounded-xl">
+                  <div className="flex items-center justify-between gap-2 bg-app-accent/20 p-2 rounded-xl" style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent' } : {}}>
                     <div className="flex gap-1">
                       <button 
                         type="button"
@@ -181,7 +199,7 @@ export const ForumView: React.FC<ForumViewProps> = ({
 
               <div className="space-y-6">
                 {threadComments.length === 0 ? (
-                  <div className="text-center py-12 bg-app-accent/5 rounded-2xl border border-dashed border-app-border">
+                  <div className="text-center py-12 bg-app-accent/5 rounded-2xl border border-dashed border-app-border" style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent', borderColor: 'transparent' } : {}}>
                     <p className="text-app-muted text-sm">Nog geen reacties. Wees de eerste!</p>
                   </div>
                 ) : (
@@ -233,7 +251,14 @@ export const ForumView: React.FC<ForumViewProps> = ({
                             <MessageSquare className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                        <div className="text-app-ink text-sm sm:text-base leading-relaxed bg-app-accent/5 p-4 rounded-2xl border border-app-border/50">
+                        <div 
+                          className={`text-app-ink text-sm sm:text-base leading-relaxed bg-app-accent/5 p-4 rounded-2xl border border-app-border/50 transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
+                          style={useCustomTheme ? { 
+                            backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                            borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+                            color: customTheme.text_color
+                          } : {}}
+                        >
                           <RichContent content={comment.content} />
                         </div>
                       </div>
@@ -265,6 +290,10 @@ export const ForumView: React.FC<ForumViewProps> = ({
                   onChange={(e) => setThreadTitleInput(e.target.value)}
                   placeholder="Titel van je topic"
                   className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all font-bold text-lg text-app-ink"
+                  style={useCustomTheme ? { 
+                    backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                    color: customTheme.text_color
+                  } : {}}
                 />
                 <div className="space-y-4">
                   <textarea 
@@ -272,8 +301,12 @@ export const ForumView: React.FC<ForumViewProps> = ({
                     onChange={(e) => setThreadContentInput(e.target.value)}
                     placeholder="Waar wil je het over hebben?"
                     className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-app-ink min-h-[200px] resize-none"
+                    style={useCustomTheme ? { 
+                      backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                      color: customTheme.text_color
+                    } : {}}
                   />
-                  <div className="flex items-center gap-2 bg-app-accent/20 p-2 rounded-xl">
+                  <div className="flex items-center gap-2 bg-app-accent/20 p-2 rounded-xl" style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent' } : {}}>
                     <button 
                       type="button"
                       onClick={handleImageUrl}
@@ -318,12 +351,18 @@ export const ForumView: React.FC<ForumViewProps> = ({
             </div>
           ) : (
             threads.map(thread => (
-              <motion.div 
-                key={thread.id}
-                layout
-                onClick={() => handleOpenThread(thread)}
-                className="bg-app-card p-6 sm:p-8 rounded-3xl border border-app-border shadow-sm hover:shadow-md hover:border-app-ink/20 transition-all cursor-pointer group"
-              >
+                <motion.div 
+                  key={thread.id}
+                  layout
+                  onClick={() => handleOpenThread(thread)}
+                  className={`bg-app-card p-6 sm:p-8 rounded-3xl border border-app-border shadow-sm hover:shadow-md hover:border-app-ink/20 transition-all cursor-pointer group ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
+                  style={useCustomTheme ? { 
+                    backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                    borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+                    boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
+                    color: customTheme.text_color
+                  } : {}}
+                >
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-3 flex-1">
                     <div className="flex items-center gap-2 text-xs text-app-muted">

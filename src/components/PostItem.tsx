@@ -23,6 +23,8 @@ interface PostItemProps {
   saving: boolean;
   nicknames: Record<string, string>;
   allPosts: Post[];
+  useCustomTheme?: boolean;
+  customTheme?: any;
 }
 
 export const PostItem: React.FC<PostItemProps> = ({
@@ -42,7 +44,9 @@ export const PostItem: React.FC<PostItemProps> = ({
   onCancelEdit,
   saving,
   nicknames,
-  allPosts
+  allPosts,
+  useCustomTheme,
+  customTheme
 }) => {
   return (
     <motion.div 
@@ -51,7 +55,13 @@ export const PostItem: React.FC<PostItemProps> = ({
       animate={{ opacity: 1, y: 0 }}
       key={post.id}
       id={`post-${post.id}`}
-      className={`flex gap-3 sm:gap-4 group bg-app-card p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-app-border shadow-sm hover:shadow-md transition-all relative`}
+      className={`flex gap-3 sm:gap-4 group bg-app-card p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-app-border shadow-sm hover:shadow-md transition-all relative ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
+      style={useCustomTheme ? { 
+        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+        borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+        boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
+        color: customTheme.text_color
+      } : {}}
     >
       <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0">
         {post.author_photo ? (

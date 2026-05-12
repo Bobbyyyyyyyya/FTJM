@@ -48,6 +48,8 @@ export interface CustomTheme {
   glass_effect?: boolean;
   blur_amount?: number;
   opacity?: number;
+  chat_opacity?: number;
+  profile_card_opacity?: number;
   wallpaper_x?: number;
   wallpaper_y?: number;
   border_radius?: number;

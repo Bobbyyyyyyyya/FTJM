@@ -21,6 +21,10 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const [isMuted, setIsMuted] = useState(false);
   const [layout, setLayout] = useState<CallLayout>('large');
   const [isInitiator, setIsInitiator] = useState(false);
+  const [callCooldownUntil, setCallCooldownUntil] = useState<number | null>(null);
+  
+  const callStartTimeRef = useRef<number | 0>(0);
+  const callAttemptHistoryRef = useRef<number[]>([]);
   
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
@@ -96,6 +100,25 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       outboundChannelRef.current = null;
     }
     lastIncomingOfferRef.current = null;
+
+    // Check for spam behavior (calling and hanging up too fast)
+    const now = Date.now();
+    const duration = callStartTimeRef.current > 0 ? (now - callStartTimeRef.current) / 1000 : 0;
+    
+    // If call was in calling/ringing state or connected for less than 3 seconds
+    if (isInitiator && (callState === 'calling' || callState === 'ringing' || (callState === 'connected' && duration < 3))) {
+      const recentAttempts = callAttemptHistoryRef.current.filter(t => now - t < 30000);
+      recentAttempts.push(now);
+      callAttemptHistoryRef.current = recentAttempts;
+
+      if (recentAttempts.length >= 3) {
+        const timeout = now + 60000; // 1 minute timeout
+        setCallCooldownUntil(timeout);
+        toast.error('Je belt te vaak achter elkaar. Wacht een minuut.', { icon: '⏳' });
+      }
+    }
+
+    callStartTimeRef.current = 0;
     setCallState('idle');
     setActiveCall(null);
     setIsMuted(false);
@@ -393,6 +416,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
           console.log('Setting remote description (answer)');
           await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
           setCallState('connected');
+          callStartTimeRef.current = Date.now();
           
           if (dialingSoundRef.current) {
             dialingSoundRef.current.pause();
@@ -470,6 +494,13 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
 
   const initiateCall = async (targetId: string, targetName: string, targetAvatar?: string) => {
     try {
+      const now = Date.now();
+      if (callCooldownUntil && now < callCooldownUntil) {
+        const remaining = Math.ceil((callCooldownUntil - now) / 1000);
+        toast.error(`Wacht nog ${remaining} seconden voordat je weer belt.`, { icon: '⏳' });
+        return;
+      }
+
       console.log('Initiating call to:', targetId);
 
       // Safari Autoplay Fix: Unlock audio element early
@@ -493,6 +524,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       localStreamRef.current = stream;
       
       setCallState('calling');
+      callStartTimeRef.current = Date.now();
       if (dialingSoundRef.current) {
         dialingSoundRef.current.currentTime = 0;
         dialingSoundRef.current.play().catch(e => console.warn('Dialing sound failed:', e));
@@ -598,6 +630,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
         });
         
         setCallState('connected');
+        callStartTimeRef.current = Date.now();
         (window as any)._pendingCallOffer = null;
       }
     } catch (err) {
@@ -646,6 +679,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     toggleMute,
     layout,
     setLayout,
-    isInitiator
+    isInitiator,
+    callCooldownUntil
   };
 }

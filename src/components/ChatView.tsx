@@ -65,9 +65,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
 }) => {
   return (
     <div 
-      className={`bg-app-card rounded-3xl p-4 sm:p-8 border border-app-border shadow-sm transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+      className={`bg-app-card rounded-3xl p-4 sm:p-8 border border-app-border shadow-sm transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
       style={useCustomTheme ? { 
-        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
+        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+        borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+        boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
         color: customTheme.text_color
       } : {}}
     >
@@ -84,6 +86,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
               className="mb-3 flex items-center justify-between bg-app-accent/50 border border-app-border p-3 rounded-xl backdrop-blur-sm"
+              style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent', borderColor: 'transparent' } : {}}
             >
               <div className="flex items-center gap-2 overflow-hidden">
                 <div className="w-1 h-8 bg-app-ink rounded-full flex-shrink-0" />
@@ -132,6 +135,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
             placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Deel een bericht..."}
             disabled={cooldownRemaining > 0}
             className="w-full pl-4 sm:pl-6 pr-28 sm:pr-40 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
+            style={useCustomTheme ? { 
+              backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+              borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+              color: customTheme.text_color
+            } : {}}
             maxLength={1000}
           />
           <div className="absolute right-1 top-1 bottom-1 flex items-center gap-0.5 sm:gap-1">
@@ -193,6 +201,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
               saving={saving}
               nicknames={nicknames}
               allPosts={posts}
+              useCustomTheme={useCustomTheme}
+              customTheme={customTheme}
             />
           ))
         )}

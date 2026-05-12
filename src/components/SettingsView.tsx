@@ -47,8 +47,6 @@ interface SettingsViewProps {
   statusInput: string;
   setStatusInput: (input: string) => void;
   handleUpdateStatus: () => void;
-  reports: any[];
-  handleDeleteReport: (id: string) => void;
   fetchAdminData: () => Promise<void>;
   users: UserProfile[];
   handleBlockUser: (userId: string, isBlocked: boolean) => void;
@@ -73,7 +71,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#050005',
       glass_effect: true,
       blur_amount: 12,
-      opacity: 80,
+      opacity: 20,
+      chat_opacity: 30,
+      profile_card_opacity: 40,
       pattern: 'grid',
       border_radius: 12,
       font_family: 'mono',
@@ -94,7 +94,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#020617',
       glass_effect: true,
       blur_amount: 10,
-      opacity: 90,
+      opacity: 10,
+      chat_opacity: 15,
+      profile_card_opacity: 20,
       border_radius: 20,
       font_family: 'sans'
     }
@@ -113,7 +115,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#f0fdf4',
       glass_effect: true,
       blur_amount: 15,
-      opacity: 90,
+      opacity: 10,
+      chat_opacity: 20,
+      profile_card_opacity: 15,
       border_radius: 16,
       font_family: 'sans'
     }
@@ -149,7 +153,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#f5f3ff',
       glass_effect: true,
       blur_amount: 25,
-      opacity: 95,
+      opacity: 5,
+      chat_opacity: 15,
+      profile_card_opacity: 10,
       border_radius: 30,
       font_family: 'display'
     }
@@ -202,7 +208,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#fff1f2',
       glass_effect: true,
       blur_amount: 10,
-      opacity: 85,
+      opacity: 15,
+      chat_opacity: 25,
+      profile_card_opacity: 30,
       border_radius: 24,
       font_family: 'display'
     }
@@ -221,7 +229,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#e5e9f0',
       glass_effect: true,
       blur_amount: 10,
-      opacity: 90,
+      opacity: 10,
+      chat_opacity: 20,
+      profile_card_opacity: 15,
       border_radius: 12,
       font_family: 'sans'
     }
@@ -257,7 +267,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#fdf4ff',
       glass_effect: true,
       blur_amount: 15,
-      opacity: 85,
+      opacity: 15,
+      chat_opacity: 25,
+      profile_card_opacity: 20,
       border_radius: 40,
       font_family: 'display'
     }
@@ -276,7 +288,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#022c22',
       glass_effect: true,
       blur_amount: 10,
-      opacity: 90,
+      opacity: 10,
+      chat_opacity: 20,
+      profile_card_opacity: 15,
       border_radius: 12,
       font_family: 'sans'
     }
@@ -295,7 +309,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       body_bg_color: '#082f49',
       glass_effect: true,
       blur_amount: 20,
-      opacity: 80,
+      opacity: 20,
+      chat_opacity: 30,
+      profile_card_opacity: 25,
       border_radius: 16,
       font_family: 'sans'
     }
@@ -360,8 +376,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   statusInput,
   setStatusInput,
   handleUpdateStatus,
-  reports,
-  handleDeleteReport,
   fetchAdminData,
   users,
   handleBlockUser,
@@ -894,9 +908,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           </div>
                           <div className="space-y-3">
                             <div className="flex justify-between text-[8px] font-bold text-app-muted uppercase tracking-wide">
-                              <span>Overlay Opacity ({customTheme.opacity || 100}%)</span>
+                              <span>Transparency ({customTheme.opacity || 0}%)</span>
                             </div>
-                            <input type="range" min="10" max="100" value={customTheme.opacity || 100} onChange={(e) => setCustomTheme({...customTheme, opacity: parseInt(e.target.value)})} className="w-full accent-app-ink" />
+                            <input type="range" min="0" max="100" value={customTheme.opacity || 0} onChange={(e) => setCustomTheme({...customTheme, opacity: parseInt(e.target.value)})} className="w-full accent-app-ink" />
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between text-[8px] font-bold text-app-muted uppercase tracking-wide">
+                              <span>Chat Transparency ({customTheme.chat_opacity || 0}%)</span>
+                            </div>
+                            <input type="range" min="0" max="100" value={customTheme.chat_opacity ?? 0} onChange={(e) => setCustomTheme({...customTheme, chat_opacity: parseInt(e.target.value)})} className="w-full accent-app-ink" />
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between text-[8px] font-bold text-app-muted uppercase tracking-wide">
+                              <span>Profile Card Transparency ({customTheme.profile_card_opacity || 0}%)</span>
+                            </div>
+                            <input type="range" min="0" max="100" value={customTheme.profile_card_opacity ?? 0} onChange={(e) => setCustomTheme({...customTheme, profile_card_opacity: parseInt(e.target.value)})} className="w-full accent-app-ink" />
                           </div>
                         </div>
                       </div>
@@ -1354,7 +1380,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     ))}
                   </div>
                 </div>
-
                 {/* System Status */}
                 <div className="space-y-6 pt-8 border-t border-app-border">
                   <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
@@ -1405,61 +1430,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     >
                       Zet Offline
                     </button>
-                  </div>
-                </div>
-
-                {/* Reports Management */}
-                <div className="space-y-6 pt-8 border-t border-app-border">
-                  <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center justify-between group">
-                    <div className="flex items-center gap-2">
-                      <Flag className="w-4 h-4" />
-                      Rapportages ({reports.length})
-                    </div>
-                    <button 
-                      onClick={() => {
-                        toast.promise(fetchAdminData(), {
-                          loading: 'Verversen...',
-                          success: 'Data bijgewerkt',
-                          error: 'Verversen mislukt'
-                        });
-                      }}
-                      className="p-1.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all"
-                      title="Ververs rapporten"
-                    >
-                      <Activity className="w-3.5 h-3.5" />
-                    </button>
-                  </h4>
-                  <div className="space-y-3">
-                    {reports.length === 0 ? (
-                      <div className="p-10 text-center bg-app-accent/20 rounded-3xl border border-dashed border-app-border">
-                        <ShieldCheck className="w-10 h-10 text-app-muted mx-auto mb-2 opacity-20" />
-                        <p className="text-xs text-app-muted font-bold uppercase tracking-widest">Geen actieve meldingen</p>
-                      </div>
-                    ) : (
-                      reports.map(report => (
-                        <div key={report.id} className="p-5 bg-app-card border border-app-border rounded-2xl shadow-sm space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wide ${
-                                report.target_type === 'user' ? 'bg-blue-100 text-blue-600' : report.target_type === 'post' ? 'bg-amber-100 text-amber-600' : 'bg-purple-100 text-purple-600'
-                              }`}>
-                                {report.target_type}
-                              </span>
-                              <span className="text-[10px] font-bold text-app-muted">{formatDate(report.created_at)}</span>
-                            </div>
-                            <button onClick={() => handleDeleteReport(report.id)} className="p-1.5 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                          <p className="text-xs font-bold text-app-ink">Rapporteur: <span className="text-app-muted">{report.reporter_name}</span></p>
-                          <p className="text-xs font-bold text-app-ink">Doelwit: <span className="text-app-muted">{report.target_name}</span></p>
-                          <div className="p-3 bg-app-accent/30 rounded-xl">
-                            <p className="text-[10px] font-bold text-app-muted uppercase tracking-wide mb-1">Reden: {report.reason}</p>
-                            <p className="text-xs text-app-ink italic">"{report.details}"</p>
-                          </div>
-                        </div>
-                      ))
-                    )}
                   </div>
                 </div>
               </div>

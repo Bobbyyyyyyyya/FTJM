@@ -71,14 +71,21 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
   return (
     <div 
-      className={`bg-app-card rounded-[2.5rem] border border-app-border shadow-2xl overflow-hidden h-[calc(100vh-14rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
+      className={`bg-app-card rounded-[2.5rem] border border-app-border shadow-2xl overflow-hidden h-[calc(100vh-14rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
       style={useCustomTheme ? { 
-        backgroundColor: customTheme.glass_effect ? undefined : customTheme.card_bg_color,
+        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+        borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+        boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
         color: customTheme.text_color
       } : {}}
     >
       {/* Conversations List */}
-      <div className={`${mobileChatView === 'chat' ? 'hidden sm:flex' : 'flex'} w-full sm:w-96 border-r border-app-border flex-col bg-app-bg/30 backdrop-blur-sm`}>
+      <div className={`${mobileChatView === 'chat' ? 'hidden sm:flex' : 'flex'} w-full sm:w-96 border-r border-app-border flex-col bg-app-bg/30 backdrop-blur-sm`}
+        style={useCustomTheme ? { 
+          backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+          borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+        } : {}}
+      >
         {/* Security Status Header */}
         <div className="px-6 py-3 border-b border-app-border bg-emerald-500/5 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -444,11 +451,19 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                           )}
                           <div className={`flex items-center gap-2 group/msg ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                             <div className={`
-                              px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative font-medium
-                              ${isMe 
-                                ? 'bg-app-ink text-app-bg rounded-br-none hover:shadow-xl' 
-                                : 'bg-app-card text-app-ink border border-app-border rounded-bl-none hover:border-app-border'}
-                            `}>
+                                px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative font-medium
+                                ${isMe 
+                                  ? 'bg-app-ink text-app-bg rounded-br-none hover:shadow-xl' 
+                                  : 'bg-app-card text-app-ink border border-app-border rounded-bl-none hover:border-app-border'}
+                                ${!isMe && useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}
+                              `}
+                              style={!isMe && useCustomTheme ? { 
+                                backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                                borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+                                boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
+                                color: customTheme.text_color
+                              } : {}}
+                            >
                               {editingMessageId === msg.id ? (
                                 <div className="flex flex-col gap-3 min-w-[200px]">
                                   <input 
@@ -552,6 +567,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   }}
                   placeholder="Type je bericht..."
                   className="w-full pl-5 sm:pl-8 pr-32 sm:pr-48 py-4 sm:py-5 bg-app-bg/50 border-2 border-app-border rounded-2xl sm:rounded-3xl focus:border-app-ink focus:ring-0 transition-all font-bold text-app-ink placeholder:text-app-muted/50 text-sm sm:text-base"
+                  style={useCustomTheme ? { 
+                    backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+                    borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+                    color: customTheme.text_color
+                  } : {}}
                 />
                 <div className="absolute right-1 sm:right-2 top-1 sm:top-2 bottom-1 sm:bottom-2 flex items-center gap-0.5 sm:gap-1.5">
                   <button 
