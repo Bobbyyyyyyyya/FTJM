@@ -25,7 +25,6 @@ interface MessagesViewProps {
   sending: boolean;
   useCustomTheme: boolean;
   customTheme: CustomTheme;
-  hasSharedKey?: boolean;
   onStartCall?: (targetId: string, targetName: string, targetAvatar?: string) => void;
   onStartGroupCall?: (roomId: string, roomName: string) => void;
   onEndCall?: () => void;
@@ -56,7 +55,6 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   sending,
   useCustomTheme,
   customTheme,
-  hasSharedKey,
   onStartCall,
   onStartGroupCall,
   onEndCall,
@@ -86,27 +84,6 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
         } : {}}
       >
-        {/* Security Status Header */}
-        <div className="px-6 py-3 border-b border-app-border bg-emerald-500/5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest leading-none">P256 Encryption Active</span>
-          </div>
-          <button 
-            onClick={() => {
-              // This is handled in App.tsx by resetting a trigger or just re-syncing
-              window.dispatchEvent(new CustomEvent('re-sync-encryption'));
-            }}
-            className="text-[8px] font-black text-emerald-600 hover:text-emerald-800 uppercase underline"
-            title="Sleutels opnieuw synchroniseren"
-          >
-            Decrypt All
-          </button>
-          <div className="flex items-center gap-1.5 opacity-60">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          </div>
-        </div>
-
         <div className="p-8 border-b border-app-border flex items-center justify-between">
           <div>
             <h3 className="font-bold text-xl text-app-ink tracking-tight">Inbox</h3>
@@ -330,21 +307,12 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                                 {isOnline ? 'Online' : 'Offline'}
                               </span>
                             </div>
-                            {hasSharedKey === false ? (
-                              <div className="flex items-center gap-1.5 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
-                                <ShieldCheck className="w-3 h-3 text-amber-600" />
-                                <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">
-                                  Wachten op sleutel
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
-                                  Beveiligd
-                                </span>
-                              </div>
-                            )}
+                            <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
+                                Beveiligd
+                              </span>
+                            </div>
                           </div>
                         );
                       })()}

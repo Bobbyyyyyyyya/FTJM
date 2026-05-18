@@ -182,11 +182,8 @@ export default function App() {
     } else {
       localStorage.removeItem('active_conversation');
     }
-    // Clear decryption attempts when switching conversations
-    decryptionAttempts.current.clear();
   };
   const [messages, setMessages] = useState<DirectMessage[]>([]);
-  const [reSyncTrigger, setReSyncTrigger] = useState(0);
   const [messageInput, setMessageInput] = useState('');
   const [messageTimestamps, setMessageTimestamps] = useState<number[]>([]);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
@@ -196,9 +193,6 @@ export default function App() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editMessageInput, setEditMessageInput] = useState('');
   
-  // Track decryption attempts to avoid infinite loops and redundant work
-  const decryptionAttempts = useRef<Set<string>>(new Set());
-  const conversationDecryptionAttempts = useRef<Map<string, string>>(new Map());
   const [replyingTo, setReplyingTo] = useState<Post | null>(null);
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
@@ -274,17 +268,8 @@ export default function App() {
     };
     window.addEventListener('beforeinstallprompt', handler);
     
-    const handleReSync = () => {
-      decryptionAttempts.current.clear();
-      conversationDecryptionAttempts.current.clear();
-      setReSyncTrigger(prev => prev + 1);
-      toast.success('System re-sync gestart...');
-    };
-    window.addEventListener('re-sync-encryption', handleReSync);
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
-      window.removeEventListener('re-sync-encryption', handleReSync);
     };
   }, []);
 
@@ -1453,7 +1438,8 @@ export default function App() {
         table: 'conversations'
       }, async (payload) => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const updatedConv = payload.new as Conversation;
+          const updatedConvRaw = payload.new as Conversation;
+          const updatedConv = { ...updatedConvRaw, last_message: decryptGeneralChat(updatedConvRaw.last_message || '') };
           
           // Efficient filtering
           if (updatedConv.participants && !updatedConv.participants.includes(user.uid)) return;
@@ -1526,7 +1512,8 @@ export default function App() {
       })
       .on('broadcast', { event: 'conversation_update' }, (payload) => {
         console.log('Broadcast conversation update received:', payload);
-        const update = payload.payload;
+        const updateRaw = payload.payload;
+        const update = { ...updateRaw, last_message: decryptGeneralChat(updateRaw.last_message || '') };
         setConversations(prev => {
           const newConvs = prev.map(c => c.id === update.id ? { ...c, ...update } : c);
           return newConvs.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
@@ -1534,7 +1521,8 @@ export default function App() {
       })
       .on('broadcast', { event: 'new_conversation' }, (payload) => {
         console.log('Broadcast new conversation received:', payload);
-        const newConv = payload.payload as Conversation;
+        const newConvRaw = payload.payload as Conversation;
+        const newConv = { ...newConvRaw, last_message: decryptGeneralChat(newConvRaw.last_message || '') };
         setConversations(prev => {
           if (prev.some(c => c.id === newConv.id)) return prev;
           const newConvs = [newConv, ...prev];
@@ -1566,8 +1554,14 @@ export default function App() {
         }
 
         if (data) {
+          // Decrypt last messages if present
+          const decryptedData = (data as Conversation[]).map(c => ({
+            ...c,
+            last_message: decryptGeneralChat(c.last_message || '')
+          }));
+
           // If last_message is missing for some conversations, try to fetch it from messages table
-          const conversationsWithLastMessage = await Promise.all(data.map(async (conv) => {
+          const conversationsWithLastMessage = await Promise.all(decryptedData.map(async (conv) => {
             if (!conv.last_message) {
               const { data: lastMsg } = await supabaseClient
                 .from('messages')
@@ -1578,9 +1572,10 @@ export default function App() {
                 .maybeSingle();
               
               if (lastMsg) {
+                const decryptedLastMsg = decryptGeneralChat(lastMsg.text);
                 return {
                   ...conv,
-                  last_message: lastMsg.text,
+                  last_message: decryptedLastMsg,
                   last_message_sender_id: lastMsg.sender_id,
                   updated_at: lastMsg.created_at
                 };
@@ -1619,7 +1614,12 @@ export default function App() {
         return;
       }
 
-      const conversationsWithLastMsg = await Promise.all((data || []).map(async (conv) => {
+      const decryptedData = (data || []).map(c => ({
+        ...c,
+        last_message: decryptGeneralChat(c.last_message || '')
+      }));
+
+      const conversationsWithLastMsg = await Promise.all(decryptedData.map(async (conv) => {
         const { data: lastMsg } = await supabaseClient
           .from('messages')
           .select('text, sender_id, created_at')
@@ -1629,9 +1629,10 @@ export default function App() {
           .maybeSingle(); // Use maybeSingle to avoid error if no messages
         
         if (lastMsg) {
+          const decryptedLastMsg = decryptGeneralChat(lastMsg.text);
           return {
             ...conv,
-            last_message: lastMsg.text,
+            last_message: decryptedLastMsg,
             last_message_sender_id: lastMsg.sender_id,
             updated_at: lastMsg.created_at
           };
@@ -1664,10 +1665,11 @@ export default function App() {
       }, (payload) => {
         console.log('Real-time message change:', payload);
         if (payload.eventType === 'INSERT') {
-          const msg = payload.new as DirectMessage;
+          const msgRaw = payload.new as DirectMessage;
           
           const handleIncoming = async () => {
-            let processedMsg = msg;
+            const decryptedText = decryptGeneralChat(msgRaw.text);
+            const processedMsg = { ...msgRaw, text: decryptedText };
 
             // Update conversations list preview
             setConversations(prev => {
@@ -1678,7 +1680,7 @@ export default function App() {
               const next = [...prev];
               next[index] = {
                 ...currentConv,
-                last_message: processedMsg.text,
+                last_message: decryptedText,
                 last_message_sender_id: processedMsg.sender_id,
                 updated_at: processedMsg.created_at
               };
@@ -1702,7 +1704,8 @@ export default function App() {
 
           handleIncoming();
         } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as DirectMessage;
+          const updatedRaw = payload.new as DirectMessage;
+          const updated = { ...updatedRaw, text: decryptGeneralChat(updatedRaw.text) };
           setMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
         } else if (payload.eventType === 'DELETE') {
           const deletedId = payload.old?.id;
@@ -1713,10 +1716,11 @@ export default function App() {
       })
       .on('broadcast', { event: 'new_message' }, (payload) => {
         console.log('Broadcast message received:', payload);
-        const msg = payload.payload as DirectMessage;
+        const msgRaw = payload.payload as DirectMessage;
         
         const handleNewBroadcast = async () => {
-          let processedMsg = msg;
+          const decryptedText = decryptGeneralChat(msgRaw.text);
+          const processedMsg = { ...msgRaw, text: decryptedText };
 
           // Update conversations list preview
           setConversations(prev => {
@@ -1727,7 +1731,7 @@ export default function App() {
             const next = [...prev];
             next[index] = {
               ...currentConv,
-              last_message: processedMsg.text,
+              last_message: decryptedText,
               last_message_sender_id: processedMsg.sender_id,
               updated_at: processedMsg.created_at
             };
@@ -1743,10 +1747,11 @@ export default function App() {
       })
       .on('broadcast', { event: 'update_message' }, (payload) => {
         console.log('Broadcast update message received:', payload);
-        const update = payload.payload;
+        const updateRaw = payload.payload;
         
         const handleUpdateBroadcast = async () => {
-          let decryptedText = update.text;
+          const decryptedText = decryptGeneralChat(updateRaw.text);
+          const update = { ...updateRaw, text: decryptedText };
 
           setMessages(prev => prev.map(m => m.id === update.id ? { 
             ...m, 
@@ -1779,8 +1784,13 @@ export default function App() {
         .limit(messagesLimit);
       
       if (data) {
+        // Decrypt messages
+        const decryptedMessages = (data as DirectMessage[]).map(m => ({
+          ...m,
+          text: decryptGeneralChat(m.text)
+        }));
         // Don't reverse - we want newest first at index 0 for flex-col-reverse
-        setMessages(data as DirectMessage[]);
+        setMessages(decryptedMessages);
         setHasMoreMessages(data.length === messagesLimit);
       }
       setLoadingMoreMessages(false);
@@ -2302,7 +2312,11 @@ export default function App() {
       
     if (data && data.length > 0) {
       const sorted = data.reverse();
-      setMessages(prev => [...sorted, ...prev]);
+      const decryptedMessages = sorted.map(m => ({
+        ...m,
+        text: decryptGeneralChat(m.text)
+      }));
+      setMessages(prev => [...decryptedMessages, ...prev]);
       setHasMoreMessages(data.length === newLimit);
     } else {
       setHasMoreMessages(false);
@@ -3203,7 +3217,8 @@ export default function App() {
 
       console.log('Attempting to update message:', messageId);
       
-      let payloadText = textToUse;
+      const encryptedText = encryptGeneralChat(textToUse);
+      let payloadText = encryptedText;
 
       let query = supabaseClient
         .from('messages')
@@ -3731,7 +3746,8 @@ export default function App() {
     try {
       console.log('Attempting to send message:', { text, conversation_id: activeConversation.id });
       
-      let payloadText = text;
+      const encryptedText = encryptGeneralChat(text);
+      let payloadText = encryptedText;
 
       const { data: insertedMsg, error: msgError } = await supabaseClient
         .from('messages')
@@ -4653,7 +4669,6 @@ export default function App() {
                   handleTyping={handleTyping}
                   handleEmojiButtonClick={handleEmojiButtonClick}
                   handleImageUrl={handleImageUrl}
-                  hasSharedKey={false}
                   typingStatuses={typingStatuses}
                   mobileChatView={mobileChatView}
                   setMobileChatView={setMobileChatView}

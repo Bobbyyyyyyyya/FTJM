@@ -139,12 +139,12 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       font_family: 'serif'
     }
   },
-  'lavenda': {
-    name: 'Lavenda',
+  'lavender': {
+    name: 'Lavender',
     icon: Sparkles,
     theme: {
-      primary_color: '#8b5cf6',
-      secondary_color: '#ddd6fe',
+      primary_color: '#a78bfa',
+      secondary_color: '#7c3aed',
       accent_color: '#f5f3ff',
       text_color: '#2e1065',
       card_bg_color: '#ffffff',
@@ -152,11 +152,11 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       header_bg_color: '#ffffff',
       body_bg_color: '#f5f3ff',
       glass_effect: true,
-      blur_amount: 25,
-      opacity: 5,
-      chat_opacity: 15,
-      profile_card_opacity: 10,
-      border_radius: 30,
+      blur_amount: 15,
+      opacity: 10,
+      chat_opacity: 20,
+      profile_card_opacity: 15,
+      border_radius: 20,
       font_family: 'display'
     }
   },
@@ -175,6 +175,28 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       glass_effect: false,
       border_radius: 8,
       font_family: 'sans'
+    }
+  },
+  'lavender-oled': {
+    name: 'Lavender OLED',
+    icon: Sparkles,
+    theme: {
+      primary_color: '#4c1d95',
+      secondary_color: '#2e1065',
+      accent_color: '#0a0008',
+      text_color: '#8b5cf6',
+      card_bg_color: '#000000',
+      sidebar_bg_color: '#000000',
+      header_bg_color: '#000000',
+      body_bg_color: '#000000',
+      glass_effect: true,
+      blur_amount: 20,
+      opacity: 20,
+      chat_opacity: 30,
+      profile_card_opacity: 40,
+      border_radius: 16,
+      font_family: 'display',
+      pattern: 'dots'
     }
   },
   'matrix': {
@@ -1124,41 +1146,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div className="space-y-6">
-                <div className="p-6 bg-emerald-500/5 rounded-3xl border border-emerald-500/20 shadow-sm overflow-hidden relative group">
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <ShieldCheck className="w-20 h-20 text-emerald-600" />
-                  </div>
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-emerald-500 rounded-xl shadow-lg shadow-emerald-500/20">
-                        <LockIcon className="w-5 h-5 text-white" />
-                      </div>
-                      <h4 className="font-serif font-bold italic text-lg text-emerald-900">Communication Vault</h4>
-                    </div>
-                    <p className="text-sm text-emerald-800/80 mb-4 font-medium italic">
-                      Al je gesprekken binnen het platform worden nu beveiligd met industriële End-to-End encryptie (ECDH P-256 + AES-GCM). Jouw private key verlaat nooit je apparaat.
-                    </p>
-                    
-                    <div className="flex items-center gap-2">
-                       <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                       <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-600">Encryptie-Sleutel Actief</span>
-                    </div>
-
-                    {profile?.public_key && (
-                      <div className="mt-4 pt-4 border-t border-emerald-500/10">
-                        <p className="text-[8px] font-mono text-emerald-700/50 uppercase tracking-widest truncate">
-                          Public Identity: {profile.public_key.slice(0, 32)}...
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
                 <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
                   <h4 className="font-bold text-app-ink mb-2">Desktop App Installeren</h4>
-                  <p className="text-sm text-app-muted mb-6">
+                  <p className="text-sm text-app-muted mb-4">
                     Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.
                   </p>
+                  
+                  <div className="mb-6 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-tight">
+                      Belangrijk: Zorg ervoor dat pop-ups zijn toegestaan in je browser voor een optimale werking van de app en verificaties.
+                    </p>
+                  </div>
                   
                   {showInstallButton ? (
                     <button 
