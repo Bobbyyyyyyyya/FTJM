@@ -1529,6 +1529,83 @@ export default function App() {
           return newConvs.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
         });
       })
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+        console.log('Broadcast new message (on conversations channel) received:', payload);
+        const msgRaw = payload.payload as DirectMessage;
+        const decryptedText = decryptGeneralChat(msgRaw.text);
+        const processedMsg = { ...msgRaw, text: decryptedText };
+
+        // Update messages if this conversation is active
+        if (activeConversationRef.current?.id === processedMsg.conversation_id) {
+          setMessages(prev => {
+            if (prev.some(m => m.id === processedMsg.id)) return prev;
+            return [processedMsg, ...prev];
+          });
+        }
+
+        // Update conversations preview
+        setConversations(prev => {
+          const index = prev.findIndex(c => c.id === processedMsg.conversation_id);
+          if (index === -1) return prev;
+          const next = [...prev];
+          next[index] = {
+            ...next[index],
+            last_message: decryptedText,
+            last_message_sender_id: processedMsg.sender_id,
+            updated_at: processedMsg.created_at
+          };
+          return next.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+        });
+
+        // Trigger notification check
+        if (processedMsg.sender_id !== user.uid && 
+            (activeConversationRef.current?.id !== processedMsg.conversation_id || viewRef.current !== 'messages')) {
+          if (notificationSettingsRef.current.notify_new_messages) {
+            playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
+          }
+        }
+      })
+      .on('broadcast', { event: 'update_message' }, (payload) => {
+        console.log('Broadcast update message (on conversations channel) received:', payload);
+        const updateRaw = payload.payload;
+        const decryptedText = decryptGeneralChat(updateRaw.text);
+        const update = { ...updateRaw, text: decryptedText };
+
+        // Update messages if this conversation is active
+        if (activeConversationRef.current?.id === update.conversation_id) {
+          setMessages(prev => prev.map(m => m.id === update.id ? { 
+            ...m, 
+            ...update, 
+            text: decryptedText 
+          } : m));
+        }
+
+        // Update conversations preview if needed
+        setConversations(prev => {
+          const index = prev.findIndex(c => c.id === update.conversation_id);
+          if (index === -1) return prev;
+          // Only update if it looks like the last message
+          if (prev[index].updated_at <= update.updated_at) {
+            const next = [...prev];
+            next[index] = {
+              ...next[index],
+              last_message: decryptedText,
+              updated_at: update.updated_at
+            };
+            return next;
+          }
+          return prev;
+        });
+      })
+      .on('broadcast', { event: 'delete_message' }, (payload) => {
+        console.log('Broadcast delete message (on conversations channel) received:', payload);
+        const { id, conversation_id } = payload.payload;
+
+        // Update messages if this conversation is active
+        if (activeConversationRef.current?.id === conversation_id) {
+          setMessages(prev => prev.filter(m => m.id !== id));
+        }
+      })
       .subscribe((status) => {
         console.log(`Conversations subscription status for ${user.uid}:`, status);
         if (status === 'SUBSCRIBED') {
@@ -3252,6 +3329,24 @@ export default function App() {
         });
       }
 
+      // Targeted broadcast to each participant's personal conversations channel
+      if (activeConversation) {
+        activeConversation.participants.forEach(participantId => {
+          if (participantId === user.uid) return;
+          const targetChannel = supabaseClient.channel(`conversations:${participantId}`);
+          targetChannel.send({
+            type: 'broadcast',
+            event: 'update_message',
+            payload: { 
+              id: messageId, 
+              text: payloadText,
+              conversation_id: activeConversation.id,
+              updated_at: new Date().toISOString()
+            }
+          });
+        });
+      }
+
       // Update local state immediately for better UX
       setMessages(prev => prev.map(m => m.id === messageId ? { 
         ...m, 
@@ -3333,6 +3428,19 @@ export default function App() {
           type: 'broadcast',
           event: 'delete_message',
           payload: { id: messageId }
+        });
+      }
+
+      // Targeted broadcast to each participant's personal conversations channel
+      if (activeConversation) {
+        activeConversation.participants.forEach(participantId => {
+          if (participantId === user.uid) return;
+          const targetChannel = supabaseClient.channel(`conversations:${participantId}`);
+          targetChannel.send({
+            type: 'broadcast',
+            event: 'delete_message',
+            payload: { id: messageId, conversation_id: activeConversation.id }
+          });
         });
       }
 
@@ -3799,6 +3907,30 @@ export default function App() {
           payload: insertedMsg
         });
       }
+
+      // Targeted broadcast to each participant's personal conversations channel
+      activeConversation.participants.forEach(participantId => {
+        if (participantId === user.uid) return;
+        const targetChannel = supabaseClient.channel(`conversations:${participantId}`);
+        targetChannel.send({
+          type: 'broadcast',
+          event: 'conversation_update',
+          payload: {
+            id: activeConversation.id,
+            last_message: payloadText,
+            last_message_sender_id: user.uid,
+            updated_at: insertedMsg.created_at
+          }
+        });
+        
+        // Also send new_message broadcast to their personal channel in case they have it open
+        // but are on a different channel instance
+        targetChannel.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: insertedMsg
+        });
+      });
 
       setMessageInput('');
 
