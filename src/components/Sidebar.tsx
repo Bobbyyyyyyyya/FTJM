@@ -1,8 +1,7 @@
 import React from 'react';
 import { User as UserIcon, ShieldCheck } from 'lucide-react';
-import { UserProfile, CustomTheme } from '../types';
+import { UserProfile, CustomTheme, User } from '../types';
 import { formatDate } from '../utils/helpers';
-import { User } from '../lib/firebase';
 
 interface SidebarProps {
   user: User;

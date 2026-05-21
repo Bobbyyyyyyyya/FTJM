@@ -43,8 +43,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         className="w-full max-w-7xl mx-auto px-6 py-8 flex items-center justify-between relative z-50"
       >
         <div className="flex items-center gap-4 group cursor-pointer">
-          <div className="relative w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.15)] group-hover:scale-105 group-hover:-rotate-3 transition-all duration-500">
-            <Shield className="w-6 h-6 text-[#004276]" />
+          <div className="relative w-12 h-12 bg-transparent rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.15)] group-hover:scale-105 group-hover:-rotate-3 transition-all duration-500 overflow-hidden">
+            <img 
+              src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+              alt="FTJM Logo" 
+              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+            />
             <div className="absolute inset-0 border border-white/40 rounded-2xl scale-110 opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-500" />
           </div>
           <div className="flex flex-col">
@@ -54,7 +59,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         </div>
         
         <div className="hidden lg:flex items-center gap-2 bg-white/5 backdrop-blur-md border border-white/10 rounded-full p-1.5 shadow-xl">
-          {['Features', 'Visie', 'Juridisch'].map((item) => (
+          {['Doel', 'Features', 'Visie', 'Juridisch'].map((item) => (
             <a 
               key={item}
               href={`#${item.toLowerCase()}`} 
@@ -127,15 +132,80 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
               Verifieer Identiteit
             </button>
             <a 
-              href="#features"
+              href="#doel"
               className="group w-full sm:w-auto px-10 py-5 bg-black/20 text-white border border-white/10 rounded-2xl font-bold text-sm hover:bg-white/10 transition-all active:scale-[0.98] backdrop-blur-xl flex items-center justify-center gap-3 uppercase tracking-[0.1em]"
             >
-              Platform Architectuur
+              Doel van het Platform
               <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform text-cyan-400" />
             </a>
           </motion.div>
         </motion.div>
       </main>
+
+      {/* Doel van de app Section */}
+      <section id="doel" className="py-24 relative z-20 max-w-7xl mx-auto px-6">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
+          <div className="lg:col-span-5 space-y-6">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/5 rounded-full text-[10px] font-bold text-cyan-400 border border-white/10 uppercase tracking-[0.2em]">
+              <ShieldCheck className="w-3 h-3 text-cyan-400" /> Onze Missie
+            </div>
+            <h2 className="text-4xl sm:text-5xl font-black tracking-tighter text-white leading-[1.1]">
+              Waarom bestaat <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-200 to-white/60">het FTJM Platform?</span>
+            </h2>
+            <p className="text-lg text-blue-100/70 font-medium leading-relaxed">
+              Het FTJM Netwerk is gebouwd met een helder en compromisloos doel: een <strong>exclusieve, uiterst veilige en onafhankelijke digitale haven</strong> creëren voor FTJM-leden.
+            </p>
+            <p className="text-base text-blue-100/60 leading-relaxed font-normal">
+              In een tijdperk waarin publieke netwerken en reguliere communicatie-tools kwetsbaar zijn voor datalekken en ongewenste surveillance, biedt dit platform een ongeschonden toevluchtsoord. Hier kunnen we met volledige gemoedsrust de basis leggen voor de toekomst.
+            </p>
+          </div>
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md">
+              <div className="w-12 h-12 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center mb-6">
+                <Users className="w-6 h-6 text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Exclusieve Connectie</h3>
+              <p className="text-sm text-blue-100/60 leading-relaxed">
+                Het samenbrengen van geverifieerde FTJM-leden in een besloten kring, om synergetische relaties te versterken en hechte interactie te waarborgen.
+              </p>
+            </div>
+
+            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md">
+              <div className="w-12 h-12 rounded-2xl bg-blue-400/10 border border-blue-400/20 flex items-center justify-center mb-6">
+                <MessageSquare className="w-6 h-6 text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Diepgaande Discussie</h3>
+              <p className="text-sm text-blue-100/60 leading-relaxed">
+                Kennis structuren door moyen van gearchiveerde forums en real-time chats, waardoor waardevolle ideeën nooit verloren gaan en direct actiegericht zijn.
+              </p>
+            </div>
+
+            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md">
+              <div className="w-12 h-12 rounded-2xl bg-cyan-400/5 border border-cyan-400/10 flex items-center justify-center mb-6">
+                <Lock className="w-6 h-6 text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Onschendbare Privacy</h3>
+              <p className="text-sm text-blue-100/60 leading-relaxed">
+                Compromisloze beveiliging op militair niveau, zodat elke uitgewisselde gedachte of strategisch besluit strikt beveiligd binnen ons netwerk blijft.
+              </p>
+            </div>
+
+            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md flex flex-col justify-center items-start bg-gradient-to-br from-[#004276]/40 to-cyan-500/5">
+              <h4 className="text-2xl font-black text-white mb-2 tracking-tight">Focus op Resultaat</h4>
+              <p className="text-xs text-cyan-300 font-bold uppercase tracking-wider mb-4">Eén Hub voor alles</p>
+              <button 
+                onClick={onLogin}
+                className="group flex items-center gap-2 px-5 py-3 bg-white text-[#002f54] rounded-xl font-black text-xs uppercase tracking-wider hover:bg-cyan-100 transition-all active:scale-95 cursor-pointer"
+              >
+                Inloggen en ontdekken
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Features Section */}
       <section id="features" className="py-32 bg-white relative z-20 rounded-t-[3rem] sm:rounded-t-[4rem] shadow-[0_-20px_50px_rgba(0,0,0,0.2)]">
@@ -157,11 +227,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             {/* Feature 1 */}
             <motion.div whileHover={{ y: -5 }} className="lg:col-span-2 relative group p-10 lg:p-14 rounded-[2.5rem] bg-zinc-50 border border-zinc-200 overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-duration-700 pointer-events-none">
-                <Shield className="w-64 h-64 text-[#004276] -rotate-12" />
+                <img 
+                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  alt="FTJM Logo" 
+                  className="w-64 h-64 -rotate-12"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <div className="relative z-10 w-full h-full flex flex-col justify-between">
-                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-12 border border-zinc-200 shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all">
-                  <ShieldCheck className="w-8 h-8 text-[#004276]" />
+                <div className="w-16 h-16 bg-transparent rounded-2xl flex items-center justify-center mb-12 shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all overflow-hidden">
+                  <img 
+                    src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                    alt="FTJM Logo" 
+                    className="w-full h-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
                 <div>
                   <h3 className="text-3xl font-black text-zinc-900 mb-4 tracking-tight">Zero-Knowledge Encryptie</h3>
@@ -254,7 +334,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             <div className="lg:col-span-5 relative hidden lg:block">
               <div className="aspect-[4/5] rounded-[3rem] border border-white/10 bg-gradient-to-b from-white/5 to-transparent p-12 flex flex-col items-center justify-center text-center shadow-2xl backdrop-blur-sm relative overflow-hidden group">
                  <div className="absolute inset-0 bg-[#004276] translate-y-full group-hover:translate-y-0 transition-transform duration-700 ease-out" />
-                 <Shield className="w-32 h-32 text-white/20 mb-10 group-hover:text-white/50 transition-colors duration-700 relative z-10 group-hover:scale-110" />
+                 <div className="w-32 h-32 mb-10 group-hover:scale-110 transition-transform duration-700 relative z-10 opacity-20 group-hover:opacity-50">
+                    <img 
+                      src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                      alt="FTJM Logo" 
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                 </div>
                  <div className="relative z-10">
                     <p className="text-4xl font-black text-white/30 tracking-tighter uppercase mb-2 group-hover:text-white transition-colors duration-700">Trust</p>
                     <p className="text-2xl font-bold text-cyan-500/50 group-hover:text-cyan-300 transition-colors duration-700">The Network</p>
@@ -473,8 +560,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="flex flex-col md:flex-row items-center justify-between gap-10 mb-12">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/20">
-                <Shield className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 bg-transparent rounded-xl flex items-center justify-center border border-white/20 overflow-hidden">
+                <img 
+                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  alt="FTJM Logo" 
+                  className="w-full h-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <div>
                 <span className="block text-xl font-black tracking-tighter text-white leading-none">FTJM</span>
@@ -482,6 +574,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             </div>
             
             <div className="flex items-center gap-6 text-white/50 text-[10px] font-bold uppercase tracking-[0.2em]">
+              <a href="#doel" className="hover:text-white transition-colors">Doel</a>
+              <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
               <a href="#features" className="hover:text-white transition-colors">Platform</a>
               <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
               <a href="#visie" className="hover:text-white transition-colors">Visie</a>

@@ -2,10 +2,9 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun } from 'lucide-react';
 import { toast } from 'sonner';
-import { UserProfile, CustomTheme, NotificationSettings } from '../types';
+import { UserProfile, CustomTheme, NotificationSettings, User } from '../types';
 import { SOUND_OPTIONS, PATTERNS } from '../constants';
 import { formatDate, convertEmoticons, maskEmail } from '../utils/helpers';
-import { User } from '../lib/firebase';
 import { AudioLogsView } from './AudioLogsView';
 
 interface SettingsViewProps {

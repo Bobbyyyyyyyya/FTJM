@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 // Force rebuild - RefreshCw fix
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { supabase, setSupabaseFirebaseUid, createSupabaseClient } from './utils/supabase';
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User } from './lib/firebase';
-import { UserProfile, Post, Conversation, DirectMessage, CustomTheme, ForumThread, ForumComment, AppNotification, NotificationSettings, Report } from './types';
+import { User, UserProfile, Post, Conversation, DirectMessage, CustomTheme, ForumThread, ForumComment, AppNotification, NotificationSettings, Report } from './types';
 import { MentionOverlay } from './components/MentionOverlay';
 import { EmojiOverlay } from './components/EmojiOverlay';
 import { Toaster, toast } from 'sonner';
@@ -586,6 +585,13 @@ export default function App() {
   const [newSoundName, setNewSoundName] = useState('');
   const [newSoundUrl, setNewSoundUrl] = useState('');
   const [supabaseClient, setSupabaseClient] = useState(supabase);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authDisplayName, setAuthDisplayName] = useState('');
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const voiceCall = useVoiceCall(user, profile, supabaseClient);
   const [groupVoiceCallActiveRooms, setGroupVoiceCallActiveRooms] = useState<Set<string>>(new Set());
 
@@ -1013,17 +1019,36 @@ export default function App() {
 
   // Auth state listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      
+    // Check current session first
+    const checkSession = async () => {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      handleAuthUser(session?.user || null);
+    };
+    checkSession();
+
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      console.log('Supabase auth state changed:', event, session?.user?.id);
+      handleAuthUser(session?.user || null);
+    });
+
+    async function handleAuthUser(currentUser: any) {
       if (currentUser) {
-        logAudioEvent('system', 'success', `Ingelogd als ${currentUser.displayName || currentUser.email}`, currentUser.uid, currentUser.displayName || 'Anoniem');
-        if (currentUidRef.current !== currentUser.uid) {
-          currentUidRef.current = currentUser.uid;
-          setSupabaseFirebaseUid(currentUser.uid);
+        const mappedUser: User = {
+          uid: currentUser.id,
+          email: currentUser.email || '',
+          displayName: currentUser.user_metadata?.display_name || currentUser.email?.split('@')[0] || 'Anoniem',
+          photoURL: currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.photo_url || '',
+        };
+        setUser(mappedUser);
+        
+        if (currentUidRef.current !== currentUser.id) {
+          currentUidRef.current = currentUser.id;
+          setSupabaseFirebaseUid(currentUser.id);
+          
+          logAudioEvent('system', 'success', `Ingelogd als ${mappedUser.displayName || mappedUser.email}`, currentUser.id, mappedUser.displayName || 'Anoniem');
           
           // Recreate Supabase client with UID for Realtime headers
-          const newClient = createSupabaseClient(currentUser.uid);
+          const newClient = createSupabaseClient(currentUser.id);
           setSupabaseClient(newClient);
           
           // Initial profile fetch
@@ -1031,16 +1056,16 @@ export default function App() {
             const { data, error } = await newClient
               .from('profiles')
               .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at')
-              .eq('id', currentUser.uid)
+              .eq('id', currentUser.id)
               .single();
               
             if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
-              handleSupabaseError(error, 'profiel ophalen', currentUser, profile?.role === 'admin' || currentUser?.email === 'markohoksen@gmail.com');
+              handleSupabaseError(error, 'profiel ophalen', mappedUser, profile?.role === 'admin' || currentUser?.email === 'markohoksen@gmail.com');
             } else if (data) {
               setProfile(data);
               localStorage.setItem('cached_profile', JSON.stringify(data));
-              setDisplayNameInput(data.display_name || currentUser.displayName || '');
-              setPhotoURLInput(data.photo_url || currentUser.photoURL || '');
+              setDisplayNameInput(data.display_name || mappedUser.displayName || '');
+              setPhotoURLInput(data.photo_url || mappedUser.photoURL || '');
               setBioInput(data.bio || '');
               if (data.notification_settings) {
                 setNotificationSettings(cleanNotificationSettings(data.notification_settings));
@@ -1060,6 +1085,7 @@ export default function App() {
           }
         }
       } else {
+        setUser(null);
         currentUidRef.current = null;
         setSupabaseFirebaseUid(null);
         setSupabaseClient(createSupabaseClient(null));
@@ -1070,9 +1096,9 @@ export default function App() {
         localStorage.removeItem('cached_conversations');
         setLoading(false);
       }
-    });
+    }
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
   // Whitelist check
@@ -2420,13 +2446,8 @@ export default function App() {
   }, [messages.length]);
 
   const handleLogin = async () => {
-    setLoading(true);
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      handleSupabaseError(err, 'Google inloggen', user, isAdmin);
-      setLoading(false);
-    }
+    setIsAuthModalOpen(true);
+    setAuthError(null);
   };
 
   const handleUpdateNotifications = async () => {
@@ -2484,7 +2505,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await supabaseClient.auth.signOut();
     } catch (err) {
       console.error('Logout error:', err);
     }
@@ -4194,8 +4215,13 @@ export default function App() {
             animate={{ scale: 1, opacity: 1 }}
             className="max-w-md space-y-8"
           >
-            <div className="w-24 h-24 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-8 border-4 border-red-500/30">
-              <ShieldAlert className="w-12 h-12 text-red-500" />
+            <div className="w-24 h-24 bg-transparent rounded-full flex items-center justify-center mx-auto mb-8 overflow-hidden">
+              <img 
+                src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                alt="FTJM Logo" 
+                className="w-full h-full object-contain"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <div className="space-y-4">
               <h1 className="text-5xl font-bold text-white uppercase tracking-tight leading-none">Toegang Ontzegd</h1>
@@ -4246,8 +4272,13 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('chat')}>
-              <div className="w-8 h-8 bg-app-ink rounded-lg flex items-center justify-center">
-                <span className="text-app-bg font-bold text-lg">F</span>
+              <div className="w-8 h-8 bg-transparent rounded-lg flex items-center justify-center overflow-hidden">
+                <img 
+                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  alt="FTJM Logo" 
+                  className="w-full h-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <span className="font-semibold tracking-tight text-sm sm:text-base text-app-ink">FTJM Forum</span>
             </div>
@@ -4605,8 +4636,13 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="max-w-md mx-auto text-center py-20 px-6"
             >
-              <div className="w-24 h-24 bg-red-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-red-100 shadow-xl shadow-red-500/10">
-                <ShieldCheck className="w-12 h-12 text-red-500" />
+              <div className="w-24 h-24 bg-transparent rounded-[2rem] flex items-center justify-center mx-auto mb-8 overflow-hidden">
+                <img 
+                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  alt="FTJM Logo" 
+                  className="w-full h-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <h1 className="text-4xl font-bold tracking-tight text-app-ink mb-4">Geen Toegang</h1>
               <div className="bg-app-card p-6 rounded-3xl border border-app-border shadow-sm mb-10">
@@ -4957,7 +4993,12 @@ export default function App() {
               >
                 <div className="h-32 bg-app-ink relative overflow-hidden">
                   <div className="absolute inset-0 opacity-10">
-                    <Shield className="w-64 h-64 -rotate-12 -translate-x-12 -translate-y-12" />
+                    <img 
+                      src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                      alt="" 
+                      className="w-64 h-64 -rotate-12 -translate-x-12 -translate-y-12"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
                   <button 
                     onClick={() => setSelectedUser(null)}
@@ -5378,6 +5419,205 @@ export default function App() {
           onClose={() => setEmojiResults([])}
           mode={emojiPickerMode}
         />
+
+        <AnimatePresence>
+          {isAuthModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-md z-[9999] flex items-center justify-center p-4 overflow-y-auto"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 15 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 15 }}
+                className="bg-[#002f54] border border-white/10 w-full max-w-md rounded-[2rem] p-8 shadow-2xl relative overflow-hidden"
+              >
+                {/* Background glows */}
+                <div className="absolute top-0 right-0 w-[200px] h-[200px] bg-cyan-500/10 rounded-full blur-[50px] pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-[200px] h-[200px] bg-blue-500/10 rounded-full blur-[50px] pointer-events-none" />
+
+                <button 
+                  onClick={() => setIsAuthModalOpen(false)}
+                  className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                <div className="flex flex-col items-center mb-6">
+                  <div className="w-12 h-12 bg-transparent rounded-2xl flex items-center justify-center mb-4 overflow-hidden">
+                    <img 
+                      src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                      alt="FTJM Logo" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <h3 className="text-2xl font-black text-white tracking-tighter">
+                    {isRegisterMode ? 'Account Registreren' : 'Verifieer Identiteit'}
+                  </h3>
+                  <p className="text-xs text-blue-100/60 mt-1 uppercase tracking-widest text-center">
+                    {isRegisterMode ? 'Meld je aan voor het FTJM Network' : 'Toegang tot het beveiligde platform'}
+                  </p>
+                </div>
+
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setAuthError(null);
+                  setAuthLoading(true);
+
+                  const email = authEmail.trim();
+                  const password = authPassword;
+
+                  if (!email || !password) {
+                    setAuthError('E-mail en wachtwoord zijn verplicht');
+                    setAuthLoading(false);
+                    return;
+                  }
+
+                  try {
+                    if (isRegisterMode) {
+                      const displayName = authDisplayName.trim();
+                      if (!displayName) {
+                        setAuthError('Weergavenaam is verplicht');
+                        setAuthLoading(false);
+                        return;
+                      }
+
+                      // Eerst controleren of het e-mailadres op de whitelist staat
+                      const isSystemAdmin = email.toLowerCase() === 'markohoksen@gmail.com';
+                      if (!isSystemAdmin) {
+                        const { data: whitelistData, error: whitelistError } = await supabaseClient
+                          .from('whitelist')
+                          .select('email')
+                          .eq('email', email.toLowerCase())
+                          .maybeSingle();
+
+                        if (whitelistError) {
+                          console.error('Check whitelist error:', whitelistError);
+                          throw new Error('Fout bij het controleren van de whitelist status. Probeer het opnieuw.');
+                        }
+
+                        if (!whitelistData) {
+                          throw new Error('Dit e-mailadres is niet geautoriseerd om een account aan te maken.');
+                        }
+                      }
+
+                      const { data, error } = await supabaseClient.auth.signUp({
+                        email,
+                        password,
+                        options: {
+                          data: {
+                            display_name: displayName,
+                          }
+                        }
+                      });
+
+                      if (error) throw error;
+                      
+                      toast.success('Account succesvol geregistreerd!');
+                      setIsRegisterMode(false);
+                    } else {
+                      const { data, error } = await supabaseClient.auth.signInWithPassword({
+                        email,
+                        password
+                      });
+
+                      if (error) throw error;
+                      toast.success('Succesvol ingelogd!');
+                      setIsAuthModalOpen(false);
+                    }
+                  } catch (err: any) {
+                    console.error('Auth error:', err);
+                    setAuthError(err.message || 'Er is een fout opgetreden.');
+                  } finally {
+                    setAuthLoading(false);
+                  }
+                }} className="space-y-4">
+                  {authError && (
+                    <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-xl text-xs flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
+                  {isRegisterMode && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                        Weergavenaam
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Bijv. Mark"
+                        value={authDisplayName}
+                        onChange={(e) => setAuthDisplayName(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                      E-mailadres
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="voorbeeld@adres.nl"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                      Wachtwoord
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••••••"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {authLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
+                    ) : isRegisterMode ? (
+                      'Registreren & Inloggen'
+                    ) : (
+                      'Inloggen'
+                    )}
+                  </button>
+                </form>
+
+                <div className="mt-6 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegisterMode(!isRegisterMode);
+                      setAuthError(null);
+                    }}
+                    className="text-xs text-cyan-400 hover:text-cyan-300 font-bold transition-colors uppercase tracking-wider cursor-pointer"
+                  >
+                    {isRegisterMode
+                      ? 'Heb je al een account? Log hier in'
+                      : 'Nog geen account? Registreer hier'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <Toaster 
           position="top-right" 
           richColors 

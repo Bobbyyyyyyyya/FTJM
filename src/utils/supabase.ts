@@ -24,9 +24,9 @@ export const createSupabaseClient = (uid: string | null = null) => {
 
   const client = createClient(supabaseUrl || '', supabaseKey || '', {
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
     },
     global: {
       fetch: (url, options) => {

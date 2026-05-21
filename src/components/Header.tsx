@@ -1,7 +1,6 @@
 import React from 'react';
 import { User as UserIcon, ShieldCheck, LogOut } from 'lucide-react';
-import { UserProfile, CustomTheme } from '../types';
-import { User } from '../lib/firebase';
+import { UserProfile, CustomTheme, User } from '../types';
 
 interface HeaderProps {
   user: User;

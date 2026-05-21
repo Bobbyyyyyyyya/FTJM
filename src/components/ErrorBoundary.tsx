@@ -55,8 +55,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </div>
             
             <div className="flex items-center justify-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
-                <Shield className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
+                <img 
+                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  alt="FTJM Logo" 
+                  className="w-full h-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <h2 className="text-3xl font-bold text-zinc-900 uppercase tracking-tight">Systeemfout</h2>
             </div>
