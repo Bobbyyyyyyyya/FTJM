@@ -14,6 +14,7 @@ import {
   Bell, 
   Volume2, 
   VolumeX, 
+  Gamepad2,
   Moon, 
   Sparkles, 
   Sun, 
@@ -71,6 +72,7 @@ import { UserSearchModal } from './components/UserSearchModal';
 import { ReportModal } from './components/ReportModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { AudioLogsView } from './components/AudioLogsView';
+import { GamesView } from './components/GamesView';
 import { MessageEditArea } from './components/MessageEditArea';
 import { useVoiceCall } from './hooks/useVoiceCall';
 import { VoiceCallUI } from './components/VoiceCallUI';
@@ -144,7 +146,7 @@ export default function App() {
   const [commentInput, setCommentInput] = useState('');
   const [whitelistInput, setWhitelistInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs'>('chat');
+  const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs' | 'arcade'>('chat');
 
   const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs'>('profile');
   const [threads, setThreads] = useState<ForumThread[]>([]);
@@ -196,13 +198,14 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v1.8') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.1') !== 'true';
   });
+  const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v1.8') === 'true';
+    return localStorage.getItem('has_seen_news_v2.1') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v1.8') === 'true';
+    return localStorage.getItem('has_seen_menu_v2.1') === 'true';
   });
   const cleanNotificationSettings = (settings: any): NotificationSettings => {
     const defaultSettings = {
@@ -4315,7 +4318,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v1.8', 'true');
+                      localStorage.setItem('has_seen_menu_v2.1', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -4366,7 +4369,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v1.8', 'true');
+                              localStorage.setItem('has_seen_news_v2.1', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -4390,6 +4393,14 @@ export default function App() {
                         >
                           <Settings className="w-4 h-4" />
                           Instellingen
+                        </button>
+                        <div className="h-px bg-app-border my-2 mx-2" />
+                        <button 
+                          onClick={() => { setView('arcade'); setShowNavDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'arcade' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
+                        >
+                          <Gamepad2 className="w-4 h-4 text-cyan-500 animate-[pulse_2s_infinite]" />
+                          🕹️ Arcade (Geheim!)
                         </button>
                         <div className="h-px bg-app-border my-2 mx-2" />
                         <button 
@@ -4827,6 +4838,8 @@ export default function App() {
               {view === 'messages' && (
                 <MessagesView 
                   user={user}
+                  profile={profile}
+                  profiles={users}
                   conversations={conversations}
                   activeConversation={activeConversation}
                   setActiveConversation={handleSetActiveConversation}
@@ -4921,6 +4934,11 @@ export default function App() {
                   <div className="bg-app-card rounded-[2rem] border border-app-border p-6 shadow-sm h-full overflow-hidden flex flex-col">
                     <AudioLogsView />
                   </div>
+                </div>
+              )}
+              {view === 'arcade' && (
+                <div className="max-w-6xl mx-auto h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
+                  <GamesView />
                 </div>
               )}
               {view === 'news' && (
@@ -5333,70 +5351,152 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {showWhatsNew && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+              className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
             >
               <motion.div 
-                initial={{ scale: 0.9, y: 20 }}
+                initial={{ scale: 0.95, y: 15 }}
                 animate={{ scale: 1, y: 0 }}
-                className="bg-app-bg w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-app-border overflow-hidden"
+                className="bg-gradient-to-b from-[#003b68] to-[#00213b] w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-cyan-500/20 overflow-hidden relative"
               >
+                {/* Visual design embellishments */}
+                <div className="absolute top-0 right-0 w-[220px] h-[220px] bg-cyan-400/10 rounded-full blur-[45px] pointer-events-none" />
+                <div className="absolute -bottom-10 -left-10 w-[200px] h-[200px] bg-blue-500/10 rounded-full blur-[50px] pointer-events-none" />
+
                 <div className="relative p-8 sm:p-10 space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-app-ink rounded-[1.5rem] flex items-center justify-center shadow-xl">
-                      <Sparkles className="w-8 h-8 text-app-bg" />
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gradient-to-tr from-cyan-400 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                        <Zap className="w-6 h-6 text-white animate-pulse" />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-black text-white tracking-tighter uppercase leading-none">
+                          {whatsNewStep === 1 ? 'Introductie Video' : 'V2.1 Update'}
+                        </h2>
+                        <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1">
+                          {whatsNewStep === 1 ? 'Bekijk de update in actie' : 'Nieuwe functionaliteiten'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="text-3xl font-bold text-app-ink tracking-tight uppercase leading-none">V1.8 Update</h2>
-                      <p className="text-app-muted text-sm font-bold uppercase tracking-widest mt-1">Wat is er nieuw?</p>
+                    {/* Step indicator pills */}
+                    <div className="flex gap-1.5 bg-white/5 border border-white/10 rounded-full p-1.5">
+                      <span className={`w-2 h-2 rounded-full transition-all duration-300 ${whatsNewStep === 1 ? 'bg-cyan-400 scale-125' : 'bg-white/20'}`} />
+                      <span className={`w-2 h-2 rounded-full transition-all duration-300 ${whatsNewStep === 2 ? 'bg-cyan-400 scale-125' : 'bg-white/20'}`} />
                     </div>
                   </div>
 
-                  <div className="space-y-4 py-4">
-                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
-                      <Shield className="w-6 h-6 text-indigo-500 shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-sm text-app-ink">Slimme Moderatie</h4>
-                        <p className="text-xs text-app-muted">Context-bewust filter voor een gezellig forum zonder gescheld.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
-                      <Volume2 className="w-6 h-6 text-emerald-500 shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-sm text-app-ink">Realtime Sounds</h4>
-                        <p className="text-xs text-app-muted">Direct melding-geluiden voor alle gebruikers, overal in het forum.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
-                      <Activity className="w-6 h-6 text-amber-500 shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-sm text-app-ink">Audio & Admin Logs</h4>
-                        <p className="text-xs text-app-muted">Transparantie met live logs en een krachtig nieuw admin dashboard.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4 p-4 bg-app-card rounded-2xl border border-app-border">
-                      <Palette className="w-6 h-6 text-purple-500 shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-sm text-app-ink">Custom Geluiden</h4>
-                        <p className="text-xs text-app-muted">Voeg je eigen unieke meldingsgeluiden toe via de instellingen.</p>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Body Content Switcher */}
+                  <AnimatePresence mode="wait">
+                    {whatsNewStep === 1 ? (
+                      <motion.div
+                        key="video-step"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                        className="space-y-4"
+                      >
+                        {/* YouTube Embed Container */}
+                        <div className="aspect-video w-full rounded-2xl overflow-hidden border border-white/10 shadow-inner bg-black relative">
+                          <iframe
+                            className="w-full h-full"
+                            src="https://www.youtube.com/embed/tueQbG66g24?rel=0&modestbranding=1"
+                            title="FTJM v2.1 Introductie"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
+                        </div>
+                        <p className="text-xs text-blue-100/75 leading-relaxed text-center font-medium bg-white/5 border border-white/5 p-4 rounded-2xl">
+                          Welkom bij de toekomst van het FTJM netwerk! Bekijk gratis de bovenstaande introductievideo om alle vernieuwingen live te zien. Klik daarna op de pijl hieronder om door de release notes te bladeren.
+                        </p>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="details-step"
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        className="space-y-3 py-1"
+                      >
+                        <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                            <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0" />
+                            <div>
+                              <h4 className="font-extrabold text-sm text-white">Consistente Onafhankelijkheid</h4>
+                              <p className="text-xs text-blue-100/70 mt-1">
+                                Google Auth is volledig verwijderd. Alle accounts zijn nu anoniem, extreem beveiligd en beheerd binnen een gecodeerde database.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                            <LockIcon className="w-5 h-5 text-amber-400 shrink-0" />
+                            <div>
+                              <h4 className="font-extrabold text-sm text-white">Strikte Whitelist Gatekeeper</h4>
+                              <p className="text-xs text-blue-100/70 mt-1">
+                                Alleen geverifieerde en door de beheerder goedgekeurde e-mailadressen kunnen nu een account registreren.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                            <Sparkles className="w-5 h-5 text-emerald-400 shrink-0" />
+                            <div>
+                              <h4 className="font-extrabold text-sm text-white">Directe Onboarding</h4>
+                              <p className="text-xs text-blue-100/70 mt-1">
+                                Na het registreren van een nieuw account word je meteen ingelogd. Geen extra inlogschermen of loops!
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                            <Palette className="w-5 h-5 text-purple-400 shrink-0" />
+                            <div>
+                              <h4 className="font-extrabold text-sm text-white">Image2Url Integrator</h4>
+                              <p className="text-xs text-blue-100/70 mt-1">
+                                Profielfoto links kunnen nu direct en anoniem gegenereerd worden via de ingebouwde link naar image2url.com.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-                  <button 
-                    onClick={() => {
-                      setShowWhatsNew(false);
-                      localStorage.setItem('has_seen_whats_new_v1.8', 'true');
-                    }}
-                    className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold uppercase tracking-wide hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
-                  >
-                    Aan de slag!
-                  </button>
+                  {/* Footer Navigation bar */}
+                  <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                    {whatsNewStep === 2 ? (
+                      <button
+                        onClick={() => setWhatsNewStep(1)}
+                        className="flex items-center gap-2 px-5 py-3.5 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold text-xs uppercase tracking-wider cursor-pointer transition-all border border-white/10 active:scale-95"
+                      >
+                        <ArrowLeft className="w-4 h-4" /> Vorige
+                      </button>
+                    ) : (
+                      <div className="w-[10px]" /> /* spacer */
+                    )}
+
+                    {whatsNewStep === 1 ? (
+                      <button
+                        onClick={() => setWhatsNewStep(2)}
+                        className="flex items-center gap-2 px-6 py-3.5 bg-white hover:bg-cyan-100 text-[#002f54] rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 ml-auto shadow-lg shadow-black/20"
+                      >
+                        Details <ArrowRight className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setShowWhatsNew(false);
+                          localStorage.setItem('has_seen_whats_new_v2.1', 'true');
+                        }}
+                        className="flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
+                      >
+                        Aan de slag!
+                      </button>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             </motion.div>
@@ -5503,7 +5603,7 @@ export default function App() {
                         }
                       }
 
-                      const { data, error } = await supabaseClient.auth.signUp({
+                      const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({
                         email,
                         password,
                         options: {
@@ -5513,10 +5613,26 @@ export default function App() {
                         }
                       });
 
-                      if (error) throw error;
+                      if (signUpError) throw signUpError;
                       
-                      toast.success('Account succesvol geregistreerd!');
-                      setIsRegisterMode(false);
+                      // Direct automatisch inloggen na registratie!
+                      const { data: signInData, error: signInError } = await supabaseClient.auth.signInWithPassword({
+                        email,
+                        password
+                      });
+
+                      if (signInError) {
+                        console.error('Auto sign-in error:', signInError);
+                        toast.success('Account succesvol geregistreerd! Log nu in.');
+                        setIsRegisterMode(false);
+                      } else {
+                        toast.success('Account succesvol geregistreerd en ingelogd!');
+                        setIsAuthModalOpen(false);
+                        // Reset form fields
+                        setAuthEmail('');
+                        setAuthPassword('');
+                        setAuthDisplayName('');
+                      }
                     } else {
                       const { data, error } = await supabaseClient.auth.signInWithPassword({
                         email,
@@ -5526,6 +5642,10 @@ export default function App() {
                       if (error) throw error;
                       toast.success('Succesvol ingelogd!');
                       setIsAuthModalOpen(false);
+                      // Reset form fields
+                      setAuthEmail('');
+                      setAuthPassword('');
+                      setAuthDisplayName('');
                     }
                   } catch (err: any) {
                     console.error('Auth error:', err);
@@ -5550,6 +5670,7 @@ export default function App() {
                         type="text"
                         required
                         placeholder="Bijv. Mark"
+                        autoComplete="name"
                         value={authDisplayName}
                         onChange={(e) => setAuthDisplayName(e.target.value)}
                         className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
@@ -5565,6 +5686,7 @@ export default function App() {
                       type="email"
                       required
                       placeholder="voorbeeld@adres.nl"
+                      autoComplete="username email"
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
                       className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
@@ -5579,6 +5701,7 @@ export default function App() {
                       type="password"
                       required
                       placeholder="••••••••••••"
+                      autoComplete={isRegisterMode ? "new-password" : "current-password"}
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
                       className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"

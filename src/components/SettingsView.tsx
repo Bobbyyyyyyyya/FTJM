@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserProfile, CustomTheme, NotificationSettings, User } from '../types';
-import { SOUND_OPTIONS, PATTERNS } from '../constants';
+import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS } from '../constants';
 import { formatDate, convertEmoticons, maskEmail } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
 
@@ -474,7 +474,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                   <div className="flex-1 space-y-4 w-full">
                     <div>
-                      <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Profielfoto URL</label>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide ml-1">Profielfoto URL</label>
+                        <a 
+                          href="https://www.image2url.com/" 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-[10px] text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-1 ml-1 sm:ml-0"
+                        >
+                          <Link className="w-3 h-3" /> Foto uploaden (image2url.com)
+                        </a>
+                      </div>
                       <input 
                         type="text"
                         value={photoURLInput}
@@ -654,32 +664,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Ringtone URL (Nieuw)</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="text"
-                          value={notificationSettings.ringtone_url || ''}
-                          onChange={(e) => setNotificationSettings({...notificationSettings, ringtone_url: e.target.value})}
-                          placeholder="https://example.com/ringtone.mp3"
-                          className="flex-1 px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink font-bold"
-                        />
-                        <button 
-                          onClick={() => {
-                            if (notificationSettings.ringtone_url) {
-                              const testAudio = new Audio(notificationSettings.ringtone_url);
-                              testAudio.play().catch(e => toast.error("Kan audio niet afspelen: " + e.message));
-                              setTimeout(() => testAudio.pause(), 5000); // Stop after 5s for testing
-                            }
-                          }}
-                          className="px-4 py-3 bg-app-ink text-app-bg rounded-xl font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center"
-                          title="Test Ringtone"
-                        >
-                          <Play className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <p className="mt-2 text-[10px] text-app-muted font-medium italic">
-                        Plak hier een directe link naar een MP3 of WAV bestand.
-                      </p>
+                      <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Ringtone Geluid</label>
+                      <select 
+                        value={notificationSettings.ringtone_url || ''}
+                        onChange={(e) => setNotificationSettings({...notificationSettings, ringtone_url: e.target.value})}
+                        className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink font-bold"
+                      >
+                        {RINGTONE_OPTIONS.map(s => <option key={s.url} value={s.url}>{s.name}</option>)}
+                        {customSounds.map(s => <option key={s.url} value={s.url}>Custom: {s.name}</option>)}
+                        {notificationSettings.ringtone_url && 
+                         !RINGTONE_OPTIONS.some(s => s.url === notificationSettings.ringtone_url) && 
+                         !customSounds.some(s => s.url === notificationSettings.ringtone_url) && (
+                          <option value={notificationSettings.ringtone_url}>Aangepast: {notificationSettings.ringtone_url}</option>
+                        )}
+                      </select>
+                      <button 
+                        onClick={() => {
+                          if (notificationSettings.ringtone_url) {
+                            playSound(notificationSettings.ringtone_url, true);
+                          } else {
+                            toast.error("Geen ringtone ingesteld");
+                          }
+                        }}
+                        className="mt-2 text-[10px] font-bold text-app-ink uppercase tracking-wide flex items-center gap-1.5 hover:underline"
+                      >
+                        <Play className="w-3 h-3" /> Test ringtone
+                      </button>
                     </div>
                   </div>
                 </div>

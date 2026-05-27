@@ -1,9 +1,9 @@
 export const NEWS_ITEMS = [
   {
-    id: 7,
-    title: "FTJM Forum Update v1.8.0 🚀",
-    content: "Een enorme sprong voorwaarts! In v1.8 hebben we de interactie en personalisatie naar een nieuw niveau getild. Belangrijkste features: [MOD] Geavanceerde context-bewuste moderatie. [AUDIO] Verbeterde audio-synchronisatie voor realtime meldingen. [LOGS] Live Audio Logs systeem. [UI] Vernieuwde instellingen met Admin dashboard en aangepaste geluiden. [FIX] Browser geluids-restricties omzeild voor een naadloze ervaring. Geniet van de verbeterde stabiliteit en nieuwe functies!",
-    date: "2026-04-17",
+    id: 8,
+    title: "FTJM Ultra-Beveiligde Core Update v2.1.0 ⚡",
+    content: "Onafhankelijkheid en absolute controle! Met trots introduceren we de v2.1.0 core update. In deze versie hebben we Google Auth volledig vervangen wegens onbetrouwbaarheid. Alle authenticatie verloopt nu via onze eigen, hoog-beveiligde en versleutelde Supabase registers. Registratie is strikt dichtgetimmerd; enkel gewhitelisteerde e-mailadressen kunnen voortaan toetreden. Geniet van een naadloze onboarding zonder extra inlogschermen na registratie, en beheer je profiel sneller dan ooit met geïntegreerde ondersteuning voor image2url links!",
+    date: "2026-05-21",
     category: "Update"
   },
   {
@@ -60,6 +60,15 @@ export const SOUND_OPTIONS = [
   { name: 'Bling', url: 'https://assets.mixkit.co/active_storage/sfx/2372/2372-preview.mp3' },
   { name: 'Standaard (Old)', url: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3' },
   { name: 'Melding (Old)', url: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3' },
+];
+
+export const RINGTONE_OPTIONS = [
+  { name: 'Standaard Ringtone (Classic)', url: 'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3' },
+  { name: 'Retro Nokiatune', url: 'https://assets.mixkit.co/active_storage/sfx/1353/1353-preview.mp3' },
+  { name: 'Digitale Telefoon Ring', url: 'https://assets.mixkit.co/active_storage/sfx/1230/1230-preview.mp3' },
+  { name: 'Synthesizer Groove', url: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3' },
+  { name: 'Zen Chime Loop', url: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3' },
+  { name: 'Futuristische Sirene', url: 'https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3' },
 ];
 
 export const PATTERNS = [

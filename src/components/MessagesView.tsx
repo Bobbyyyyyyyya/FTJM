@@ -1,12 +1,14 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check } from 'lucide-react';
-import { Conversation, DirectMessage, CustomTheme } from '../types';
+import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
 
 interface MessagesViewProps {
   user: any;
+  profile?: UserProfile | null;
+  profiles?: UserProfile[];
   conversations: Conversation[];
   activeConversation: Conversation | null;
   setActiveConversation: (conv: Conversation | null) => void;
@@ -37,8 +39,10 @@ interface MessagesViewProps {
 
 export const MessagesView: React.FC<MessagesViewProps> = ({
   user,
+  profile,
+  profiles = [],
   conversations,
-  activeConversation,
+  activeConversation: propActiveConversation,
   setActiveConversation,
   messages,
   messageInput,
@@ -66,6 +70,27 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 }) => {
   const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null);
   const [editInput, setEditInput] = React.useState('');
+
+  // Resolve the newest conversation state from the live list to ensure real-time photo/name updates are visible instantly
+  const activeConversation = propActiveConversation 
+    ? (conversations.find(c => c.id === propActiveConversation.id) || propActiveConversation) 
+    : null;
+
+  const getParticipantPhoto = (uid: string, fallbackPhotos: Record<string, string> = {}) => {
+    if (uid === user.uid) {
+      return profile?.photo_url || user.photoURL || fallbackPhotos[uid] || null;
+    }
+    const found = profiles?.find(p => p.id === uid);
+    return found?.photo_url || fallbackPhotos[uid] || null;
+  };
+
+  const getParticipantName = (uid: string, fallbackNames: Record<string, string> = {}) => {
+    if (uid === user.uid) {
+      return profile?.display_name || user.displayName || fallbackNames[uid] || 'Onbekend';
+    }
+    const found = profiles?.find(p => p.id === uid);
+    return found?.display_name || fallbackNames[uid] || 'Onbekend';
+  };
 
   return (
     <div 
@@ -103,7 +128,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
               {conversations.map(conv => {
                 const otherParticipants = conv.participants.filter(uid => uid !== user.uid);
                 const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : null;
-                const displayName = conv.is_group ? (conv.name || 'Groepsgesprek') : (otherParticipantUid ? conv.participant_names[otherParticipantUid] : 'Onbekend');
+                const displayName = conv.is_group ? (conv.name || 'Groepsgesprek') : (otherParticipantUid ? getParticipantName(otherParticipantUid, conv.participant_names) : 'Onbekend');
                 const isActive = activeConversation?.id === conv.id;
                 const isOnline = !conv.is_group && otherParticipantUid && onlineUsers.has(otherParticipantUid);
                 const isGroupCallActive = conv.is_group && groupVoiceCallActiveRooms?.has(conv.id);
@@ -135,7 +160,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                         {conv.is_group ? (
                           <div className="grid grid-cols-2 gap-0.5 p-1 w-full h-full">
                             {conv.participants.slice(0, 4).map((uid, idx) => {
-                              const photo = conv.participant_photos[uid];
+                              const photo = getParticipantPhoto(uid, conv.participant_photos);
                               return (
                                 <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
                                   {photo ? (
@@ -150,9 +175,9 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                               <div key={`empty-${i}`} className="w-full h-full bg-app-bg/20 rounded-md" />
                             ))}
                           </div>
-                        ) : conv.participant_photos[otherParticipantUid || ''] ? (
+                        ) : getParticipantPhoto(otherParticipantUid || '', conv.participant_photos) ? (
                           <img 
-                            src={conv.participant_photos[otherParticipantUid || '']} 
+                            src={getParticipantPhoto(otherParticipantUid || '', conv.participant_photos) || ''} 
                             alt="" 
                             className="w-full h-full object-cover" 
                             referrerPolicy="no-referrer" 
@@ -197,7 +222,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                           <p className={`text-xs truncate font-medium ${isActive ? 'opacity-70 text-app-bg' : 'text-app-muted'}`}>
                             {conv.is_group && conv.last_message && conv.last_message_sender_id && (
                               <span className="font-bold mr-1">
-                                {conv.last_message_sender_id === user.uid ? 'Jij' : (conv.participant_names[conv.last_message_sender_id] || 'Iemand')}:
+                                {conv.last_message_sender_id === user.uid ? 'Jij' : (getParticipantName(conv.last_message_sender_id, conv.participant_names) || 'Iemand')}:
                               </span>
                             )}
                             {conv.last_message || 'Start het gesprek...'}
@@ -243,7 +268,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     {activeConversation.is_group ? (
                       <div className="grid grid-cols-2 gap-0.5 p-1 w-full h-full">
                         {activeConversation.participants.slice(0, 4).map((uid, idx) => {
-                          const photo = activeConversation.participant_photos[uid];
+                          const photo = getParticipantPhoto(uid, activeConversation.participant_photos);
                           return (
                             <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
                               {photo ? (
@@ -258,7 +283,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     ) : (() => {
                       const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
                       const otherUid = otherParticipants[0];
-                      const photo = otherUid ? activeConversation.participant_photos[otherUid] : null;
+                      const photo = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) : null;
                       return photo ? (
                         <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
@@ -273,7 +298,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                         : (() => {
                             const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
                             const otherUid = otherParticipants[0];
-                            return otherUid ? activeConversation.participant_names[otherUid] : 'Onbekend';
+                            return otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
                           })()
                       }
                     </h4>
@@ -343,8 +368,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     return (
                       <button
                         onClick={() => {
-                          const otherName = otherUid ? activeConversation.participant_names[otherUid] : 'Onbekend';
-                          const otherAvatar = otherUid ? activeConversation.participant_photos[otherUid] : undefined;
+                          const otherName = otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
+                          const otherAvatar = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) || undefined : undefined;
                           
                           if (playSound && !isActivePeer) {
                             playSound('https://www.image2url.com/r2/default/audio/1778155099351-512c1936-e820-4e67-8af0-a035a92a54ea.mp3', true, user.uid, user.displayName || 'Anoniem');
@@ -397,16 +422,16 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                       <div className={`flex items-end gap-3 group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                         {activeConversation.is_group && !isMe && (
                           <div className="w-8 h-8 rounded-xl overflow-hidden ring-1 ring-app-border bg-app-card flex-shrink-0 mb-6">
-                            {activeConversation.participant_photos[msg.sender_id] ? (
+                            {getParticipantPhoto(msg.sender_id, activeConversation.participant_photos) ? (
                               <img 
-                                src={activeConversation.participant_photos[msg.sender_id]} 
+                                src={getParticipantPhoto(msg.sender_id, activeConversation.participant_photos) || ''} 
                                 alt="" 
                                 className="w-full h-full object-cover" 
                                 referrerPolicy="no-referrer" 
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-app-muted">
-                                {activeConversation.participant_names[msg.sender_id]?.charAt(0) || '?'}
+                                {getParticipantName(msg.sender_id, activeConversation.participant_names).charAt(0) || '?'}
                               </div>
                             )}
                           </div>
@@ -414,7 +439,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                         <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
                           {activeConversation.is_group && !isMe && (
                             <span className="text-[10px] font-black text-app-muted uppercase tracking-widest mb-1.5 ml-1">
-                              {activeConversation.participant_names[msg.sender_id] || 'Onbekend'}
+                              {getParticipantName(msg.sender_id, activeConversation.participant_names) || 'Onbekend'}
                             </span>
                           )}
                           <div className={`flex items-center gap-2 group/msg ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
