@@ -64,6 +64,8 @@ export const SOUND_OPTIONS = [
 
 export const RINGTONE_OPTIONS = [
   { name: 'Standaard Ringtone (Classic)', url: 'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3' },
+  { name: 'Nieuwe Ringtone 1', url: 'https://www.image2url.com/r2/default/audio/1779892149416-1b7cd84d-217e-48d2-8263-4867b8800b27.mp3' },
+  { name: 'Nieuwe Ringtone 2', url: 'https://www.image2url.com/r2/default/audio/1779892243173-6df7f26d-7f4e-4060-ba80-c0ed72a81f99.mp3' },
   { name: 'Retro Nokiatune', url: 'https://assets.mixkit.co/active_storage/sfx/1353/1353-preview.mp3' },
   { name: 'Digitale Telefoon Ring', url: 'https://assets.mixkit.co/active_storage/sfx/1230/1230-preview.mp3' },
   { name: 'Synthesizer Groove', url: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3' },

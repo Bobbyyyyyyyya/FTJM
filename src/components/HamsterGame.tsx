@@ -206,6 +206,17 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
     engine.hamster.currentDir = null;
     engine.hamster.nextDir = null;
 
+    // Reset keyboard states
+    engine.keysPressed = {
+      UP: false,
+      DOWN: false,
+      LEFT: false,
+      RIGHT: false
+    };
+
+    // Calculate dynamic ghost speed based on level (starts slower, gets a bit faster per level)
+    const baseSpeed = 0.9 + Math.min(engine.level - 1, 6) * 0.15;
+
     // Colas (Pacman Ghosts behavior setup)
     // 1. Red Cola - Chases Hamster closely
     // 2. Teal Pepsi/Inky - Predicts ahead or wanders
@@ -218,7 +229,7 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         gridY: 5,
         targetGridX: 6,
         targetGridY: 5,
-        speed: 1.5, // Divides 24 cleanly! (1.5 divides 24: 16 steps)
+        speed: baseSpeed,
         currentDir: 'UP',
         nextDir: 'UP',
         isFrightened: false,
@@ -233,7 +244,7 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         gridY: 5,
         targetGridX: 7,
         targetGridY: 5,
-        speed: 1.5,
+        speed: baseSpeed,
         currentDir: 'RIGHT',
         nextDir: 'RIGHT',
         isFrightened: false,
@@ -248,7 +259,7 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         gridY: 5,
         targetGridX: 8,
         targetGridY: 5,
-        speed: 1.5,
+        speed: baseSpeed,
         currentDir: 'LEFT',
         nextDir: 'LEFT',
         isFrightened: false,
@@ -280,8 +291,10 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
     setGameState('playing');
   };
 
-  // Keyboard controls listener
+  // Keyboard controls listener with held-key down tracking
   useEffect(() => {
+    const engine = engineRef.current;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'];
       if (keys.includes(e.key)) {
@@ -290,21 +303,40 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
 
       if (playStateRef.current !== 'playing') return;
 
-      const engine = engineRef.current;
       if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        engine.keysPressed.UP = true;
         engine.hamster.nextDir = 'UP';
       } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        engine.keysPressed.DOWN = true;
         engine.hamster.nextDir = 'DOWN';
       } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        engine.keysPressed.LEFT = true;
         engine.hamster.nextDir = 'LEFT';
       } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        engine.keysPressed.RIGHT = true;
         engine.hamster.nextDir = 'RIGHT';
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (playStateRef.current !== 'playing') return;
+
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        engine.keysPressed.UP = false;
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        engine.keysPressed.DOWN = false;
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        engine.keysPressed.LEFT = false;
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        engine.keysPressed.RIGHT = false;
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
@@ -318,6 +350,16 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
   useEffect(() => {
     let animationId: number;
     
+    const isOppositeDirection = (dir1: Direction, dir2: Direction): boolean => {
+      if (!dir1 || !dir2) return false;
+      return (
+        (dir1 === 'UP' && dir2 === 'DOWN') ||
+        (dir1 === 'DOWN' && dir2 === 'UP') ||
+        (dir1 === 'LEFT' && dir2 === 'RIGHT') ||
+        (dir1 === 'RIGHT' && dir2 === 'LEFT')
+      );
+    };
+
     const updateLoop = () => {
       if (playStateRef.current !== 'playing') {
         animationId = requestAnimationFrame(updateLoop);
@@ -332,6 +374,8 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
       const engine = engineRef.current;
       engine.frameCount++;
 
+      const normalGhostSpeed = 0.9 + Math.min(engine.level - 1, 6) * 0.15;
+
       // 1. TIMERS UPDATE
       if (engine.frightenedTimer > 0) {
         engine.frightenedTimer--;
@@ -339,10 +383,10 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
           setFrightenedTimer(Math.ceil(engine.frightenedTimer / 60));
         }
         if (engine.frightenedTimer === 0) {
-          // Revert frightening status
+          // Revert frightening status back to dynamic level difficulty speed
           engine.ghosts.forEach(g => {
             g.isFrightened = false;
-            g.speed = 1.5;
+            g.speed = normalGhostSpeed;
           });
           setFrightenedTimer(0);
         }
@@ -352,104 +396,116 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         engine.invulnFrames--;
       }
 
-      // 2. PLAYERS ENGINE (HAMSTER SMOOTH MOVEMENT)
+      // 2. PLAYERS ENGINE (HAMSTER SMOOTH GRID-ALIGNMENT MOVEMENT)
       const player = engine.hamster;
 
-      // Helper to check alignment with a small tolerance to prevent floating point drift
-      const checkAndAlignActor = (actor: GameActor) => {
-        const modX = actor.x % CELL_SIZE;
-        const modY = actor.y % CELL_SIZE;
-        
-        const normModX = modX < 0 ? modX + CELL_SIZE : modX;
-        const normModY = modY < 0 ? modY + CELL_SIZE : modY;
+      // Poll current keysPressed state to continuously feed player.nextDir response instantly!
+      if (engine.keysPressed.UP) player.nextDir = 'UP';
+      else if (engine.keysPressed.DOWN) player.nextDir = 'DOWN';
+      else if (engine.keysPressed.LEFT) player.nextDir = 'LEFT';
+      else if (engine.keysPressed.RIGHT) player.nextDir = 'RIGHT';
 
-        const tolerance = actor.speed + 0.05;
-        const nearX = (normModX < tolerance) || (CELL_SIZE - normModX < tolerance);
-        const nearY = (normModY < tolerance) || (CELL_SIZE - normModY < tolerance);
+      // Check if hamster arrived at target grid tile center
+      const targetX = player.targetGridX * CELL_SIZE;
+      const targetY = player.targetGridY * CELL_SIZE;
 
-        if (nearX && nearY) {
-          actor.x = Math.round(actor.x / CELL_SIZE) * CELL_SIZE;
-          actor.y = Math.round(actor.y / CELL_SIZE) * CELL_SIZE;
-          return true;
-        }
-        return false;
-      };
+      if (Math.abs(player.x - targetX) < 0.1 && Math.abs(player.y - targetY) < 0.1) {
+        // Snap exactly to target
+        player.x = targetX;
+        player.y = targetY;
+        player.gridX = player.targetGridX;
+        player.gridY = player.targetGridY;
 
-      // Check if player is near a grid alignment point (within speed range) with tolerance
-      const isAligned = checkAndAlignActor(player);
-
-      if (isAligned) {
-        player.gridX = Math.round(player.x / CELL_SIZE);
-        player.gridY = Math.round(player.y / CELL_SIZE);
-
-        // Adjust for tunnel warping (infinite loop escapes)
-        // If we move LEFT and reach -CELL_SIZE, wrap to COLS * CELL_SIZE
+        // Warp portals wrapping
         if (player.gridX < 0) {
-          player.gridX = COLS;
-          player.x = COLS * CELL_SIZE;
-        } 
-        // If we move RIGHT and reach COLS, wrap to -CELL_SIZE
-        else if (player.gridX >= COLS) {
-          player.gridX = -1;
-          player.x = -CELL_SIZE;
+          player.gridX = COLS - 1;
+          player.targetGridX = player.gridX;
+          player.x = player.gridX * CELL_SIZE;
+        } else if (player.gridX >= COLS) {
+          player.gridX = 0;
+          player.targetGridX = player.gridX;
+          player.x = 0;
         }
 
-        player.targetGridX = player.gridX;
-        player.targetGridY = player.gridY;
+        let decidedDir: Direction = null;
 
-        // Try to handle next steers buffered of arrow presses
+        // Try to handle next steers buffered from keyboard presses
         if (player.nextDir) {
           let checkX = player.gridX;
           let checkY = player.gridY;
           if (player.nextDir === 'UP') checkY--;
-          if (player.nextDir === 'DOWN') checkY++;
-          if (player.nextDir === 'LEFT') checkX--;
-          if (player.nextDir === 'RIGHT') checkX++;
+          else if (player.nextDir === 'DOWN') checkY++;
+          else if (player.nextDir === 'LEFT') checkX--;
+          else if (player.nextDir === 'RIGHT') checkX++;
 
-          // Wrap boundaries checks
-          if (checkX >= 0 && checkX < COLS && checkY >= 0 && checkY < ROWS) {
-            // Check wall collision
+          // Exception: tunnel escape path warping
+          if (player.gridY === 6 && (player.nextDir === 'LEFT' || player.nextDir === 'RIGHT')) {
+            decidedDir = player.nextDir;
+          } else if (checkX >= 0 && checkX < COLS && checkY >= 0 && checkY < ROWS) {
             if (engine.maze[checkY][checkX] !== 1) {
-              player.currentDir = player.nextDir;
+              decidedDir = player.nextDir;
+              player.nextDir = null; // consume
             }
-          } else if (player.gridY === 6 && (player.nextDir === 'LEFT' || player.nextDir === 'RIGHT')) {
-            // Tunnel allows going off-screen
-            player.currentDir = player.nextDir;
           }
         }
 
-        // Apply constant velocity heading in general current direction
-        if (player.currentDir) {
-          let testX = player.gridX;
-          let testY = player.gridY;
-          if (player.currentDir === 'UP') testY--;
-          if (player.currentDir === 'DOWN') testY++;
-          if (player.currentDir === 'LEFT') testX--;
-          if (player.currentDir === 'RIGHT') testX++;
+        // Try to continue in current heading directory
+        if (!decidedDir && player.currentDir) {
+          let checkX = player.gridX;
+          let checkY = player.gridY;
+          if (player.currentDir === 'UP') checkY--;
+          else if (player.currentDir === 'DOWN') checkY++;
+          else if (player.currentDir === 'LEFT') checkX--;
+          else if (player.currentDir === 'RIGHT') checkX++;
 
-          if (testX >= 0 && testX < COLS && testY >= 0 && testY < ROWS) {
-            if (engine.maze[testY][testX] !== 1) {
-              player.targetGridX = testX;
-              player.targetGridY = testY;
-            } else {
-              // Hit wall, halts
-              player.currentDir = null;
+          if (player.gridY === 6 && (player.currentDir === 'LEFT' || player.currentDir === 'RIGHT')) {
+            decidedDir = player.currentDir;
+          } else if (checkX >= 0 && checkX < COLS && checkY >= 0 && checkY < ROWS) {
+            if (engine.maze[checkY][checkX] !== 1) {
+              decidedDir = player.currentDir;
             }
-          } else if (player.gridY === 6 && (player.currentDir === 'LEFT' || player.currentDir === 'RIGHT')) {
-            player.targetGridX = testX;
-            player.targetGridY = testY;
-          } else {
-            player.currentDir = null;
           }
+        }
+
+        // Apply new verified target
+        if (decidedDir) {
+          player.currentDir = decidedDir;
+          if (decidedDir === 'UP') player.targetGridY = player.gridY - 1;
+          else if (decidedDir === 'DOWN') player.targetGridY = player.gridY + 1;
+          else if (decidedDir === 'LEFT') player.targetGridX = player.gridX - 1;
+          else if (decidedDir === 'RIGHT') player.targetGridX = player.gridX + 1;
+        } else {
+          player.currentDir = null;
         }
       }
 
-      // Execute actual physical step motion
+      // INSTANT Turnaround / Reverse Direction capability mid-corridor
+      if (player.nextDir && isOppositeDirection(player.nextDir, player.currentDir)) {
+        const tempX = player.gridX;
+        const tempY = player.gridY;
+        player.gridX = player.targetGridX;
+        player.gridY = player.targetGridY;
+        player.targetGridX = tempX;
+        player.targetGridY = tempY;
+        player.currentDir = player.nextDir;
+        player.nextDir = null;
+      }
+
+      // Linear motion progress towards target grid tile coordinates
       if (player.currentDir) {
-        if (player.currentDir === 'UP') player.y -= player.speed;
-        if (player.currentDir === 'DOWN') player.y += player.speed;
-        if (player.currentDir === 'LEFT') player.x -= player.speed;
-        if (player.currentDir === 'RIGHT') player.x += player.speed;
+        const finalTargetX = player.targetGridX * CELL_SIZE;
+        const finalTargetY = player.targetGridY * CELL_SIZE;
+        const dx = finalTargetX - player.x;
+        const dy = finalTargetY - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist <= player.speed) {
+          player.x = finalTargetX;
+          player.y = finalTargetY;
+        } else {
+          player.x += (dx / dist) * player.speed;
+          player.y += (dy / dist) * player.speed;
+        }
       }
 
       // 3. DETECT ITEMS COLLECTION (VODKA BOTTLES & NUTS)
@@ -509,24 +565,27 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         initActors(true);
       }
 
-      // 4. GHOST ENGINE (COLA BOTTLES CHASE ENEMY LOGIC)
+      // 4. GHOST ENGINE (COLA BOTTLES GRID-TARGET INTERSECTION CHASE ACTION)
       engine.ghosts.forEach((ghost, idx) => {
-        const isGhostAligned = checkAndAlignActor(ghost);
+        const gTargetX = ghost.targetGridX * CELL_SIZE;
+        const gTargetY = ghost.targetGridY * CELL_SIZE;
 
-        if (isGhostAligned) {
-          ghost.gridX = Math.round(ghost.x / CELL_SIZE);
-          ghost.gridY = Math.round(ghost.y / CELL_SIZE);
+        if (Math.abs(ghost.x - gTargetX) < 0.1 && Math.abs(ghost.y - gTargetY) < 0.1) {
+          // Snap exactly to target tiles
+          ghost.x = gTargetX;
+          ghost.y = gTargetY;
+          ghost.gridX = ghost.targetGridX;
+          ghost.gridY = ghost.targetGridY;
 
-          // Wrap index for portal
-          // If moving LEFT and reach -CELL_SIZE, wrap to COLS * CELL_SIZE
+          // Warp portal wrapping
           if (ghost.gridX < 0) {
-            ghost.gridX = COLS;
-            ghost.x = COLS * CELL_SIZE;
-          } 
-          // If moving RIGHT and reach COLS, wrap to -CELL_SIZE
-          else if (ghost.gridX >= COLS) {
-            ghost.gridX = -1;
-            ghost.x = -CELL_SIZE;
+            ghost.gridX = COLS - 1;
+            ghost.targetGridX = ghost.gridX;
+            ghost.x = ghost.gridX * CELL_SIZE;
+          } else if (ghost.gridX >= COLS) {
+            ghost.gridX = 0;
+            ghost.targetGridX = ghost.gridX;
+            ghost.x = 0;
           }
 
           // Calculate possible valid directions at this intersection (excluding opposite direction to prevent flipping back immediately)
@@ -562,29 +621,29 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
               selectedDirObj = validDirs[Math.floor(Math.random() * validDirs.length)];
             } else {
               // Pathfinding goal selector depending on ghost profile identity:
-              let targetX = player.gridX;
-              let targetY = player.gridY;
+              let targetXPoint = player.gridX;
+              let targetYPoint = player.gridY;
 
               if (idx === 1) {
                 // Diet Blue Cola intercepts 3 steps ahead
-                if (player.currentDir === 'UP') targetY -= 3;
-                if (player.currentDir === 'DOWN') targetY += 3;
-                if (player.currentDir === 'LEFT') targetX -= 3;
-                if (player.currentDir === 'RIGHT') targetX += 3;
+                if (player.currentDir === 'UP') targetYPoint -= 3;
+                if (player.currentDir === 'DOWN') targetYPoint += 3;
+                if (player.currentDir === 'LEFT') targetXPoint -= 3;
+                if (player.currentDir === 'RIGHT') targetXPoint += 3;
               } else if (idx === 2) {
                 // Lemon Cola is curious and wanders off to target the corners if too close
                 const distToPlayer = Math.abs(ghost.gridX - player.gridX) + Math.abs(ghost.gridY - player.gridY);
                 if (distToPlayer < 4) {
                   // Run away to top-right corner
-                  targetX = COLS - 2;
-                  targetY = 1;
+                  targetXPoint = COLS - 2;
+                  targetYPoint = 1;
                 }
               }
 
               // Evaluate which cell minimises taxicab distance (L1 norm) to the target coordinates
               let minDist = Infinity;
               validDirs.forEach(d => {
-                const dist = Math.abs(d.x - targetX) + Math.abs(d.y - targetY);
+                const dist = Math.abs(d.x - targetXPoint) + Math.abs(d.y - targetYPoint);
                 if (dist < minDist) {
                   minDist = dist;
                   selectedDirObj = d;
@@ -605,12 +664,23 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
           }
         }
 
-        // Apply physical motion towards target coordinates
-        const stepAmt = ghost.speed;
-        if (ghost.currentDir === 'UP') ghost.y -= stepAmt;
-        if (ghost.currentDir === 'DOWN') ghost.y += stepAmt;
-        if (ghost.currentDir === 'LEFT') ghost.x -= stepAmt;
-        if (ghost.currentDir === 'RIGHT') ghost.x += stepAmt;
+        // Apply physical motion towards currently selected target tile
+        if (ghost.currentDir) {
+          const finalGTargetX = ghost.targetGridX * CELL_SIZE;
+          const finalGTargetY = ghost.targetGridY * CELL_SIZE;
+          const dx = finalGTargetX - ghost.x;
+          const dy = finalGTargetY - ghost.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          const stepAmt = ghost.speed;
+          if (dist <= stepAmt) {
+            ghost.x = finalGTargetX;
+            ghost.y = finalGTargetY;
+          } else {
+            ghost.x += (dx / dist) * stepAmt;
+            ghost.y += (dy / dist) * stepAmt;
+          }
+        }
       });
 
       // 5. COLLISION CHECK BETWEEN GHOST BOTTLES AND HAMSTER
@@ -630,10 +700,12 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
             // Send ghost back to central cage / spawn spot
             ghost.gridX = 7;
             ghost.gridY = 5;
+            ghost.targetGridX = 7;
+            ghost.targetGridY = 5;
             ghost.x = 7 * CELL_SIZE;
             ghost.y = 5 * CELL_SIZE;
             ghost.isFrightened = false;
-            ghost.speed = 1.5;
+            ghost.speed = normalGhostSpeed;
             ghost.currentDir = 'UP';
           } else if (engine.invulnFrames === 0) {
             // Caught by aggressive Cola ghost bottle!
@@ -653,7 +725,7 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
               }
             } else {
               toast.error('Oei! Een Cola Fles te pakken gekregen! Leven kwijt! 💥');
-              // Briefly reset positions
+              // Briefly reset positions safely back to grid coordinates
               player.gridX = 7;
               player.gridY = 13;
               player.targetGridX = 7;
@@ -670,7 +742,6 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
       });
 
       // 6. CANVAS RETRO DRAW ENGINE
-      // Double resolution high-DPI scaling for ultra crisp rendering!
       const dpr = window.devicePixelRatio || 1;
       if (canvas.width !== 360 * dpr || canvas.height !== 360 * dpr) {
         canvas.width = 360 * dpr;
@@ -697,32 +768,48 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
             ctx.strokeRect(c * CELL_SIZE + 1.5, r * CELL_SIZE + 1.5, CELL_SIZE - 3, CELL_SIZE - 3);
           } else if (type === 0) {
             // DRAW VODKA BOTTLES (item to collect)
-            // Draw a shiny golden circular glow behind the bottle to make it extremely visible
-            ctx.fillStyle = 'rgba(234, 179, 8, 0.12)';
-            ctx.beginPath();
-            ctx.arc(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2, 8, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Render bigger bottle
-            ctx.font = '20px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('🍾', c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2 + 1);
-          } else if (type === 2) {
-            // DRAW POWER PEANUT / SEED
-            // Make peanut shine / pulse animation
-            const pulse = 1 + 0.18 * Math.sin(engine.frameCount * 0.15);
+            // Vibrant pulsing background ring and bright stroke glow to make it stand out beautifully
+            const pulse = 1 + 0.12 * Math.sin(engine.frameCount * 0.1 + (r + c) * 0.5);
             ctx.save();
             ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
             ctx.scale(pulse, pulse);
 
-            // Draw a beautiful white/amber pulse glow behind it
-            ctx.fillStyle = 'rgba(251, 191, 36, 0.3)';
+            ctx.fillStyle = 'rgba(234, 179, 8, 0.28)';
             ctx.beginPath();
-            ctx.arc(0, 0, 9, 0, Math.PI * 2);
+            ctx.arc(0, 0, 11, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.font = '22px sans-serif';
+            ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
+            ctx.lineWidth = 1.25;
+            ctx.beginPath();
+            ctx.arc(0, 0, 10, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🍾', 0, 0.5);
+            ctx.restore();
+          } else if (type === 2) {
+            // DRAW POWER PEANUT / SEED
+            const pulse = 1 + 0.2 * Math.sin(engine.frameCount * 0.15 + (r + c) * 0.5);
+            ctx.save();
+            ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
+            ctx.scale(pulse, pulse);
+
+            // Bright amber glowing aura ring
+            ctx.fillStyle = 'rgba(249, 115, 22, 0.35)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(249, 115, 22, 0.85)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, 11, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.font = '18px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('🥜', 0, 1);
@@ -742,7 +829,6 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         ctx.translate(ghost.x + CELL_SIZE / 2, ghost.y + CELL_SIZE / 2);
         
         if (ghost.isFrightened) {
-          // Blue frightened cola shape with warning circular glow
           ctx.fillStyle = 'rgba(59, 130, 246, 0.4)';
           ctx.beginPath();
           ctx.arc(0, 0, 12, 0, Math.PI * 2);
@@ -764,24 +850,18 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
             ctx.strokeRect(-12, -12, 24, 24);
           }
         } else {
-          // GORGEOUS HIGH-CONTRAST CHICK COLA DESIGN
-          // Glowing aura behind matching their distinct flavor color so it pops against pitch black
           ctx.fillStyle = `${ghost.color}35`; 
           ctx.beginPath();
           ctx.arc(0, 0, 12, 0, Math.PI * 2);
           ctx.fill();
 
-          // Render light name tag / thick accent glow circle
           ctx.strokeStyle = ghost.color;
           ctx.lineWidth = 2;
           ctx.stroke();
 
-          // Standard full-power enemy bottle
           ctx.font = '22px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          
-          // Ensure we draw the custom soda/drink cups
           ctx.fillText(ghost.emoji, 0, 0);
         }
         ctx.restore();
@@ -792,7 +872,6 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         ctx.save();
         ctx.translate(player.x + CELL_SIZE / 2, player.y + CELL_SIZE / 2);
         
-        // Cozy golden ring background behind hamster so it is ALWAYS instantly found
         ctx.fillStyle = 'rgba(234, 179, 8, 0.25)';
         ctx.beginPath();
         ctx.arc(0, 0, 12, 0, Math.PI * 2);
@@ -802,7 +881,6 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        // Flip hamster based on steer heading
         if (player.currentDir === 'LEFT' || player.nextDir === 'LEFT') {
           ctx.scale(-1, 1);
         }
@@ -812,7 +890,6 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         ctx.textBaseline = 'middle';
         ctx.fillText(player.emoji, 0, 0);
         
-        // Shiny energy shield border when supercharged
         if (engine.frightenedTimer > 0) {
           ctx.beginPath();
           ctx.arc(0, 0, 14, 0, Math.PI * 2);

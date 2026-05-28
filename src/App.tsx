@@ -249,10 +249,10 @@ export default function App() {
 
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
     try {
-      const cached = localStorage.getItem('cached_notifications');
+      const cached = localStorage.getItem('cached_notification_settings');
       return cleanNotificationSettings(cached ? JSON.parse(cached) : null);
     } catch (e) {
-      console.error('Failed to parse cached_notifications', e);
+      console.error('Failed to parse cached_notification_settings', e);
       return cleanNotificationSettings(null);
     }
   });
@@ -717,6 +717,10 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('cached_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  useEffect(() => {
+    localStorage.setItem('cached_notification_settings', JSON.stringify(notificationSettings));
     
     if (user) {
       const syncSettings = async () => {
@@ -730,7 +734,8 @@ export default function App() {
                 notify_new_messages: notificationSettings.notify_new_messages,
                 notify_mentions: notificationSettings.notify_mentions,
                 message_sound: notificationSettings.message_sound,
-                post_sound: notificationSettings.post_sound
+                post_sound: notificationSettings.post_sound,
+                ringtone_url: notificationSettings.ringtone_url
               } 
             })
             .eq('id', user.uid);
@@ -1200,7 +1205,7 @@ export default function App() {
         
         if (!isSavingThemeRef.current && !(view === 'settings' && settingsTab === 'theme')) {
           if (data.notification_settings) {
-            setNotificationSettings(data.notification_settings);
+            setNotificationSettings(cleanNotificationSettings(data.notification_settings));
           }
           if (data.custom_theme) {
             setCustomTheme(prev => ({ ...prev, ...data.custom_theme }));
@@ -1238,7 +1243,8 @@ export default function App() {
             notify_new_messages: notificationSettings.notify_new_messages,
             notify_mentions: notificationSettings.notify_mentions,
             message_sound: notificationSettings.message_sound,
-            post_sound: notificationSettings.post_sound
+            post_sound: notificationSettings.post_sound,
+            ringtone_url: notificationSettings.ringtone_url
           },
           custom_theme: customTheme,
           created_at: new Date().toISOString(),
@@ -1262,7 +1268,7 @@ export default function App() {
         setPhotoURLInput(profileData.photo_url || '');
         
         if (!isSavingThemeRef.current && !(view === 'settings' && settingsTab === 'theme')) {
-          if (profileData.notification_settings) setNotificationSettings(profileData.notification_settings);
+          if (profileData.notification_settings) setNotificationSettings(cleanNotificationSettings(profileData.notification_settings));
           if (profileData.custom_theme) setCustomTheme(prev => ({ ...prev, ...profileData.custom_theme }));
           if (profileData.use_custom_theme !== undefined) setUseCustomTheme(profileData.use_custom_theme);
         }
