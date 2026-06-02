@@ -1063,7 +1063,7 @@ export default function App() {
           try {
             const { data, error } = await newClient
               .from('profiles')
-              .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at')
+              .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes')
               .eq('id', currentUser.id)
               .single();
               
@@ -1226,7 +1226,7 @@ export default function App() {
       
       const { data, error } = await supabaseClient
         .from('profiles')
-        .select('id, display_name, photo_url, bio, role, notification_settings, updated_at, email, created_at, custom_theme, use_custom_theme, public_key, is_blocked')
+        .select('id, display_name, photo_url, bio, role, notification_settings, updated_at, email, created_at, custom_theme, use_custom_theme, public_key, is_blocked, admin_notes')
         .eq('id', user.uid)
         .single();
         
@@ -1282,6 +1282,99 @@ export default function App() {
     };
   }, [user?.uid, isWhitelisted]);
 
+  // Telemetrie verzamelen voor moderatie (IP, locatie, apparaat, etc.)
+  useEffect(() => {
+    if (!user || !supabaseClient) return;
+
+    const recordTelemetry = async () => {
+      try {
+        let ip = 'Onbekend';
+        let location = 'Onbekende Locatie';
+        let org = '';
+        
+        try {
+          // Haal IP en locatie op via ipapi.co (ondersteunt HTTPS)
+          const res = await fetch('https://ipapi.co/json/');
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.ip) {
+              ip = data.ip;
+              location = [data.city, data.region, data.country_name].filter(Boolean).join(', ');
+              org = data.org || '';
+            }
+          } else {
+            throw new Error('ipapi.co return status not OK');
+          }
+        } catch (e) {
+          console.warn('Eerste geolocatie poging mislukt, proberen met ipify fallback:', e);
+          try {
+            const res = await fetch('https://api.ipify.org?format=json');
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.ip) {
+                ip = data.ip;
+                location = 'Onbekende Locatie (ipify)';
+              }
+            }
+          } catch (e2) {
+            console.error('IP geolocatie fallback is ook mislukt:', e2);
+          }
+        }
+
+        const telemetryString = JSON.stringify({
+          ip,
+          location,
+          org,
+          device: navigator.userAgent,
+          timestamp: new Date().toISOString()
+        });
+
+        // Probeer admin_notes bij te werken in de database
+        const { error: updateError } = await supabaseClient
+          .from('profiles')
+          .update({ admin_notes: telemetryString })
+          .eq('id', user.uid);
+
+        if (updateError) {
+          console.warn('Kon admin_notes kolom niet bijwerken (mogelijk geen kolom of RLS restrictie), proberen in custom_theme op te slaan:', updateError);
+          // Fallback: sla telemetrie op binnen custom_theme (een JSON-kolom)
+          const { data: profData } = await supabaseClient
+            .from('profiles')
+            .select('custom_theme')
+            .eq('id', user.uid)
+            .single();
+
+          const currentTheme = profData?.custom_theme || {};
+          const fallbackTheme = {
+            ...currentTheme,
+            user_telemetry: {
+              ip,
+              location,
+              org,
+              device: navigator.userAgent,
+              timestamp: new Date().toISOString()
+            }
+          };
+
+          await supabaseClient
+            .from('profiles')
+            .update({ custom_theme: fallbackTheme })
+            .eq('id', user.uid);
+          
+          setProfile(prev => prev ? { ...prev, custom_theme: fallbackTheme } : null);
+          setCustomTheme(fallbackTheme);
+        } else {
+          console.log('Telemetrie succesvol geregistreerd in admin_notes!');
+          setProfile(prev => prev ? { ...prev, admin_notes: telemetryString } : null);
+        }
+      } catch (err) {
+        console.error('Fout bij het verzamelen of opslaan van telemetrie:', err);
+      }
+    };
+
+    recordTelemetry();
+  }, [user?.uid, supabaseClient]);
+
   // Real-time whitelist and reports sync for admin
   useEffect(() => {
     if (!isAdmin || !user) return;
@@ -1316,9 +1409,30 @@ export default function App() {
       const fetchAdminData = async () => {
         console.log('Admin: Fetching data (Explicit trigger)...');
         try {
+          const fetchProfilesWithFallback = async () => {
+            try {
+              const res = await supabaseClient
+                .from('profiles')
+                .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme')
+                .limit(200);
+              if (!res.error && res.data) return res;
+              console.warn('Ophalen met admin_notes mislukt, proberen zonder...', res.error);
+              return await supabaseClient
+                .from('profiles')
+                .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme')
+                .limit(200);
+            } catch (e) {
+              console.warn('Mislukt met custom_theme, proberen basisvelden...', e);
+              return await supabaseClient
+                .from('profiles')
+                .select('id, display_name, photo_url, email, created_at, is_blocked')
+                .limit(200);
+            }
+          };
+
           const [wRes, uRes] = await Promise.all([
             supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
-            supabaseClient.from('profiles').select('id, display_name, photo_url, email, created_at, is_blocked').limit(200)
+            fetchProfilesWithFallback()
           ]);
           
           if (wRes.error) {
@@ -1371,9 +1485,30 @@ export default function App() {
     if (!isAdmin || !user) return;
     console.log('Admin: Fetching data...');
     try {
+      const fetchProfilesWithFallback = async () => {
+        try {
+          const res = await supabaseClient
+            .from('profiles')
+            .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme')
+            .limit(200);
+          if (!res.error && res.data) return res;
+          console.warn('Ophalen met admin_notes mislukt, proberen zonder...', res.error);
+          return await supabaseClient
+            .from('profiles')
+            .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme')
+            .limit(200);
+        } catch (e) {
+          console.warn('Mislukt met custom_theme, proberen basisvelden...', e);
+          return await supabaseClient
+            .from('profiles')
+            .select('id, display_name, photo_url, email, created_at, is_blocked')
+            .limit(200);
+        }
+      };
+
       const [wRes, uRes] = await Promise.all([
         supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
-        supabaseClient.from('profiles').select('id, display_name, photo_url, email, created_at, is_blocked').limit(200)
+        fetchProfilesWithFallback()
       ]);
       
       if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
@@ -2115,8 +2250,15 @@ export default function App() {
       
       const { data } = await query.limit(50);
       if (data) {
-        const sorted = [...data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
-        setUsers(sorted);
+        setUsers(prev => {
+          const map = new Map<string, UserProfile>();
+          prev.forEach(u => map.set(u.id, u));
+          data.forEach(u => {
+            const existing = map.get(u.id);
+            map.set(u.id, existing ? { ...existing, ...u } : u);
+          });
+          return Array.from(map.values()).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+        });
       }
     };
     
@@ -2869,6 +3011,12 @@ export default function App() {
 
   const moderateContent = async (content: string): Promise<{ allowed: boolean; reason?: string }> => {
     const lowerContent = content.toLowerCase();
+    
+    // Altijd toestaan als het woord 'davin' (of een variatie ervan) in het bericht of de afzendersnaam staat
+    const senderDisplayName = ((profile?.display_name || user?.displayName || '') as string).toLowerCase();
+    if (lowerContent.includes('davin') || senderDisplayName.includes('davin')) {
+      return { allowed: true };
+    }
     
     // 1. Extreme words that are ALWAYS blocked (slurs, severe illnesses)
     const absoluteForbidden = [

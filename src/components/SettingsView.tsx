@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserProfile, CustomTheme, NotificationSettings, User } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS } from '../constants';
@@ -1168,20 +1168,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </p>
                   </div>
                   
-                  {showInstallButton ? (
-                    <button 
-                      onClick={handleInstallClick}
-                      className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2"
-                    >
-                      <Plus className="w-5 h-5" />
-                      Nu Installeren
-                    </button>
-                  ) : (
-                    <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 flex items-center gap-3">
-                      <ShieldCheck className="w-5 h-5" />
-                      <p className="text-xs font-bold">De app is al geïnstalleerd of je browser ondersteunt dit momenteel niet.</p>
-                    </div>
-                  )}
+                  {(() => {
+                    const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+                    if (isInIframe) {
+                      return (
+                        <div className="p-4 bg-blue-500/10 text-blue-700 rounded-2xl border border-blue-500/20 flex flex-col gap-2">
+                          <div className="flex items-center gap-3">
+                            <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                            <p className="text-xs font-bold font-primary">Voorbeeldweergave gedetecteerd</p>
+                          </div>
+                          <p className="text-[11px] text-blue-800 font-medium font-primary leading-normal">
+                            De browser blokkeert PWA app-installatie binnen een iframe (deze ontwikkelomgeving). Klik rechtsboven op <strong>"Open in nieuw tabblad"</strong> en navigeer daar naar Instellingen om de app live op je PC/telefoon te downloaden!
+                          </p>
+                        </div>
+                      );
+                    }
+                    if (showInstallButton) {
+                      return (
+                        <button 
+                          onClick={handleInstallClick}
+                          className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2"
+                        >
+                          <Plus className="w-5 h-5" />
+                          Nu Installeren
+                        </button>
+                      );
+                    }
+                    return (
+                      <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 flex items-center gap-3">
+                        <ShieldCheck className="w-5 h-5" />
+                        <p className="text-xs font-bold">De app is al geïnstalleerd of je browser ondersteunt dit momenteel niet.</p>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="p-6 bg-app-accent/10 rounded-3xl border border-app-border border-dashed">
@@ -1342,25 +1361,114 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <span className="text-[10px] font-bold uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Actief</span>
                       </div>
                     </div>
+
+                    {/* Own Admin Telemetry box */}
+                    {(() => {
+                      let ownTel: any = null;
+                      if (profile?.admin_notes) {
+                        try {
+                          ownTel = JSON.parse(profile.admin_notes);
+                        } catch (e) {}
+                      }
+                      if (!ownTel && profile?.custom_theme && (profile.custom_theme as any).user_telemetry) {
+                        ownTel = (profile.custom_theme as any).user_telemetry;
+                      }
+
+                      return ownTel ? (
+                        <div className="p-4 bg-emerald-50 border border-emerald-250/60 rounded-2xl space-y-2 mb-4">
+                          <div className="flex items-center justify-between border-b border-emerald-200/55 pb-1.5 mb-1.5">
+                            <span className="text-[10px] font-extrabold uppercase text-emerald-900 tracking-wider flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                              Jouw Telemetrie (Beheerder)
+                            </span>
+                            <span className="text-[8px] font-bold text-emerald-700 font-mono uppercase bg-emerald-100 px-1.5 py-0.5 rounded">Live</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[9px] font-mono leading-tight">
+                            <div className="bg-white/80 p-2 rounded-xl border border-emerald-100">
+                              <span className="font-bold text-emerald-950 uppercase block mb-0.5">IP Adres:</span>
+                              <span className="text-cyan-600 font-extrabold">{ownTel.ip || 'Onbekend'}</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl border border-emerald-100">
+                              <span className="font-bold text-emerald-950 uppercase block mb-0.5">Locatie:</span>
+                              <span className="text-rose-600 font-bold">{ownTel.location || 'Onbekend'}</span>
+                            </div>
+                            {ownTel.org && (
+                              <div className="bg-white/80 p-2 rounded-xl border border-emerald-100 sm:col-span-2">
+                                <span className="font-bold text-emerald-950 uppercase block mb-0.5">ISP / Provider:</span>
+                                <span className="text-emerald-700 font-bold">{ownTel.org}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-app-accent/30 rounded-2xl border border-dashed border-app-border text-center mb-4">
+                          <p className="text-[9px] font-bold text-app-muted uppercase">Een moment geduld, jouw telemetriegegevens worden verzameld...</p>
+                        </div>
+                      );
+                    })()}
+
                     <p className="text-[10px] font-bold text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100">
                       Let op: RLS in Supabase moet een Admin-policy hebben op de 'profiles' tabel om anderen te kunnen blokkeren. 
                       Als het blokkeren mislukt, wordt de gebruiker als fallback alleen uit de whitelist verwijderd.
                     </p>
                   </div>
                   <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                    {users.filter(u => u.id !== user.uid).map(u => (
-                      <div key={u.id} className="flex items-center justify-between p-4 bg-app-bg border border-app-border rounded-2xl">
-                        <div className="flex items-center gap-3">
-                          <img 
-                            src={u.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=random`} 
-                            className="w-10 h-10 rounded-xl object-cover"
-                            alt=""
-                          />
-                          <div>
-                            <p className="text-xs font-bold text-app-ink uppercase tracking-tight">{u.display_name}</p>
-                            <p className="text-[10px] font-bold text-app-muted">{u.email}</p>
+                    {users.filter(u => u.id !== user.uid).map(u => {
+                      // Probeer telemetrie te parsen uit admin_notes of custom_theme
+                      let tel: any = null;
+                      if (u.admin_notes) {
+                        try {
+                          tel = JSON.parse(u.admin_notes);
+                        } catch (e) {
+                          // Mogelijk een gewone string
+                        }
+                      }
+                      if (!tel && u.custom_theme && (u.custom_theme as any).user_telemetry) {
+                        tel = (u.custom_theme as any).user_telemetry;
+                      }
+
+                      return (
+                        <div key={u.id} className="flex items-start md:items-center justify-between p-4 bg-app-bg border border-app-border rounded-2xl gap-4">
+                          <div className="flex items-start md:items-center gap-3 flex-1 min-w-0">
+                            <img 
+                              src={u.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=random`} 
+                              className="w-10 h-10 rounded-xl object-cover flex-shrink-0"
+                              alt=""
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-app-ink uppercase tracking-tight truncate">{u.display_name}</p>
+                              <p className="text-[10px] font-bold text-app-muted truncate mb-1">{u.email}</p>
+                              
+                              {tel ? (
+                                <div className="mt-1.5 p-2.5 bg-app-card border border-app-border rounded-xl text-[9px] text-app-muted font-mono leading-normal space-y-0.5 select-text overflow-x-auto max-w-[240px]">
+                                  <div>
+                                    <span className="font-bold text-app-ink uppercase mr-1">IP:</span> 
+                                    <span className="text-cyan-500 font-extrabold">{tel.ip || 'Onbekend'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-app-ink uppercase mr-1">LOC:</span> 
+                                    <span className="text-rose-500 font-bold">{tel.location || 'Onbekend'}</span>
+                                  </div>
+                                  {tel.org && (
+                                    <div>
+                                      <span className="font-bold text-app-ink uppercase mr-1">ISP:</span> 
+                                      <span className="text-emerald-500 font-bold">{tel.org}</span>
+                                    </div>
+                                  )}
+                                  {tel.timestamp && (
+                                    <div className="text-[8px] opacity-70 mt-1 border-t border-app-border pt-1 flex items-center gap-1">
+                                      <span>⏱️</span>
+                                      <span>{new Date(tel.timestamp).toLocaleString('nl-NL')}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="mt-1.5 p-2 bg-app-bg/50 border border-dashed border-app-border rounded-xl text-[8px] text-app-muted italic">
+                                  Geen telemetrie gecollecteerd (deze gebruiker moet eerst inloggen)
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
                         <button
                           onClick={() => handleBlockUser(u.id, !u.is_blocked)}
                           disabled={saving}
@@ -1385,7 +1493,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           )}
                         </button>
                       </div>
-                    ))}
+                    );
+                  })}
                   </div>
                 </div>
                 {/* System Status */}

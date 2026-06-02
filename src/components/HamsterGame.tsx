@@ -26,6 +26,7 @@ interface GameActor {
   color: string;           // styling color highlight
   emoji: string;           // Visual character emoji
   name: string;
+  isLocked?: boolean;
 }
 
 const CELL_SIZE = 24;
@@ -62,20 +63,46 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
 
   // React State for display
   const [score, setScore] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
   const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_hamster_highscore') || '0'));
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
   const [frightenedTimer, setFrightenedTimer] = useState(0);
 
-  // Dynamic Maze structure states
-  const [maze, setMaze] = useState<number[][]>(() => JSON.parse(JSON.stringify(INITIAL_MAZE)));
+  // Shared ref to avoid creating a new AudioContext on every sound play
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Web Audio Hook For Synthesized Retro Atmosphere
+  // Clean up AudioContext on unmount to release resources
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
+    };
+  }, []);
+
+  // Web Audio Hook For Synthesized Retro Atmosphere using a single cached context
   const playTone = (type: 'eat' | 'power' | 'eat_cola' | 'die' | 'victory' | 'start') => {
     try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContext) return;
-      const ctx = new AudioContext();
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioContextClass();
+      }
+      const ctx = audioCtxRef.current;
+      
+      // Auto-resume if context was suspended by browser autoplay policy
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       
@@ -196,6 +223,34 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
   const initActors = (keepScores = false) => {
     const engine = engineRef.current;
     
+    if (!keepScores) {
+      engine.score = 0;
+      engine.lives = 3;
+      engine.level = 1;
+      engine.maze = JSON.parse(JSON.stringify(INITIAL_MAZE));
+
+      // 1% chance of a Golden Vodka appearing on the initial level
+      if (Math.random() < 0.01) {
+        const vodkaCells: { r: number, c: number }[] = [];
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (engine.maze[r][c] === 0) {
+              vodkaCells.push({ r, c });
+            }
+          }
+        }
+        if (vodkaCells.length > 0) {
+          const randCell = vodkaCells[Math.floor(Math.random() * vodkaCells.length)];
+          engine.maze[randCell.r][randCell.c] = 4; // 4 = Golden Vodka
+          toast.success("✨ GELUK! Een zeldzame GOUDEN VODKA is op dit level gespawned! ✨", { duration: 5000 });
+        }
+      }
+
+      setScore(0);
+      setLives(3);
+      setLevel(1);
+    }
+
     // Position Hamster safely
     engine.hamster.gridX = 7;
     engine.hamster.gridY = 13;
@@ -215,13 +270,38 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
     };
 
     // Calculate dynamic ghost speed based on level (starts slower, gets a bit faster per level)
-    const baseSpeed = 0.9 + Math.min(engine.level - 1, 6) * 0.15;
+    const isNightmare = engine.level >= 10;
+    const baseSpeed = isNightmare 
+      ? 4.0 
+      : 0.9 + Math.min(engine.level - 1, 8) * 0.125;
+
+    // Determine how many ghosts are active on the field based on Level
+    // Level 1: 1 ghost, Level 2: 3 ghosts, Level 3: 4 ghosts, Level 5+: 5 ghosts
+    const activeCount = engine.level === 1 ? 1 : (engine.level === 2 ? 3 : (engine.level < 5 ? 4 : 5));
 
     // Colas (Pacman Ghosts behavior setup)
-    // 1. Red Cola - Chases Hamster closely
-    // 2. Teal Pepsi/Inky - Predicts ahead or wanders
-    // 3. Yellow Lemon-Cola - Circles and acts randomly
+    // 1. Red Cherry Cola
+    // 2. Blue Diet Cola
+    // 3. Lemon Citrus Cola
+    // 4. Purple Grape Soda
+    // 5. Green Lime Soda
     engine.ghosts = [
+      {
+        x: 7 * CELL_SIZE,
+        y: 3 * CELL_SIZE,
+        gridX: 7,
+        gridY: 3,
+        targetGridX: 7,
+        targetGridY: 3,
+        speed: baseSpeed,
+        currentDir: 'UP',
+        nextDir: 'UP',
+        isFrightened: false,
+        color: '#ef4444',
+        emoji: '🥤', // Classic Red Cola
+        name: 'Kersen Cola',
+        isLocked: false
+      },
       {
         x: 6 * CELL_SIZE,
         y: 5 * CELL_SIZE,
@@ -233,24 +313,10 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         currentDir: 'UP',
         nextDir: 'UP',
         isFrightened: false,
-        color: '#ef4444',
-        emoji: '🥤', // Classic Red Cola
-        name: 'Red Cherry Cola'
-      },
-      {
-        x: 7 * CELL_SIZE,
-        y: 5 * CELL_SIZE,
-        gridX: 7,
-        gridY: 5,
-        targetGridX: 7,
-        targetGridY: 5,
-        speed: baseSpeed,
-        currentDir: 'RIGHT',
-        nextDir: 'RIGHT',
-        isFrightened: false,
         color: '#06b6d4',
         emoji: '🥤', // Blue Diet Cola Cup
-        name: 'Blue Diet Cola'
+        name: 'Diet Cola',
+        isLocked: true
       },
       {
         x: 8 * CELL_SIZE,
@@ -260,29 +326,93 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         targetGridX: 8,
         targetGridY: 5,
         speed: baseSpeed,
-        currentDir: 'LEFT',
-        nextDir: 'LEFT',
+        currentDir: 'UP',
+        nextDir: 'UP',
         isFrightened: false,
-        color: '#eab308', // pure gold amber yellow
+        color: '#eab308', // Amber Yellow
         emoji: '🥤', // Lemon Cola Cup
-        name: 'Lemon Cola'
+        name: 'Citroen Cola',
+        isLocked: true
+      },
+      {
+        x: 5 * CELL_SIZE,
+        y: 5 * CELL_SIZE,
+        gridX: 5,
+        gridY: 5,
+        targetGridX: 5,
+        targetGridY: 5,
+        speed: baseSpeed,
+        currentDir: 'UP',
+        nextDir: 'UP',
+        isFrightened: false,
+        color: '#a855f7', // Cassis Purple
+        emoji: '🥤',
+        name: 'Cassis Soda',
+        isLocked: true
+      },
+      {
+        x: 9 * CELL_SIZE,
+        y: 5 * CELL_SIZE,
+        gridX: 9,
+        gridY: 5,
+        targetGridX: 9,
+        targetGridY: 5,
+        speed: baseSpeed,
+        currentDir: 'UP',
+        nextDir: 'UP',
+        isFrightened: false,
+        color: '#22c55e', // Lime Green
+        emoji: '🥤',
+        name: 'Lime Soda',
+        isLocked: true
       }
     ];
+
+    // Assign active positions and locks dynamically
+    engine.ghosts.forEach((ghost, idx) => {
+      const isActive = idx < activeCount;
+      ghost.isLocked = !isActive;
+
+      if (isActive) {
+        // Position active ghosts scattered nicely in the field
+        let startX = 7;
+        let startY = 3;
+        if (idx === 1) { startX = 4; startY = 3; }
+        else if (idx === 2) { startX = 10; startY = 3; }
+        else if (idx === 3) { startX = 2; startY = 3; }
+        else if (idx === 4) { startX = 12; startY = 3; }
+
+        ghost.gridX = startX;
+        ghost.gridY = startY;
+        ghost.targetGridX = startX;
+        ghost.targetGridY = startY;
+        ghost.x = startX * CELL_SIZE;
+        ghost.y = startY * CELL_SIZE;
+        ghost.currentDir = 'UP';
+        ghost.nextDir = 'UP';
+      } else {
+        // Locked inside cage at fixed grid spots
+        let cageX = 7;
+        let cageY = 5;
+        if (idx === 1) { cageX = 6; cageY = 5; }
+        else if (idx === 2) { cageX = 8; cageY = 5; }
+        else if (idx === 3) { cageX = 5; cageY = 5; }
+        else if (idx === 4) { cageX = 9; cageY = 5; }
+
+        ghost.gridX = cageX;
+        ghost.gridY = cageY;
+        ghost.targetGridX = cageX;
+        ghost.targetGridY = cageY;
+        ghost.x = cageX * CELL_SIZE;
+        ghost.y = cageY * CELL_SIZE;
+        ghost.currentDir = 'UP';
+        ghost.nextDir = 'UP';
+      }
+    });
 
     engine.invulnFrames = 0;
     engine.frightenedTimer = 0;
     setFrightenedTimer(0);
-
-    if (!keepScores) {
-      engine.score = 0;
-      engine.lives = 3;
-      engine.level = 1;
-      engine.maze = JSON.parse(JSON.stringify(INITIAL_MAZE));
-      setScore(0);
-      setLives(3);
-      setLevel(1);
-      setMaze(JSON.parse(JSON.stringify(INITIAL_MAZE)));
-    }
   };
 
   const handleStartGame = () => {
@@ -301,7 +431,15 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         e.preventDefault(); // Stop page scrolling
       }
 
-      if (playStateRef.current !== 'playing') return;
+      if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+        if (playStateRef.current === 'playing') {
+          playTone('start');
+          setIsPaused(prev => !prev);
+          return;
+        }
+      }
+
+      if (playStateRef.current !== 'playing' || isPausedRef.current) return;
 
       if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
         engine.keysPressed.UP = true;
@@ -371,10 +509,32 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
+      if (isPausedRef.current) {
+        // Draw pause overlay over the current maze
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px "Inter", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('SPEL GEPAUZEERD ⏸️', canvas.width / 2, canvas.height / 2 - 15);
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = 'bold 11px "Inter", sans-serif';
+        ctx.fillText("Druk op 'P' of Hervatten om door te gaan", canvas.width / 2, canvas.height / 2 + 15);
+
+        animationId = requestAnimationFrame(updateLoop);
+        return;
+      }
+
       const engine = engineRef.current;
       engine.frameCount++;
 
-      const normalGhostSpeed = 0.9 + Math.min(engine.level - 1, 6) * 0.15;
+      const isNightmare = engine.level >= 10;
+      const normalGhostSpeed = isNightmare 
+        ? 4.0 
+        : 0.9 + Math.min(engine.level - 1, 8) * 0.125;
 
       // 1. TIMERS UPDATE
       if (engine.frightenedTimer > 0) {
@@ -405,6 +565,31 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
       else if (engine.keysPressed.LEFT) player.nextDir = 'LEFT';
       else if (engine.keysPressed.RIGHT) player.nextDir = 'RIGHT';
 
+      // Verify move helper to prevent going through walls under any turning conditions
+      const isValidPlayerMove = (gridX: number, gridY: number, dir: Direction): boolean => {
+        if (!dir) return false;
+        let checkX = gridX;
+        let checkY = gridY;
+        if (dir === 'UP') checkY--;
+        else if (dir === 'DOWN') checkY++;
+        else if (dir === 'LEFT') checkX--;
+        else if (dir === 'RIGHT') checkX++;
+
+        // Warp portals wrapping row index 6
+        if (checkX < 0 || checkX >= COLS) {
+          return gridY === 6 && (dir === 'LEFT' || dir === 'RIGHT');
+        }
+        if (checkY < 0 || checkY >= ROWS) {
+          return false;
+        }
+
+        // Prevent the player from entering the central ghost cage
+        const isCage = (checkY === 4 && checkX >= 6 && checkX <= 8) || (checkY === 5 && checkX >= 5 && checkX <= 9);
+        if (isCage) return false;
+
+        return engine.maze[checkY][checkX] !== 1;
+      };
+
       // Check if hamster arrived at target grid tile center
       const targetX = player.targetGridX * CELL_SIZE;
       const targetY = player.targetGridY * CELL_SIZE;
@@ -430,44 +615,17 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         let decidedDir: Direction = null;
 
         // Try to handle next steers buffered from keyboard presses
-        if (player.nextDir) {
-          let checkX = player.gridX;
-          let checkY = player.gridY;
-          if (player.nextDir === 'UP') checkY--;
-          else if (player.nextDir === 'DOWN') checkY++;
-          else if (player.nextDir === 'LEFT') checkX--;
-          else if (player.nextDir === 'RIGHT') checkX++;
-
-          // Exception: tunnel escape path warping
-          if (player.gridY === 6 && (player.nextDir === 'LEFT' || player.nextDir === 'RIGHT')) {
-            decidedDir = player.nextDir;
-          } else if (checkX >= 0 && checkX < COLS && checkY >= 0 && checkY < ROWS) {
-            if (engine.maze[checkY][checkX] !== 1) {
-              decidedDir = player.nextDir;
-              player.nextDir = null; // consume
-            }
-          }
+        if (player.nextDir && isValidPlayerMove(player.gridX, player.gridY, player.nextDir)) {
+          decidedDir = player.nextDir;
+          player.nextDir = null; // consume
         }
 
         // Try to continue in current heading directory
-        if (!decidedDir && player.currentDir) {
-          let checkX = player.gridX;
-          let checkY = player.gridY;
-          if (player.currentDir === 'UP') checkY--;
-          else if (player.currentDir === 'DOWN') checkY++;
-          else if (player.currentDir === 'LEFT') checkX--;
-          else if (player.currentDir === 'RIGHT') checkX++;
-
-          if (player.gridY === 6 && (player.currentDir === 'LEFT' || player.currentDir === 'RIGHT')) {
-            decidedDir = player.currentDir;
-          } else if (checkX >= 0 && checkX < COLS && checkY >= 0 && checkY < ROWS) {
-            if (engine.maze[checkY][checkX] !== 1) {
-              decidedDir = player.currentDir;
-            }
-          }
+        if (!decidedDir && player.currentDir && isValidPlayerMove(player.gridX, player.gridY, player.currentDir)) {
+          decidedDir = player.currentDir;
         }
 
-        // Apply new verified target
+        // Apply new verified target if allowed, otherwise halt safely at wall
         if (decidedDir) {
           player.currentDir = decidedDir;
           if (decidedDir === 'UP') player.targetGridY = player.gridY - 1;
@@ -520,9 +678,6 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
           engine.score += 25;
           setScore(engine.score);
           playTone('eat');
-          
-          // Re-trigger static state update for UI render occasionally
-          setMaze([...engine.maze]);
         } else if (item === 2) {
           // Collected Power Peanut!
           engine.maze[checkCollectGridY][checkCollectGridX] = 3; // Clear item cell
@@ -530,23 +685,31 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
           setScore(engine.score);
           playTone('power');
           
-          // Activate frightened mode for all ghosts
-          engine.frightenedTimer = 480; // 8 seconds of absolute power
-          setFrightenedTimer(8);
+          // Activate frightened mode for all ghosts (shorter duration on higher levels so they become killer again faster!)
+          const durationSec = Math.max(2, 6 - Math.min(engine.level - 1, 6) * 0.7);
+          engine.frightenedTimer = Math.round(durationSec * 60);
+          setFrightenedTimer(Math.round(durationSec));
           engine.ghosts.forEach(g => {
             g.isFrightened = true;
             g.speed = 0.8; // vulnerable state is slower
           });
-
-          setMaze([...engine.maze]);
+        } else if (item === 4) {
+          // Collected Golden Vodka!
+          engine.maze[checkCollectGridY][checkCollectGridX] = 3; // Clear item cell
+          engine.score += 500; // Large score reward
+          setScore(engine.score);
+          playTone('victory');
+          engine.lives = 3; // Regenerate all health/lives!
+          setLives(3);
+          toast.success("✨ SPECTACULAIR! Je hebt de GOUDEN VODKA gedronken! Al je health is hersteld! 🍾✨", { duration: 5000 });
         }
       }
 
-      // Check level cleared condition (any 0s or 2s left in maze?)
+      // Check level cleared condition (any 0s, 2s or 4s left in maze?)
       let itemsRemaining = 0;
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-          if (engine.maze[r][c] === 0 || engine.maze[r][c] === 2) {
+          if (engine.maze[r][c] === 0 || engine.maze[r][c] === 2 || engine.maze[r][c] === 4) {
             itemsRemaining++;
           }
         }
@@ -557,11 +720,34 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         playTone('victory');
         engine.level++;
         setLevel(engine.level);
-        toast.success(`Level ${engine.level} Behaald! De cola flessen bewegen sneller! 🍾⚡`);
         
         // Reset maze but preserve score/lives
         engine.maze = JSON.parse(JSON.stringify(INITIAL_MAZE));
-        setMaze(JSON.parse(JSON.stringify(INITIAL_MAZE)));
+
+        // 1% chance of a Golden Vodka appearing on a level
+        const isGoldenVodkaLevel = Math.random() < 0.01;
+        if (isGoldenVodkaLevel) {
+          const vodkaCells: { r: number, c: number }[] = [];
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              if (engine.maze[r][c] === 0) {
+                vodkaCells.push({ r, c });
+              }
+            }
+          }
+          if (vodkaCells.length > 0) {
+            const randomCell = vodkaCells[Math.floor(Math.random() * vodkaCells.length)];
+            engine.maze[randomCell.r][randomCell.c] = 4; // 4 = Golden Vodka
+            toast.success("✨ GELUK! Een zeldzame GOUDEN VODKA is op dit level gespawned! ✨", { duration: 5000 });
+          }
+        }
+
+        if (engine.level >= 10) {
+          toast.error("💀 NIGHTMARE MODE GEACTIVEERD! De cola flessen bewegen nu super snel! 💀", { duration: 5000 });
+        } else {
+          toast.success(`Level ${engine.level} Behaald! De cola flessen bewegen sneller! 🍾⚡`);
+        }
+        
         initActors(true);
       }
 
@@ -604,53 +790,37 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
             { dir: 'RIGHT', x: ghost.gridX + 1, y: ghost.gridY }
           ];
 
+          // Cage boundaries checker
+          const isInsideCage = (x: number, y: number) => {
+            return (y === 4 && x >= 6 && x <= 8) || (y === 5 && x >= 5 && x <= 9);
+          };
+
+          const wasInside = isInsideCage(ghost.gridX, ghost.gridY);
+
           const validDirs = directions.filter(d => {
             if (d.dir === opp) return false; // avoid reversing directly
             if (d.x < 0 || d.x >= COLS) {
               return ghost.gridY === 6; // only escape tunnel row 6 is escape valid
             }
             if (d.y < 0 || d.y >= ROWS) return false;
-            return engine.maze[d.y][d.x] !== 1; // Not a wall
+            if (engine.maze[d.y][d.x] === 1) return false; // Not a wall
+
+            const isNewInside = isInsideCage(d.x, d.y);
+            if (ghost.isLocked) {
+              // Locked ghosts must stay inside the cage
+              return isNewInside;
+            } else {
+              // Active ghosts: if they were outside already, they cannot wander back inside!
+              if (!wasInside && isNewInside) {
+                return false;
+              }
+            }
+            return true;
           });
 
           if (validDirs.length > 0) {
-            let selectedDirObj = validDirs[0];
-
-            if (ghost.isFrightened) {
-              // Absolute randomized movement at intersection when scared
-              selectedDirObj = validDirs[Math.floor(Math.random() * validDirs.length)];
-            } else {
-              // Pathfinding goal selector depending on ghost profile identity:
-              let targetXPoint = player.gridX;
-              let targetYPoint = player.gridY;
-
-              if (idx === 1) {
-                // Diet Blue Cola intercepts 3 steps ahead
-                if (player.currentDir === 'UP') targetYPoint -= 3;
-                if (player.currentDir === 'DOWN') targetYPoint += 3;
-                if (player.currentDir === 'LEFT') targetXPoint -= 3;
-                if (player.currentDir === 'RIGHT') targetXPoint += 3;
-              } else if (idx === 2) {
-                // Lemon Cola is curious and wanders off to target the corners if too close
-                const distToPlayer = Math.abs(ghost.gridX - player.gridX) + Math.abs(ghost.gridY - player.gridY);
-                if (distToPlayer < 4) {
-                  // Run away to top-right corner
-                  targetXPoint = COLS - 2;
-                  targetYPoint = 1;
-                }
-              }
-
-              // Evaluate which cell minimises taxicab distance (L1 norm) to the target coordinates
-              let minDist = Infinity;
-              validDirs.forEach(d => {
-                const dist = Math.abs(d.x - targetXPoint) + Math.abs(d.y - targetYPoint);
-                if (dist < minDist) {
-                  minDist = dist;
-                  selectedDirObj = d;
-                }
-              });
-            }
-
+            // Pick a completely random direction from the available valid directions - no player targeting!
+            const selectedDirObj = validDirs[Math.floor(Math.random() * validDirs.length)];
             ghost.currentDir = selectedDirObj.dir;
             ghost.targetGridX = selectedDirObj.x;
             ghost.targetGridY = selectedDirObj.y;
@@ -685,6 +855,17 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
 
       // 5. COLLISION CHECK BETWEEN GHOST BOTTLES AND HAMSTER
       engine.ghosts.forEach(ghost => {
+        // Skip locked/decorative ghosts inside the cage to avoid any inadvertent collisions
+        if (ghost.isLocked) {
+          return;
+        }
+
+        // If ghost is in the central spawn cage area, ignore collision to prevent spawn camping / instant killing on respawn
+        const isGhostInCage = (ghost.gridY === 4 || ghost.gridY === 5) && (ghost.gridX >= 5 && ghost.gridX <= 9);
+        if (isGhostInCage) {
+          return;
+        }
+
         // L1 overlap distance check
         const distX = Math.abs(player.x - ghost.x);
         const distY = Math.abs(player.y - ghost.y);
@@ -704,8 +885,15 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
             ghost.targetGridY = 5;
             ghost.x = 7 * CELL_SIZE;
             ghost.y = 5 * CELL_SIZE;
-            ghost.isFrightened = false;
-            ghost.speed = normalGhostSpeed;
+            
+            // Retain frightened status if global frightened power mode is still active
+            if (engine.frightenedTimer > 0) {
+              ghost.isFrightened = true;
+              ghost.speed = 0.8;
+            } else {
+              ghost.isFrightened = false;
+              ghost.speed = normalGhostSpeed;
+            }
             ghost.currentDir = 'UP';
           } else if (engine.invulnFrames === 0) {
             // Caught by aggressive Cola ghost bottle!
@@ -725,16 +913,7 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
               }
             } else {
               toast.error('Oei! Een Cola Fles te pakken gekregen! Leven kwijt! 💥');
-              // Briefly reset positions safely back to grid coordinates
-              player.gridX = 7;
-              player.gridY = 13;
-              player.targetGridX = 7;
-              player.targetGridY = 13;
-              player.x = 7 * CELL_SIZE;
-              player.y = 13 * CELL_SIZE;
-              player.currentDir = null;
-              player.nextDir = null;
-
+              initActors(true);
               engine.invulnFrames = 120; // 2 seconds of blinking invulnerability grace
             }
           }
@@ -814,6 +993,34 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
             ctx.textBaseline = 'middle';
             ctx.fillText('🥜', 0, 1);
             ctx.restore();
+          } else if (type === 4) {
+            // DRAW GOLDEN VODKA (Special health regen item)
+            const pulse = 1 + 0.25 * Math.sin(engine.frameCount * 0.2 + (r + c) * 0.8);
+            ctx.save();
+            ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
+            ctx.scale(pulse, pulse);
+
+            // Radiant golden glowing aura ring
+            ctx.fillStyle = 'rgba(234, 179, 8, 0.45)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 13, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 11, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw shiny stars surrounding golden bottle
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🍾', 0, 0.5);
+            ctx.font = '10px sans-serif';
+            ctx.fillText('✨', 8, -6);
+            ctx.fillText('✨', -8, 6);
+            ctx.restore();
           }
         }
       }
@@ -822,6 +1029,37 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
       ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
       ctx.fillRect(0, 6 * CELL_SIZE, 8, CELL_SIZE);
       ctx.fillRect(360 - 8, 6 * CELL_SIZE, 8, CELL_SIZE);
+
+      // Draw beautiful glows and outline of the ghost cage (kooi) in the center
+      ctx.save();
+      ctx.strokeStyle = '#f43f5e'; // Vibrant pink/rose glowing neon cage
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      
+      ctx.moveTo(5 * CELL_SIZE, 5 * CELL_SIZE);
+      ctx.lineTo(5 * CELL_SIZE, 6 * CELL_SIZE); // Down left edge
+      ctx.lineTo(10 * CELL_SIZE, 6 * CELL_SIZE); // Bottom edge
+      ctx.lineTo(10 * CELL_SIZE, 5 * CELL_SIZE); // Up right edge
+      ctx.lineTo(9 * CELL_SIZE, 5 * CELL_SIZE); // Step in horizontally
+      ctx.lineTo(9 * CELL_SIZE, 4 * CELL_SIZE); // Up row 4 edge
+      ctx.lineTo(8 * CELL_SIZE, 4 * CELL_SIZE); // Top right roof of cage
+      
+      ctx.moveTo(7 * CELL_SIZE, 4 * CELL_SIZE); // Gap for dashed gate!
+      ctx.lineTo(6 * CELL_SIZE, 4 * CELL_SIZE); // Top left roof of cage 
+      ctx.lineTo(6 * CELL_SIZE, 5 * CELL_SIZE); // Down row 4 edge
+      ctx.lineTo(5 * CELL_SIZE, 5 * CELL_SIZE); // Step out horizontally
+      ctx.stroke();
+
+      // Draw dashed laser gate for cage top opening
+      ctx.strokeStyle = '#38bdf8'; // Sky blue laser beam gate
+      ctx.lineWidth = 3.5;
+      ctx.setLineDash([4, 4]); // Dashed line style
+      ctx.beginPath();
+      ctx.moveTo(7 * CELL_SIZE - 2, 4 * CELL_SIZE);
+      ctx.lineTo(8 * CELL_SIZE + 2, 4 * CELL_SIZE);
+      ctx.stroke();
+      ctx.setLineDash([]); // Reset line dash
+      ctx.restore();
 
       // Draw Ghosts (Cola Bottles)
       engine.ghosts.forEach(ghost => {
@@ -916,7 +1154,7 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
       
       {/* Game Dashboard details */}
       <div className="w-full flex items-center justify-between bg-app-card/60 rounded-2xl p-4 border border-app-border mb-4">
-        <div className="flex gap-4">
+        <div className="flex gap-4 items-center">
           <div>
             <span className="text-[10px] font-bold text-app-muted uppercase tracking-wider block">Score</span>
             <span className="text-xl font-black text-amber-500 font-mono tracking-tight">{score}</span>
@@ -927,12 +1165,24 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
               <Trophy className="w-4 h-4 text-yellow-500" /> {highScore}
             </span>
           </div>
+          {gameState === 'playing' && (
+            <button
+              onClick={() => { playTone('start'); setIsPaused(p => !p); }}
+              className="ml-2 px-3 py-1.5 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 border border-app-border leading-none"
+            >
+              {isPaused ? '▶ Hervatten' : '⏸️ Pauze'}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-4">
           <div>
             <span className="text-[10px] font-bold text-app-muted uppercase tracking-wider block text-right">Moeilijkheid</span>
-            <span className="text-sm font-black text-cyan-500 uppercase block text-right">Lvl {level}</span>
+            {level >= 10 ? (
+              <span className="text-sm font-black text-rose-500 uppercase block text-right animate-pulse">💀 NIGHTMARE {level}</span>
+            ) : (
+              <span className="text-sm font-black text-cyan-500 uppercase block text-right">Lvl {level}</span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 pt-1.5">
             {Array.from({ length: 3 }).map((_, idx) => (

@@ -1,9 +1,12 @@
-const CACHE_NAME = 'ftjm-v2.6';
+const CACHE_NAME = 'ftjm-v3.0';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icon.svg'
+  '/favicon.png',
+  '/favicon.ico',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -33,6 +36,11 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Only handle HTTP/HTTPS schemes (skip chrome-extension, etc)
+  if (!event.request.url.startsWith('http') && !event.request.url.startsWith('https')) {
+    return;
+  }
+
   // Network first for HTML/navigate requests to ensure updates are detected
   if (event.request.mode === 'navigate') {
     event.respondWith(

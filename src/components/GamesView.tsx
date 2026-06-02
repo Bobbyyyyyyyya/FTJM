@@ -255,6 +255,13 @@ function SnakeGame({ onBack }: GameProps) {
   const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_snake_highscore') || '0'));
   const [gameOver, setGameOver] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
   const [speed, setSpeed] = useState(150);
 
   const keyListenerRef = useRef<(e: KeyboardEvent) => void>(() => {});
@@ -277,12 +284,20 @@ function SnakeGame({ onBack }: GameProps) {
     setDir([0, -1]);
     setScore(0);
     setGameOver(false);
+    setIsPaused(false);
     setIsPlaying(true);
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isPlaying || gameOver) return;
+      if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+        if (isPlaying && !gameOver) {
+          playRetroSound('click');
+          setIsPaused(prev => !prev);
+          return;
+        }
+      }
+      if (!isPlaying || gameOver || isPausedRef.current) return;
       e.preventDefault();
       switch (e.key) {
         case 'ArrowUp':
@@ -316,6 +331,7 @@ function SnakeGame({ onBack }: GameProps) {
     if (!isPlaying || gameOver) return;
 
     const tick = setInterval(() => {
+      if (isPausedRef.current) return;
       setSnake(prevSnake => {
         const head = prevSnake[0];
         const nextHead: [number, number] = [head[0] + dir[0], head[1] + dir[1]];
@@ -364,11 +380,19 @@ function SnakeGame({ onBack }: GameProps) {
   return (
     <div className="bg-app-card border border-app-border rounded-[2rem] p-6 max-w-md mx-auto w-full flex flex-col items-center">
       {/* Stats */}
-      <div className="flex justify-between w-full mb-4 px-2 font-mono text-sm">
+      <div className="flex justify-between w-full mb-4 px-2 font-mono text-sm items-center h-8">
         <div className="flex items-center gap-1.5 text-app-ink font-bold">
           <span>SCORE:</span>
           <span>{score}</span>
         </div>
+        {isPlaying && !gameOver && (
+          <button
+            onClick={() => { playRetroSound('click'); setIsPaused(v => !v); }}
+            className="px-2.5 py-1 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 border border-app-border"
+          >
+            {isPaused ? '▶ Hervatten' : '⏸️ Pauze'}
+          </button>
+        )}
         <div className="flex items-center gap-1.5 text-cyan-500 font-bold">
           <Trophy className="w-4 h-4" />
           <span>HI-SCORE:</span>
@@ -378,6 +402,20 @@ function SnakeGame({ onBack }: GameProps) {
 
       {/* Snake Board Grid */}
       <div className="w-[300px] h-[300px] bg-slate-950 rounded-2xl relative border-2 border-slate-800 overflow-hidden shadow-inner flex flex-wrap">
+        {isPlaying && isPaused && (
+          <div className="absolute inset-0 bg-black/75 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-4 text-center">
+            <span className="text-4xl animate-pulse">⏸️</span>
+            <h4 className="text-cyan-400 font-black tracking-widest uppercase mt-4">GAME GEPAUZEERD</h4>
+            <p className="text-[11px] text-slate-400 mt-2">Druk op 'P' of tik op Hervatten om door te gaan</p>
+            <button
+              onClick={() => { playRetroSound('click'); setIsPaused(false); }}
+              className="mt-4 px-6 py-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-lg hover:scale-105 active:scale-95 transition-all"
+            >
+              Hervatten
+            </button>
+          </div>
+        )}
+
         {!isPlaying && (
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-4 text-center">
             {gameOver ? (
@@ -774,6 +812,12 @@ function FlappyGame({ onBack }: GameProps) {
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_flappy_highscore') || '0'));
   const [gameState, setGameState] = useState<'idle' | 'playing' | 'gameover'>('idle');
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   const gameStateRef = useRef(gameState);
   const scoreRef = useRef(score);
@@ -797,10 +841,16 @@ function FlappyGame({ onBack }: GameProps) {
   const requestRef = useRef<number | null>(null);
 
   const jump = () => {
+    if (isPausedRef.current) {
+      playRetroSound('click');
+      setIsPaused(false);
+      return;
+    }
     if (gameStateRef.current === 'idle') {
       // Start game
       setGameState('playing');
       setScore(0);
+      setIsPaused(false);
       obstacles.current = [];
       rocketY.current = 150;
       rocketVelocity.current = jumpForce;
@@ -812,6 +862,7 @@ function FlappyGame({ onBack }: GameProps) {
       // Reset
       setGameState('playing');
       setScore(0);
+      setIsPaused(false);
       obstacles.current = [];
       rocketY.current = 150;
       rocketVelocity.current = jumpForce;
@@ -821,7 +872,17 @@ function FlappyGame({ onBack }: GameProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+        if (gameStateRef.current === 'playing') {
+          e.preventDefault();
+          playRetroSound('click');
+          setIsPaused(prev => !prev);
+          return;
+        }
+      }
+
       if (e.key === ' ' || e.key === 'ArrowUp') {
+        if (isPausedRef.current) return;
         e.preventDefault();
         jump();
       }
@@ -841,6 +902,25 @@ function FlappyGame({ onBack }: GameProps) {
     canvas.height = 360;
 
     const gameLoop = () => {
+      if (isPausedRef.current) {
+        // Overlay transparent black layer and paused text on canvas
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px "Inter", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('SPEL GEPAUZEERD ⏸️', canvas.width / 2, canvas.height / 2 - 15);
+
+        ctx.fillStyle = '#22d3ee';
+        ctx.font = 'bold 11px "Inter", sans-serif';
+        ctx.fillText("Druk op 'P' of Hervatten om verder te gaan", canvas.width / 2, canvas.height / 2 + 15);
+
+        requestRef.current = requestAnimationFrame(gameLoop);
+        return;
+      }
+
       // Clear canvas
       ctx.fillStyle = '#090d16'; // Deep space dark background
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1005,11 +1085,19 @@ function FlappyGame({ onBack }: GameProps) {
   return (
     <div className="bg-app-card border border-app-border rounded-[2rem] p-6 max-w-sm mx-auto w-full flex flex-col items-center select-none">
       {/* Score */}
-      <div className="flex justify-between w-full mb-4 px-1 font-mono text-sm leading-none select-none">
+      <div className="flex justify-between w-full mb-4 px-1 font-mono text-sm leading-none select-none items-center h-8">
         <div className="flex items-center gap-1.5 text-app-ink font-bold leading-none">
           <span>PTS:</span>
           <span>{score}</span>
         </div>
+        {gameState === 'playing' && (
+          <button
+            onClick={(e) => { e.stopPropagation(); playRetroSound('click'); setIsPaused(v => !v); }}
+            className="px-2.5 py-1 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 border border-app-border leading-none"
+          >
+            {isPaused ? '▶ Hervatten' : '⏸️ Pauze'}
+          </button>
+        )}
         <div className="flex items-center gap-1.5 text-emerald-500 font-bold leading-none">
           <Trophy className="w-4 h-4" />
           <span>BEST:</span>
@@ -1055,6 +1143,12 @@ function SysAdminGame({ onBack }: GameProps) {
   const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_sysadmin_highscore') || '0'));
   const [temperature, setTemperature] = useState(30); // starts at 30C, game over if >= 100C
   const [gameState, setGameState] = useState<'idle' | 'playing' | 'gameover'>('idle');
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   // Game live loop refs
   const stateRef = useRef({
@@ -1165,6 +1259,7 @@ function SysAdminGame({ onBack }: GameProps) {
     playSynthesizedTone('start');
     setScore(0);
     setTemperature(35);
+    setIsPaused(false);
     setGameState('playing');
     stateRef.current.objects = [];
     stateRef.current.basketX = 135;
@@ -1174,6 +1269,15 @@ function SysAdminGame({ onBack }: GameProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+        if (stateRef.current.gameState === 'playing') {
+          e.preventDefault();
+          playSynthesizedTone('start');
+          setIsPaused(prev => !prev);
+          return;
+        }
+      }
+      if (isPausedRef.current) return;
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
         stateRef.current.keys.Left = true;
       }
@@ -1201,7 +1305,7 @@ function SysAdminGame({ onBack }: GameProps) {
 
   // Controls via mouse move and touch move on canvas
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!canvasRef.current || gameState !== 'playing') return;
+    if (!canvasRef.current || gameState !== 'playing' || isPausedRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const touchRatio = (e.touches[0].clientX - rect.left) / rect.width;
     const touchX = touchRatio * 320;
@@ -1209,7 +1313,7 @@ function SysAdminGame({ onBack }: GameProps) {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!canvasRef.current || gameState !== 'playing') return;
+    if (!canvasRef.current || gameState !== 'playing' || isPausedRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseRatio = (e.clientX - rect.left) / rect.width;
     const mouseX = mouseRatio * 320;
@@ -1235,6 +1339,34 @@ function SysAdminGame({ onBack }: GameProps) {
       }
       ctx.save();
       ctx.scale(dpr, dpr);
+
+      if (isPausedRef.current) {
+        // Overlay a semi-transparent screen and show paused info
+        ctx.fillStyle = '#111029';
+        ctx.fillRect(0, 0, baseWidth, baseHeight);
+
+        // Grid dots or binary code
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.05)';
+        ctx.font = '10px monospace';
+        for (let i = 0; i < 8; i++) {
+          const fallY = (stateRef.current.frameCount * 0.5 + i * 50) % baseHeight;
+          ctx.fillText(i % 2 === 0 ? '0' : '1', i * 40 + 15, fallY);
+        }
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('SYSADMIN GEPAUZEERD ⏸️', baseWidth / 2, baseHeight / 2 - 15);
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText("DRUK OP 'P' OF HERVATTEN OM DOOR TE GAAN", baseWidth / 2, baseHeight / 2 + 15);
+
+        ctx.restore();
+        requestRef.current = requestAnimationFrame(gameLoop);
+        return;
+      }
 
       // 1. Draw Background
       ctx.fillStyle = '#111029'; // Dynamic, deeply saturated midnight violet backdrop
@@ -1531,11 +1663,19 @@ function SysAdminGame({ onBack }: GameProps) {
     <div className="bg-app-card border border-app-border rounded-[2rem] p-6 max-w-sm mx-auto w-full flex flex-col items-center select-none font-primary">
       {/* Gameplay Stats Header */}
       <div className="w-full space-y-3 mb-4">
-        <div className="flex justify-between items-center font-mono text-xs">
+        <div className="flex justify-between items-center font-mono text-xs h-8">
           <div className="flex items-center gap-1 text-app-ink font-bold leading-none">
             <span>PUNTEN:</span>
             <span className="text-cyan-500 font-extrabold">{score}</span>
           </div>
+          {gameState === 'playing' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); playSynthesizedTone('start'); setIsPaused(p => !p); }}
+              className="px-2.5 py-1 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 border border-app-border leading-none"
+            >
+              {isPaused ? '▶ Hervatten' : '⏸️ Pauze'}
+            </button>
+          )}
           <div className="flex items-center gap-1 text-yellow-500 font-bold leading-none">
             <Trophy className="w-3.5 h-3.5" />
             <span>RECORD:</span>
