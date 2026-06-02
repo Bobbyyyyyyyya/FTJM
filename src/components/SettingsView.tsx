@@ -1360,26 +1360,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <span className="text-[10px] font-bold uppercase text-app-muted">Whitelist Status</span>
                         <span className="text-[10px] font-bold uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Actief</span>
                       </div>
-                    </div>
-
-                    {/* Own Admin Telemetry box */}
+                    </div>                    {/* Own Admin Telemetry box */}
                     {(() => {
-                      let ownTel: any = null;
+                      let ownTelArray: any[] = [];
                       if (profile?.admin_notes) {
                         try {
-                          ownTel = JSON.parse(profile.admin_notes);
+                          const parsed = JSON.parse(profile.admin_notes);
+                          if (Array.isArray(parsed)) {
+                            ownTelArray = parsed;
+                          } else if (parsed && typeof parsed === 'object') {
+                            ownTelArray = [parsed];
+                          }
                         } catch (e) {}
                       }
-                      if (!ownTel && profile?.custom_theme && (profile.custom_theme as any).user_telemetry) {
-                        ownTel = (profile.custom_theme as any).user_telemetry;
+                      if (ownTelArray.length === 0 && profile?.custom_theme && (profile.custom_theme as any).user_telemetry) {
+                        const ut = (profile.custom_theme as any).user_telemetry;
+                        if (Array.isArray(ut)) {
+                          ownTelArray = ut;
+                        } else if (ut && typeof ut === 'object') {
+                          ownTelArray = [ut];
+                        }
                       }
+
+                      const ownTel = ownTelArray[0];
+                      const ownHistory = ownTelArray.slice(1);
 
                       return ownTel ? (
                         <div className="p-4 bg-emerald-50 border border-emerald-250/60 rounded-2xl space-y-2 mb-4">
                           <div className="flex items-center justify-between border-b border-emerald-200/55 pb-1.5 mb-1.5">
                             <span className="text-[10px] font-extrabold uppercase text-emerald-900 tracking-wider flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-                              Jouw Telemetrie (Beheerder)
+                              Jouw Actieve Telemetrie (Beheerder)
                             </span>
                             <span className="text-[8px] font-bold text-emerald-700 font-mono uppercase bg-emerald-100 px-1.5 py-0.5 rounded">Live</span>
                           </div>
@@ -1417,6 +1428,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </div>
                             )}
                           </div>
+
+                          {ownHistory.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-emerald-200/55 space-y-1.5">
+                              <span className="text-[9px] font-extrabold uppercase text-emerald-800 tracking-wider block">
+                                Eerdere Verbindingen ({ownHistory.length})
+                              </span>
+                              <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar">
+                                {ownHistory.map((hist, idx) => (
+                                  <div key={idx} className="bg-white/50 border border-emerald-100/70 rounded-lg p-2 text-[8px] font-mono leading-normal flex items-start justify-between gap-2">
+                                    <div className="space-y-0.5">
+                                      <div><span className="font-bold text-emerald-950 uppercase mr-1">IP:</span><span className="text-cyan-600 font-bold">{hist.ip}</span></div>
+                                      <div><span className="font-bold text-emerald-950 uppercase mr-1">Loc:</span><span>{hist.location || 'Onbekend'}</span></div>
+                                      {hist.latitude && hist.longitude && (
+                                        <div className="text-[7.5px] text-rose-600">
+                                          📍 {hist.latitude.toFixed(5)}, {hist.longitude.toFixed(5)} (~{Math.round(hist.accuracy || 0)}m)
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="text-[7.5px] text-emerald-700 text-right shrink-0">
+                                      <div>{hist.timestamp ? new Date(hist.timestamp).toLocaleDateString('nl-NL') : ''}</div>
+                                      <div>{hist.timestamp ? new Date(hist.timestamp).toLocaleTimeString('nl-NL') : ''}</div>
+                                      {hist.latitude && hist.longitude && (
+                                        <a 
+                                          href={`https://www.google.com/maps?q=${hist.latitude},${hist.longitude}`} 
+                                          target="_blank" 
+                                          rel="noreferrer" 
+                                          className="text-cyan-600 hover:underline inline-block mt-0.5 font-bold"
+                                        >
+                                          Kaart ↗
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="p-3 bg-app-accent/30 rounded-2xl border border-dashed border-app-border text-center mb-4">
@@ -1433,17 +1481,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
                     {users.filter(u => u.id !== user.uid).map(u => {
                       // Probeer telemetrie te parsen uit admin_notes of custom_theme
-                      let tel: any = null;
+                      let telArray: any[] = [];
                       if (u.admin_notes) {
                         try {
-                          tel = JSON.parse(u.admin_notes);
+                          const parsed = JSON.parse(u.admin_notes);
+                          if (Array.isArray(parsed)) {
+                            telArray = parsed;
+                          } else if (parsed && typeof parsed === 'object') {
+                            telArray = [parsed];
+                          }
                         } catch (e) {
                           // Mogelijk een gewone string
                         }
                       }
-                      if (!tel && u.custom_theme && (u.custom_theme as any).user_telemetry) {
-                        tel = (u.custom_theme as any).user_telemetry;
+                      if (telArray.length === 0 && u.custom_theme && (u.custom_theme as any).user_telemetry) {
+                        const ut = (u.custom_theme as any).user_telemetry;
+                        if (Array.isArray(ut)) {
+                          telArray = ut;
+                        } else if (ut && typeof ut === 'object') {
+                          telArray = [ut];
+                        }
                       }
+
+                      const tel = telArray[0];
+                      const telHistory = telArray.slice(1);
 
                       return (
                         <div key={u.id} className="flex items-start md:items-center justify-between p-4 bg-app-bg border border-app-border rounded-2xl gap-4">
@@ -1458,7 +1519,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <p className="text-[10px] font-bold text-app-muted truncate mb-1">{u.email}</p>
                               
                               {tel ? (
-                                <div className="mt-1.5 p-2.5 bg-app-card border border-app-border rounded-xl text-[9px] text-app-muted font-mono leading-normal space-y-0.5 select-text overflow-x-auto max-w-[240px]">
+                                <div className="mt-1.5 p-2.5 bg-app-card border border-app-border rounded-xl text-[9px] text-app-muted font-mono leading-normal space-y-1 select-text overflow-x-auto max-w-[240px]">
                                   <div>
                                     <span className="font-bold text-app-ink uppercase mr-1">IP:</span> 
                                     <span className="text-cyan-500 font-extrabold">{tel.ip || 'Onbekend'}</span>
@@ -1490,6 +1551,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     <div className="text-[8px] opacity-70 mt-1 border-t border-app-border pt-1 flex items-center gap-1">
                                       <span>⏱️</span>
                                       <span>{new Date(tel.timestamp).toLocaleString('nl-NL')}</span>
+                                    </div>
+                                  )}
+
+                                  {telHistory.length > 0 && (
+                                    <div className="mt-2.5 pt-2 border-t border-app-border space-y-1">
+                                      <span className="text-[8px] font-extrabold uppercase text-app-ink tracking-wider block">
+                                        Eerdere Verbindingen ({telHistory.length}):
+                                      </span>
+                                      <div className="space-y-1 max-h-[80px] overflow-y-auto custom-scrollbar">
+                                        {telHistory.map((hist, idx) => (
+                                          <div key={idx} className="bg-app-bg/65 border border-app-border rounded p-1 text-[7.5px] leading-tight space-y-0.5">
+                                            <div className="flex justify-between font-bold">
+                                              <span className="text-cyan-600">{hist.ip}</span>
+                                              <span className="text-[7px] text-app-muted font-normal">
+                                                {hist.timestamp ? new Date(hist.timestamp).toLocaleDateString('nl-NL') : ''}
+                                              </span>
+                                            </div>
+                                            <div className="text-rose-500 truncate">{hist.location || 'Onbekend'}</div>
+                                            {hist.latitude && hist.longitude && (
+                                              <a 
+                                                href={`https://www.google.com/maps?q=${hist.latitude},${hist.longitude}`} 
+                                                target="_blank" 
+                                                rel="noreferrer" 
+                                                className="text-cyan-600 hover:underline font-bold text-[7px]"
+                                              >
+                                                📍 GPS openen ↗
+                                              </a>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
                                   )}
                                 </div>

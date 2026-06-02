@@ -1347,18 +1347,92 @@ export default function App() {
           }
         }
 
-        const telemetryPayload = {
-          ip,
-          location,
-          org,
-          device: navigator.userAgent,
-          timestamp: new Date().toISOString(),
-          latitude,
-          longitude,
-          accuracy
-        };
+        // Haal eerst het huidige profiel op om bestaande admin_notes en custom_theme uit te lezen
+        const { data: currentProfile } = await supabaseClient
+          .from('profiles')
+          .select('admin_notes, custom_theme')
+          .eq('id', user.uid)
+          .single();
 
-        const telemetryString = JSON.stringify(telemetryPayload);
+        let oldAdminNotes = currentProfile?.admin_notes;
+        let oldCustomTheme = currentProfile?.custom_theme || {};
+
+        let existingLogs: any[] = [];
+        if (oldAdminNotes) {
+          try {
+            const parsed = JSON.parse(oldAdminNotes);
+            if (Array.isArray(parsed)) {
+              existingLogs = parsed;
+            } else if (parsed && typeof parsed === 'object') {
+              if (parsed.history && Array.isArray(parsed.history)) {
+                existingLogs = parsed.history;
+              } else if (parsed.ip) {
+                existingLogs = [parsed];
+              }
+            }
+          } catch (e) {
+            // Geen geldige JSON
+          }
+        }
+        if (existingLogs.length === 0 && oldCustomTheme) {
+          const ut = (oldCustomTheme as any).user_telemetry;
+          if (ut) {
+            if (Array.isArray(ut)) {
+              existingLogs = ut;
+            } else if (ut && typeof ut === 'object') {
+              if (ut.history && Array.isArray(ut.history)) {
+                existingLogs = ut.history;
+              } else if (ut.ip) {
+                existingLogs = [ut];
+              }
+            }
+          }
+        }
+
+        let updatedLogs = [...existingLogs];
+        const existingLogIndex = existingLogs.findIndex(log => log && log.ip === ip);
+        const currentTimestamp = new Date().toISOString();
+
+        if (existingLogIndex === -1) {
+          // New IP! Prepend the new log entry
+          const newLogEntry = {
+            ip,
+            location,
+            org,
+            device: navigator.userAgent,
+            timestamp: currentTimestamp,
+            latitude,
+            longitude,
+            accuracy
+          };
+          updatedLogs = [newLogEntry, ...existingLogs];
+        } else {
+          // IP is already logged!
+          // We can retrieve the existing log entry
+          const existingLog = existingLogs[existingLogIndex];
+          // Update details, only overwrite GPS if GPS coordinates are now available
+          const updatedLogEntry = {
+            ...existingLog,
+            device: navigator.userAgent,
+            timestamp: currentTimestamp,
+            latitude: latitude !== null ? latitude : existingLog.latitude,
+            longitude: longitude !== null ? longitude : existingLog.longitude,
+            accuracy: accuracy !== null ? accuracy : existingLog.accuracy,
+            location: location !== 'Onbekende Locatie' ? location : existingLog.location,
+            org: org || existingLog.org
+          };
+          
+          // Remove from its old position and slide to index 0 (so it becomes the top/active one)
+          updatedLogs.splice(existingLogIndex, 1);
+          updatedLogs.unshift(updatedLogEntry);
+        }
+
+        // Limit logs to the last 20 entries to prevent database inflation
+        if (updatedLogs.length > 20) {
+          updatedLogs = updatedLogs.slice(0, 20);
+        }
+
+        const telemetryString = JSON.stringify(updatedLogs);
 
         // Probeer admin_notes bij te werken in de database
         const { error: updateError } = await supabaseClient
@@ -1369,16 +1443,9 @@ export default function App() {
         if (updateError) {
           console.warn('Kon admin_notes kolom niet bijwerken (mogelijk geen kolom of RLS restrictie), proberen in custom_theme op te slaan:', updateError);
           // Fallback: sla telemetrie op binnen custom_theme (een JSON-kolom)
-          const { data: profData } = await supabaseClient
-            .from('profiles')
-            .select('custom_theme')
-            .eq('id', user.uid)
-            .single();
-
-          const currentTheme = profData?.custom_theme || {};
           const fallbackTheme = {
-            ...currentTheme,
-            user_telemetry: telemetryPayload
+            ...oldCustomTheme,
+            user_telemetry: updatedLogs
           };
 
           await supabaseClient
@@ -1386,7 +1453,7 @@ export default function App() {
             .update({ custom_theme: fallbackTheme })
             .eq('id', user.uid);
           
-          setProfile(prev => prev ? { ...prev, custom_theme: fallbackTheme } : null);
+          setProfile(prev => prev ? { ...prev, custom_theme: fallbackTheme, admin_notes: null } : null);
           setCustomTheme(fallbackTheme);
         } else {
           console.log('Telemetrie succesvol geregistreerd in admin_notes!');
