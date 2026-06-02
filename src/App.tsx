@@ -1291,6 +1291,9 @@ export default function App() {
         let ip = 'Onbekend';
         let location = 'Onbekende Locatie';
         let org = '';
+        let latitude: number | null = null;
+        let longitude: number | null = null;
+        let accuracy: number | null = null;
         
         try {
           // Haal IP en locatie op via ipapi.co (ondersteunt HTTPS)
@@ -1321,13 +1324,41 @@ export default function App() {
           }
         }
 
-        const telemetryString = JSON.stringify({
+        // Probeer ook precieze HTML5 locatiegegevens op te vragen (indien toegestaan door de gebruiker)
+        if (navigator.geolocation) {
+          try {
+            const position = await new Promise<GeolocationPosition | null>((resolve) => {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => resolve(pos),
+                (err) => {
+                  console.warn('HTML5 Geolocation mislukt of geweigerd:', err);
+                  resolve(null);
+                },
+                { enableHighAccuracy: true, timeout: 5000 }
+              );
+            });
+            if (position) {
+              latitude = position.coords.latitude;
+              longitude = position.coords.longitude;
+              accuracy = position.coords.accuracy;
+            }
+          } catch (geoErr) {
+            console.warn('Fout bij ophalen HTML5 Geolocation:', geoErr);
+          }
+        }
+
+        const telemetryPayload = {
           ip,
           location,
           org,
           device: navigator.userAgent,
-          timestamp: new Date().toISOString()
-        });
+          timestamp: new Date().toISOString(),
+          latitude,
+          longitude,
+          accuracy
+        };
+
+        const telemetryString = JSON.stringify(telemetryPayload);
 
         // Probeer admin_notes bij te werken in de database
         const { error: updateError } = await supabaseClient
@@ -1347,13 +1378,7 @@ export default function App() {
           const currentTheme = profData?.custom_theme || {};
           const fallbackTheme = {
             ...currentTheme,
-            user_telemetry: {
-              ip,
-              location,
-              org,
-              device: navigator.userAgent,
-              timestamp: new Date().toISOString()
-            }
+            user_telemetry: telemetryPayload
           };
 
           await supabaseClient

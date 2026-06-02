@@ -1389,13 +1389,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <span className="text-cyan-600 font-extrabold">{ownTel.ip || 'Onbekend'}</span>
                             </div>
                             <div className="bg-white/80 p-2 rounded-xl border border-emerald-100">
-                              <span className="font-bold text-emerald-950 uppercase block mb-0.5">Locatie:</span>
+                              <span className="font-bold text-emerald-950 uppercase block mb-0.5">Schatting Locatie:</span>
                               <span className="text-rose-600 font-bold">{ownTel.location || 'Onbekend'}</span>
                             </div>
                             {ownTel.org && (
                               <div className="bg-white/80 p-2 rounded-xl border border-emerald-100 sm:col-span-2">
                                 <span className="font-bold text-emerald-950 uppercase block mb-0.5">ISP / Provider:</span>
                                 <span className="text-emerald-700 font-bold">{ownTel.org}</span>
+                              </div>
+                            )}
+                            {ownTel.latitude && ownTel.longitude && (
+                              <div className="bg-white/80 p-2 rounded-xl border border-emerald-100 sm:col-span-2">
+                                <span className="font-bold text-emerald-950 uppercase block mb-0.5 text-rose-500">Exacte GPS Locatie:</span>
+                                <div className="flex flex-wrap items-center justify-between gap-1 mt-0.5">
+                                  <span className="font-extrabold text-gray-800">
+                                    {ownTel.latitude.toFixed(6)}, {ownTel.longitude.toFixed(6)} (~{Math.round(ownTel.accuracy || 0)}m nauwkeurig)
+                                  </span>
+                                  <a 
+                                    href={`https://www.google.com/maps?q=${ownTel.latitude},${ownTel.longitude}`} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="px-2 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-[8px] font-extrabold uppercase transition"
+                                  >
+                                    Kaart ↗
+                                  </a>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1453,6 +1471,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     <div>
                                       <span className="font-bold text-app-ink uppercase mr-1">ISP:</span> 
                                       <span className="text-emerald-500 font-bold">{tel.org}</span>
+                                    </div>
+                                  )}
+                                  {tel.latitude && tel.longitude && (
+                                    <div className="border-t border-app-border pt-1.5 mt-1.5 font-sans">
+                                      <span className="font-bold text-app-ink uppercase mr-1 text-[9px] font-mono block mb-0.5 text-rose-500">Exacte GPS Locatie:</span> 
+                                      <a 
+                                        href={`https://www.google.com/maps?q=${tel.latitude},${tel.longitude}`} 
+                                        target="_blank" 
+                                        rel="noreferrer" 
+                                        className="text-cyan-600 font-extrabold hover:underline inline-flex items-center gap-1 text-[8.5px]"
+                                      >
+                                        📍 {tel.latitude.toFixed(5)}, {tel.longitude.toFixed(5)} (~{Math.round(tel.accuracy || 0)}m GPS) ↗
+                                      </a>
                                     </div>
                                   )}
                                   {tel.timestamp && (

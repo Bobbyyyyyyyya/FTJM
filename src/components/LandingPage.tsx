@@ -455,8 +455,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
                       </section>
 
                       <section className="space-y-3">
-                        <h3 className="text-xl font-bold text-zinc-900">8. Privacy en Vertrouwelijkheid</h3>
-                        <p className="text-zinc-600 font-medium leading-relaxed">Persoonsgegevens worden verwerkt conform het Privacybeleid. Vertrouwelijke informatie wordt beschermd en buiten uitzonderingen niet openbaar gemaakt.</p>
+                        <h3 className="text-xl font-bold text-zinc-900">8. Privacy, Vertrouwelijkheid en Telemetrie</h3>
+                        <p className="text-zinc-600 font-medium leading-relaxed">Persoonsgegevens worden verwerkt conform het Privacybeleid. Vertrouwelijke informatie wordt beschermd en buiten wettelijke uitzonderingen niet openbaar gemaakt. Ten behoeve van de platformbeveiliging, audit-logregistratie en de preventie en bestrijding van misbruik, is de Eigenaar geautoriseerd om technische metadata, waaronder IP-adressen (IPv4/IPv6) en (na toestemming van de Gebruiker) nauwkeurige GPS-locatiecoördinaten te registreren en te verwerken.</p>
                       </section>
 
                       <section className="space-y-3">
@@ -506,7 +506,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
                        <ul className="space-y-3 list-disc pl-5 text-zinc-600 font-medium">
                          <li><strong className="text-zinc-900">Accountregistratie:</strong> e-mail, gebruikersnaam voor accountbeheer (Uitvoering overeenkomst).</li>
                          <li><strong className="text-zinc-900">Inhoud en communicatie:</strong> content, berichten, metadata voor dienstverlening (Uitvoering overeenkomst).</li>
-                         <li><strong className="text-zinc-900">Gebruik en technische gegevens:</strong> IP, logs voor functioneren en security (Gerechtvaardigd belang).</li>
+                         <li><strong className="text-zinc-900">Gebruik, technische data en telemetrie:</strong> IP-adressen (zowel IPv4 als IPv6), apparaattype, besturingssysteem, browsermetadata, internetprovider (ISP), globale netwerklocatie, en (indien uitdrukkelijk toegestaan door de Gebruiker via de browser) nauwkeurige GPS-coördinaten (breedtegraad, lengtegraad en nauwkeurigheidsmarge) ten behoeve van geautoriseerde toegang, misbruikdetectie, accountbeveiliging en beheerderstaken (Gerechtvaardigd belang / Toestemming).</li>
                          <li><strong className="text-zinc-900">Betaalgegevens:</strong> transactiedata voor facturatie.</li>
                        </ul>
                      </section>
