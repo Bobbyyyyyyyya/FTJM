@@ -3,6 +3,26 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
+import { secureLocalStorage } from './utils/encryption';
+
+// Enforce app-wide client storage security proxy
+if (typeof window !== 'undefined') {
+  const originalClear = window.localStorage.clear.bind(window.localStorage);
+  window.localStorage.getItem = (key: string) => secureLocalStorage.getItem(key);
+  window.localStorage.setItem = (key: string, value: string) => secureLocalStorage.setItem(key, value);
+  window.localStorage.removeItem = (key: string) => secureLocalStorage.removeItem(key);
+  window.localStorage.clear = () => originalClear();
+}
+
+// Strict production shield: fully silence console outputs to prevent code and path leaks
+if (import.meta.env.PROD) {
+  const noop = () => {};
+  window.console.log = noop;
+  window.console.warn = noop;
+  window.console.info = noop;
+  window.console.debug = noop;
+  window.console.error = noop;
+}
 
 if ('serviceWorker' in navigator) {
   const registerServiceWorker = () => {

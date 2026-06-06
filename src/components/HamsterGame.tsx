@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 // Props for the Game component
 interface HamsterGameProps {
   onBack: () => void;
+  isFullscreen?: boolean;
 }
 
 // Direction Type
@@ -56,7 +57,7 @@ const INITIAL_MAZE = [
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ];
 
-export function HamsterGame({ onBack }: HamsterGameProps) {
+export function HamsterGame({ onBack, isFullscreen }: HamsterGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playStateRef = useRef<'idle' | 'playing' | 'gameover'>('idle');
   const [gameState, setGameStateInner] = useState<'idle' | 'playing' | 'gameover'>('idle');
@@ -1197,7 +1198,7 @@ export function HamsterGame({ onBack }: HamsterGameProps) {
         </div>
       </div>
 
-      <div className="relative border-4 border-slate-700 rounded-[2rem] bg-[#000411] overflow-hidden p-2 shadow-2xl shadow-cyan-500/10">
+      <div className={`relative border-4 border-slate-700 rounded-[2rem] bg-[#000411] overflow-hidden p-2 shadow-2xl shadow-cyan-500/10 origin-center transition-all duration-300 ${isFullscreen ? 'scale-110 sm:scale-[1.22] my-8 shadow-cyan-500/20' : ''}`}>
         {/* Game Canvas Board */}
         <canvas 
           ref={canvasRef} 

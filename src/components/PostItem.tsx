@@ -25,6 +25,7 @@ interface PostItemProps {
   allPosts: Post[];
   useCustomTheme?: boolean;
   customTheme?: any;
+  profiles?: UserProfile[];
 }
 
 export const PostItem: React.FC<PostItemProps> = ({
@@ -46,8 +47,13 @@ export const PostItem: React.FC<PostItemProps> = ({
   nicknames,
   allPosts,
   useCustomTheme,
-  customTheme
+  customTheme,
+  profiles
 }) => {
+  const authorProfile = profiles?.find(p => p.id === post.author_id);
+  const displayName = authorProfile?.display_name || post.author_name || 'Anoniem';
+  const photoUrl = authorProfile?.photo_url || post.author_photo;
+
   return (
     <motion.div 
       layout
@@ -64,14 +70,14 @@ export const PostItem: React.FC<PostItemProps> = ({
       } : {}}
     >
       <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0">
-        {post.author_photo ? (
+        {photoUrl ? (
           <button 
             onClick={() => onOpenProfile(post.author_id)}
             className="w-full h-full rounded-full overflow-hidden border border-app-border object-cover hover:ring-2 hover:ring-app-ink transition-all"
           >
             <img 
-              src={post.author_photo} 
-              alt={post.author_name} 
+              src={photoUrl} 
+              alt={displayName} 
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
             />
@@ -93,11 +99,13 @@ export const PostItem: React.FC<PostItemProps> = ({
                 {(() => {
                   const parent = allPosts.find(p => p.id === post.parent_id);
                   if (!parent) return null;
+                  const parentProfile = profiles?.find(p => p.id === parent.author_id);
+                  const parentDisplayName = parentProfile?.display_name || parent.author_name || 'Anoniem';
                   return (
                     <>
                       <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-app-muted font-medium bg-app-accent/30 w-fit px-2 py-0.5 rounded-full border border-app-border/50">
                         <MessageSquare className="w-3 h-3" />
-                        <span>Geantwoord op <span className="font-bold text-app-ink">{nicknames[parent.author_id] || parent.author_name}</span></span>
+                        <span>Geantwoord op <span className="font-bold text-app-ink">{nicknames[parent.author_id] || parentDisplayName}</span></span>
                       </div>
                       <div className="pl-3 border-l-2 border-app-border ml-2">
                         <p className="text-[10px] sm:text-xs text-app-muted italic line-clamp-1 opacity-70">
@@ -114,7 +122,7 @@ export const PostItem: React.FC<PostItemProps> = ({
                 onClick={() => onOpenProfile(post.author_id)}
                 className="font-bold text-sm sm:text-base text-app-ink truncate hover:underline text-left"
               >
-                {nicknames[post.author_id] || post.author_name}
+                {nicknames[post.author_id] || displayName}
               </button>
               <span className="text-[10px] sm:text-xs text-app-muted font-medium whitespace-nowrap">
                 {formatDate(post.created_at)} om {formatTime(post.created_at)}
@@ -131,7 +139,7 @@ export const PostItem: React.FC<PostItemProps> = ({
             </button>
             {user.uid !== post.author_id && (
               <button 
-                onClick={() => onReport('post', post.id, post.author_id, post.author_name)}
+                onClick={() => onReport('post', post.id, post.author_id, displayName)}
                 className="p-2 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                 title="Rapporteer post"
               >
@@ -158,7 +166,7 @@ export const PostItem: React.FC<PostItemProps> = ({
             )}
             {user.uid !== post.author_id && (
               <button 
-                onClick={() => onStartDM({ id: post.author_id, display_name: post.author_name })}
+                onClick={() => onStartDM({ id: post.author_id, display_name: displayName })}
                 className="p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-xl transition-all"
                 title="Stuur bericht"
               >

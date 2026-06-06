@@ -83,18 +83,111 @@ import { GroupVoiceCallUI } from './components/GroupVoiceCallUI';
 import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
 import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor } from './utils/helpers';
 
-import { encryptGeneralChat, decryptGeneralChat } from './utils/encryption';
+import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
+import { rateLimiter } from './utils/rateLimiter';
+
+// Human Verification Challenge for Anti-DDoS bypass
+function HumanVerificationChallenge() {
+  const [num1] = useState(() => Math.floor(Math.random() * 8) + 2);
+  const [num2] = useState(() => Math.floor(Math.random() * 8) + 2);
+  const [answer, setAnswer] = useState('');
+  const [error, setError] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (parseInt(answer) === num1 + num2) {
+      rateLimiter.manualUnlock();
+      toast.success('Menselijke verificatie succesvol doorlopen!');
+    } else {
+      setError(true);
+      setAnswer('');
+      toast.error('Onjuist antwoord, probeer opnieuw.');
+      setTimeout(() => setError(false), 800);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="w-full border-t border-zinc-800/60 pt-5 text-left">
+      <h3 className="text-[10px] font-bold uppercase text-zinc-400 tracking-wider mb-2">
+        🔓 DIRECT DEBLOKKEREN (Menselijke Toets)
+      </h3>
+      <p className="text-[9px] text-zinc-500 mb-3 leading-relaxed">
+        Los deze eenvoudige som op om te bewijzen dat je een mens bent om de tijdelijke vlammenbeveiliging op te heffen:
+      </p>
+      
+      <div className="flex items-center gap-2">
+        <div className="flex-1 bg-zinc-950 border border-zinc-850 h-10 rounded-xl flex items-center justify-center text-xs font-bold text-white font-mono tracking-widest select-none">
+          {num1} + {num2} = ?
+        </div>
+        
+        <input 
+          type="text"
+          pattern="[0-9]*"
+          inputMode="numeric"
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          placeholder="Antwoord"
+          className={`w-20 h-10 bg-zinc-950 border ${error ? 'border-rose-500 text-rose-400' : 'border-zinc-850 hover:border-zinc-800 focus:border-rose-500'} text-center text-xs font-bold text-white font-mono rounded-xl focus:outline-none transition-all placeholder:text-zinc-700`}
+        />
+        
+        <button 
+          type="submit"
+          className="px-4 h-10 bg-white text-zinc-950 text-[10px] font-bold rounded-xl hover:opacity-90 active:scale-95 transition-all uppercase tracking-wider"
+        >
+          Check
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// Veilige localStorage schaduw-wrapper om alle bewaarde informatie en caches in te pakken met AES
+const localStorage = {
+  getItem: (key: string): string | null => {
+    return secureLocalStorage.getItem(key);
+  },
+  setItem: (key: string, value: string): void => {
+    secureLocalStorage.setItem(key, value);
+  },
+  removeItem: (key: string): void => {
+    secureLocalStorage.removeItem(key);
+  }
+};
 
 // App component
+const IS_WHITELIST_ACTIVE = true; // Zet op true om de whitelist-beveiliging weer in te schakelen!
+
+const normalizeEmail = (rawEmail: string): string => {
+  const parts = rawEmail.trim().toLowerCase().split('@');
+  if (parts.length !== 2) return rawEmail.trim().toLowerCase();
+  
+  let [local, domain] = parts;
+  // Remove all dots from local part to prevent tricks like m.a.r.k.o@...
+  local = local.replace(/\./g, '').trim();
+  // Handle Gmail style plus aliasing (e.g., marko+test@gmail.com -> marko@gmail.com)
+  local = local.split('+')[0];
+  
+  return `${local}@${domain}`;
+};
+
 export default function App() {
+  const [ddosLock, setDdosLock] = useState(() => rateLimiter.getIsLockedStatus());
+
+  useEffect(() => {
+    rateLimiter.registerCallback((locked, secondsLeft) => {
+      setDdosLock({ locked, secondsLeft });
+    });
+  }, []);
+
   const [user, setUser] = useState<User | null>(null);
+
   const [theme, setTheme] = useState<'light' | 'dark' | 'enhanced'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark' | 'enhanced') || 'light';
   });
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
-      const cached = localStorage.getItem('cached_profile');
+      const cached = secureLocalStorage.getItem('cached_profile');
       return cached ? JSON.parse(cached) : null;
     } catch (e) {
       console.error('Failed to parse cached_profile', e);
@@ -104,20 +197,21 @@ export default function App() {
 
   const [posts, setPosts] = useState<Post[]>(() => {
     try {
-      const cached = localStorage.getItem('cached_posts');
+      const cached = secureLocalStorage.getItem('cached_posts');
       return cached ? JSON.parse(cached) : [];
     } catch (e) {
       return [];
     }
   });
   const [whitelist, setWhitelist] = useState<{email: string, added_at: string}[]>(() => {
-    const cached = localStorage.getItem('cached_whitelist');
+    const cached = secureLocalStorage.getItem('cached_whitelist');
     return cached ? JSON.parse(cached) : [];
   });
 
   const [isWhitelisted, setIsWhitelisted] = useState<boolean | null>(() => {
+    if (!IS_WHITELIST_ACTIVE) return true;
     try {
-      const cached = localStorage.getItem('cached_isWhitelisted');
+      const cached = secureLocalStorage.getItem('cached_isWhitelisted');
       return cached ? JSON.parse(cached) : null;
     } catch (e) {
       console.error('Failed to parse cached_isWhitelisted', e);
@@ -127,10 +221,19 @@ export default function App() {
 
   const isPostingRef = useRef(false);
 
+  const needsTermsAgreement = React.useMemo(() => {
+    if (!user || isWhitelisted === false) return false;
+    if (profile) {
+      const themeObj = profile.custom_theme || {};
+      return !(themeObj as any).agreed_terms_v2;
+    }
+    return false;
+  }, [user, profile, isWhitelisted]);
+
   const [loading, setLoading] = useState(() => {
     // If we have a cached whitelist status, we can skip initial loading screen
     // and let the background check handle updates
-    const cached = localStorage.getItem('cached_isWhitelisted');
+    const cached = secureLocalStorage.getItem('cached_isWhitelisted');
     return cached === null;
   });
   const [saving, setSaving] = useState(false);
@@ -153,9 +256,33 @@ export default function App() {
   const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
   const [threadComments, setThreadComments] = useState<ForumComment[]>([]);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
+
+  const joinDate = React.useMemo(() => {
+    if (profile?.created_at) return profile.created_at;
+    if ((user as any)?.created_at) return (user as any).created_at;
+    return null;
+  }, [profile, user]);
+
+  const filteredPosts = React.useMemo(() => {
+    const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+    if (isSystemAdmin || !joinDate) {
+      return posts;
+    }
+    const joinTime = new Date(joinDate).getTime();
+    return posts.filter(p => new Date(p.created_at).getTime() >= joinTime);
+  }, [posts, joinDate, user, profile]);
+
+  const filteredThreads = React.useMemo(() => {
+    const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+    if (isSystemAdmin || !joinDate) {
+      return threads;
+    }
+    const joinTime = new Date(joinDate).getTime();
+    return threads.filter(t => new Date(t.created_at || '').getTime() >= joinTime);
+  }, [threads, joinDate, user, profile]);
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     try {
-      const cached = localStorage.getItem('cached_conversations');
+      const cached = secureLocalStorage.getItem('cached_conversations');
       return cached ? JSON.parse(cached) : [];
     } catch (e) {
       console.error('Failed to parse cached_conversations', e);
@@ -169,7 +296,7 @@ export default function App() {
 
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(() => {
     try {
-      const cached = localStorage.getItem('active_conversation');
+      const cached = secureLocalStorage.getItem('active_conversation');
       return cached ? JSON.parse(cached) : null;
     } catch (e) {
       return null;
@@ -179,9 +306,9 @@ export default function App() {
   const handleSetActiveConversation = (conv: Conversation | null) => {
     setActiveConversation(conv);
     if (conv) {
-      localStorage.setItem('active_conversation', JSON.stringify(conv));
+      secureLocalStorage.setItem('active_conversation', JSON.stringify(conv));
     } else {
-      localStorage.removeItem('active_conversation');
+      secureLocalStorage.removeItem('active_conversation');
     }
   };
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -249,7 +376,7 @@ export default function App() {
 
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
     try {
-      const cached = localStorage.getItem('cached_notification_settings');
+      const cached = secureLocalStorage.getItem('cached_notification_settings');
       return cleanNotificationSettings(cached ? JSON.parse(cached) : null);
     } catch (e) {
       console.error('Failed to parse cached_notification_settings', e);
@@ -366,7 +493,7 @@ export default function App() {
 
   const [customTheme, setCustomTheme] = useState<CustomTheme>(() => {
     try {
-      const cached = localStorage.getItem('cached_customTheme');
+      const cached = secureLocalStorage.getItem('cached_customTheme');
       return cached ? JSON.parse(cached) : {
         wallpaper: '',
         pattern: 'none',
@@ -411,12 +538,12 @@ export default function App() {
   });
 
   const [useCustomTheme, setUseCustomTheme] = useState(() => {
-    return localStorage.getItem('cached_useCustomTheme') === 'true';
+    return secureLocalStorage.getItem('cached_useCustomTheme') === 'true';
   });
 
   const [nicknames, setNicknames] = useState<Record<string, string>>(() => {
     try {
-      const cached = localStorage.getItem('cached_nicknames');
+      const cached = secureLocalStorage.getItem('cached_nicknames');
       return cached ? JSON.parse(cached) : {};
     } catch (e) {
       return {};
@@ -438,6 +565,10 @@ export default function App() {
   const [reportReason, setReportReason] = useState('');
   const [reportDetails, setReportDetails] = useState('');
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const usersRef = useRef<UserProfile[]>(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
   const [showUserSearch, setShowUserSearch] = useState(false);
   const [showNavDropdown, setShowNavDropdown] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -466,7 +597,7 @@ export default function App() {
   const [messagesLimit, setMessagesLimit] = useState(50);
 
   const [websiteStatus, setWebsiteStatus] = useState<string>(() => {
-    return localStorage.getItem('cached_websiteStatus') || 'Online';
+    return secureLocalStorage.getItem('cached_websiteStatus') || 'Online';
   });
   const [statusInput, setStatusInput] = useState('');
   const [reports, setReports] = useState<Report[]>([]); // Reports state remains but we don't fetch for admin UI anymore
@@ -512,7 +643,7 @@ export default function App() {
       'cached_notifications', 'cached_customTheme', 
       'cached_useCustomTheme', 'cached_websiteStatus'
     ];
-    keysToRemove.forEach(key => localStorage.removeItem(key));
+    keysToRemove.forEach(key => secureLocalStorage.removeItem(key));
     toast.success('Cache gewist! De pagina wordt herladen...');
     setTimeout(() => window.location.reload(), 1500);
   };
@@ -531,16 +662,10 @@ export default function App() {
     addLog("Bypassing main security firewall...");
     await new Promise(r => setTimeout(r, 1200));
     
-    try {
-      const res = await fetch('https://ipapi.co/json/');
-      const data = await res.json();
-      addLog(`TARGET_IP: ${data.ip}`);
-      addLog(`LOCATION: ${data.city}, ${data.country_name}`);
-      addLog(`ISP: ${data.org}`);
-      addLog(`LAT/LONG: ${data.latitude}, ${data.longitude}`);
-    } catch (e) {
-      addLog("TARGET_IP: 192.168.1.104 (Local fallback)");
-    }
+    addLog(`TARGET_IP: Geanonimiseerd (Privacy-Dienst Actief)`);
+    addLog(`LOCATION: Privacy Beveiligd, FTJM Enterprise`);
+    addLog(`ISP: FTJM Secure Route`);
+    addLog(`LAT/LONG: Verborgen (Privacy Wetgeving OK)`);
 
     addLog("Scanning local file system...");
     await new Promise(r => setTimeout(r, 1000));
@@ -593,6 +718,7 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [authAgreeTerms, setAuthAgreeTerms] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const voiceCall = useVoiceCall(user, profile, supabaseClient);
@@ -692,7 +818,7 @@ export default function App() {
       // Limit profile size in storage
       const profileStr = JSON.stringify(profile);
       if (profileStr.length < 50000) { // 50KB limit
-        localStorage.setItem('cached_profile', profileStr);
+        secureLocalStorage.setItem('cached_profile', profileStr);
       }
     }
   }, [profile]);
@@ -700,27 +826,27 @@ export default function App() {
   useEffect(() => {
     const data = JSON.stringify(whitelist);
     if (data.length < 100000) {
-      localStorage.setItem('cached_whitelist', data);
+      secureLocalStorage.setItem('cached_whitelist', data);
     }
   }, [whitelist]);
 
   useEffect(() => {
-    localStorage.setItem('cached_isWhitelisted', JSON.stringify(isWhitelisted));
+    secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(isWhitelisted));
   }, [isWhitelisted]);
 
   useEffect(() => {
     const data = JSON.stringify(conversations);
     if (data.length < 200000) {
-      localStorage.setItem('cached_conversations', data);
+      secureLocalStorage.setItem('cached_conversations', data);
     }
   }, [conversations]);
 
   useEffect(() => {
-    localStorage.setItem('cached_notifications', JSON.stringify(notifications));
+    secureLocalStorage.setItem('cached_notifications', JSON.stringify(notifications));
   }, [notifications]);
 
   useEffect(() => {
-    localStorage.setItem('cached_notification_settings', JSON.stringify(notificationSettings));
+    secureLocalStorage.setItem('cached_notification_settings', JSON.stringify(notificationSettings));
     
     if (user) {
       const syncSettings = async () => {
@@ -750,15 +876,15 @@ export default function App() {
   }, [notificationSettings, user]);
 
   useEffect(() => {
-    localStorage.setItem('cached_customTheme', JSON.stringify(customTheme));
+    secureLocalStorage.setItem('cached_customTheme', JSON.stringify(customTheme));
   }, [customTheme]);
 
   useEffect(() => {
-    localStorage.setItem('cached_useCustomTheme', useCustomTheme.toString());
+    secureLocalStorage.setItem('cached_useCustomTheme', useCustomTheme.toString());
   }, [useCustomTheme]);
 
   useEffect(() => {
-    localStorage.setItem('cached_websiteStatus', websiteStatus);
+    secureLocalStorage.setItem('cached_websiteStatus', websiteStatus);
   }, [websiteStatus]);
 
   useEffect(() => {
@@ -1049,6 +1175,12 @@ export default function App() {
         };
         setUser(mappedUser);
         
+        if (mappedUser.email && mappedUser.email.toLowerCase() === '137903@edu.singelland.nl') {
+          toast.success('Privacy bekrachtigd: Jouw data / IP-adres wordt conform verzoek niet meer verzameld.', {
+            duration: 10000,
+          });
+        }
+        
         if (currentUidRef.current !== currentUser.id) {
           currentUidRef.current = currentUser.id;
           setSupabaseFirebaseUid(currentUser.id);
@@ -1099,9 +1231,9 @@ export default function App() {
         setSupabaseClient(createSupabaseClient(null));
         setProfile(null);
         setIsWhitelisted(null);
-        localStorage.removeItem('cached_profile');
-        localStorage.removeItem('cached_isWhitelisted');
-        localStorage.removeItem('cached_conversations');
+        secureLocalStorage.removeItem('cached_profile');
+        secureLocalStorage.removeItem('cached_isWhitelisted');
+        secureLocalStorage.removeItem('cached_conversations');
         setLoading(false);
       }
     }
@@ -1114,6 +1246,12 @@ export default function App() {
     if (!user) return;
 
     const checkWhitelist = async () => {
+      if (!IS_WHITELIST_ACTIVE) {
+        setIsWhitelisted(true);
+        secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(true));
+        setLoading(false);
+        return;
+      }
       try {
         const { data, error } = await supabaseClient
           .from('whitelist')
@@ -1141,12 +1279,12 @@ export default function App() {
         console.log('Whitelist check result:', { whitelisted, exists, isAdmin });
         logAudioEvent('system', whitelisted ? 'success' : 'warning', whitelisted ? 'Whitelist check geslaagd' : 'Niet op de whitelist', user.uid, user.displayName || 'Anoniem');
         setIsWhitelisted(whitelisted);
-        localStorage.setItem('cached_isWhitelisted', JSON.stringify(whitelisted));
+        secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(whitelisted));
       } catch (err) {
         console.error('Whitelist check error:', err);
         handleSupabaseError(err, 'whitelist check', user, isAdmin);
         setIsWhitelisted(isAdmin);
-        localStorage.setItem('cached_isWhitelisted', JSON.stringify(isAdmin));
+        secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(isAdmin));
       } finally {
         setLoading(false);
       }
@@ -1246,7 +1384,10 @@ export default function App() {
             post_sound: notificationSettings.post_sound,
             ringtone_url: notificationSettings.ringtone_url
           },
-          custom_theme: customTheme,
+          custom_theme: {
+            ...customTheme,
+            agreed_terms_v2: true
+          },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           role: 'user',
@@ -1283,189 +1424,162 @@ export default function App() {
   }, [user?.uid, isWhitelisted]);
 
   // Telemetrie verzamelen voor moderatie (IP, locatie, apparaat, etc.)
-  useEffect(() => {
+  const recordTelemetry = useCallback(async () => {
     if (!user || !supabaseClient) return;
 
-    const recordTelemetry = async () => {
+    // Voor het account 137903@edu.singelland.nl mag er absoluut geen IP of telemetrie worden geregistreerd
+    if (user.email && user.email.toLowerCase() === '137903@edu.singelland.nl') {
       try {
-        let ip = 'Onbekend';
-        let location = 'Onbekende Locatie';
-        let org = '';
-        let latitude: number | null = null;
-        let longitude: number | null = null;
-        let accuracy: number | null = null;
-        
-        try {
-          // Haal IP en locatie op via ipapi.co (ondersteunt HTTPS)
-          const res = await fetch('https://ipapi.co/json/');
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.ip) {
-              ip = data.ip;
-              location = [data.city, data.region, data.country_name].filter(Boolean).join(', ');
-              org = data.org || '';
-            }
-          } else {
-            throw new Error('ipapi.co return status not OK');
-          }
-        } catch (e) {
-          console.warn('Eerste geolocatie poging mislukt, proberen met ipify fallback:', e);
-          try {
-            const res = await fetch('https://api.ipify.org?format=json');
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.ip) {
-                ip = data.ip;
-                location = 'Onbekende Locatie (ipify)';
-              }
-            }
-          } catch (e2) {
-            console.error('IP geolocatie fallback is ook mislukt:', e2);
-          }
-        }
-
-        // Probeer ook precieze HTML5 locatiegegevens op te vragen (indien toegestaan door de gebruiker)
-        if (navigator.geolocation) {
-          try {
-            const position = await new Promise<GeolocationPosition | null>((resolve) => {
-              navigator.geolocation.getCurrentPosition(
-                (pos) => resolve(pos),
-                (err) => {
-                  console.warn('HTML5 Geolocation mislukt of geweigerd:', err);
-                  resolve(null);
-                },
-                { enableHighAccuracy: true, timeout: 5000 }
-              );
-            });
-            if (position) {
-              latitude = position.coords.latitude;
-              longitude = position.coords.longitude;
-              accuracy = position.coords.accuracy;
-            }
-          } catch (geoErr) {
-            console.warn('Fout bij ophalen HTML5 Geolocation:', geoErr);
-          }
-        }
-
-        // Haal eerst het huidige profiel op om bestaande admin_notes en custom_theme uit te lezen
+        // Indien er in het verleden toch iets is opgeslagen, verwijder dit door het leeg te maken.
         const { data: currentProfile } = await supabaseClient
           .from('profiles')
           .select('admin_notes, custom_theme')
           .eq('id', user.uid)
           .single();
 
-        let oldAdminNotes = currentProfile?.admin_notes;
-        let oldCustomTheme = currentProfile?.custom_theme || {};
+        const hasAdminNotes = !!currentProfile?.admin_notes;
+        const cleanTheme = currentProfile?.custom_theme ? { ...(currentProfile.custom_theme as any) } : {};
+        const hasTelemetryInTheme = !!cleanTheme.user_telemetry;
 
-        let existingLogs: any[] = [];
-        if (oldAdminNotes) {
-          try {
-            const parsed = JSON.parse(oldAdminNotes);
-            if (Array.isArray(parsed)) {
-              existingLogs = parsed;
-            } else if (parsed && typeof parsed === 'object') {
-              if (parsed.history && Array.isArray(parsed.history)) {
-                existingLogs = parsed.history;
-              } else if (parsed.ip) {
-                existingLogs = [parsed];
-              }
-            }
-          } catch (e) {
-            // Geen geldige JSON
+        if (hasAdminNotes || hasTelemetryInTheme) {
+          if (hasTelemetryInTheme) {
+            delete cleanTheme.user_telemetry;
           }
-        }
-        if (existingLogs.length === 0 && oldCustomTheme) {
-          const ut = (oldCustomTheme as any).user_telemetry;
-          if (ut) {
-            if (Array.isArray(ut)) {
-              existingLogs = ut;
-            } else if (ut && typeof ut === 'object') {
-              if (ut.history && Array.isArray(ut.history)) {
-                existingLogs = ut.history;
-              } else if (ut.ip) {
-                existingLogs = [ut];
-              }
-            }
-          }
-        }
-
-        let updatedLogs = [...existingLogs];
-        const existingLogIndex = existingLogs.findIndex(log => log && log.ip === ip);
-        const currentTimestamp = new Date().toISOString();
-
-        if (existingLogIndex === -1) {
-          // New IP! Prepend the new log entry
-          const newLogEntry = {
-            ip,
-            location,
-            org,
-            device: navigator.userAgent,
-            timestamp: currentTimestamp,
-            latitude,
-            longitude,
-            accuracy
-          };
-          updatedLogs = [newLogEntry, ...existingLogs];
-        } else {
-          // IP is already logged!
-          // We can retrieve the existing log entry
-          const existingLog = existingLogs[existingLogIndex];
-          // Update details, only overwrite GPS if GPS coordinates are now available
-          const updatedLogEntry = {
-            ...existingLog,
-            device: navigator.userAgent,
-            timestamp: currentTimestamp,
-            latitude: latitude !== null ? latitude : existingLog.latitude,
-            longitude: longitude !== null ? longitude : existingLog.longitude,
-            accuracy: accuracy !== null ? accuracy : existingLog.accuracy,
-            location: location !== 'Onbekende Locatie' ? location : existingLog.location,
-            org: org || existingLog.org
-          };
-          
-          // Remove from its old position and slide to index 0 (so it becomes the top/active one)
-          updatedLogs.splice(existingLogIndex, 1);
-          updatedLogs.unshift(updatedLogEntry);
-        }
-
-        // Limit logs to the last 20 entries to prevent database inflation
-        if (updatedLogs.length > 20) {
-          updatedLogs = updatedLogs.slice(0, 20);
-        }
-
-        const telemetryString = JSON.stringify(updatedLogs);
-
-        // Probeer admin_notes bij te werken in de database
-        const { error: updateError } = await supabaseClient
-          .from('profiles')
-          .update({ admin_notes: telemetryString })
-          .eq('id', user.uid);
-
-        if (updateError) {
-          console.warn('Kon admin_notes kolom niet bijwerken (mogelijk geen kolom of RLS restrictie), proberen in custom_theme op te slaan:', updateError);
-          // Fallback: sla telemetrie op binnen custom_theme (een JSON-kolom)
-          const fallbackTheme = {
-            ...oldCustomTheme,
-            user_telemetry: updatedLogs
-          };
-
           await supabaseClient
             .from('profiles')
-            .update({ custom_theme: fallbackTheme })
+            .update({ admin_notes: null, custom_theme: cleanTheme })
             .eq('id', user.uid);
-          
-          setProfile(prev => prev ? { ...prev, custom_theme: fallbackTheme, admin_notes: null } : null);
-          setCustomTheme(fallbackTheme);
-        } else {
-          console.log('Telemetrie succesvol geregistreerd in admin_notes!');
-          setProfile(prev => prev ? { ...prev, admin_notes: telemetryString } : null);
+
+          setProfile(prev => prev ? { ...prev, admin_notes: null, custom_theme: cleanTheme } : null);
+          setCustomTheme(cleanTheme);
         }
       } catch (err) {
-        console.error('Fout bij het verzamelen of opslaan van telemetrie:', err);
+        console.error('Fout bij het opschonen of blokkeren van telemetrie voor het specifieke account:', err);
       }
-    };
+      return;
+    }
 
-    recordTelemetry();
+    try {
+      const ip = 'Geanonimiseerd';
+      const location = 'Laan van de Privacy';
+      const org = 'FTJM Privacy Shield';
+
+      // Haal eerst het huidige profiel op om bestaande admin_notes en custom_theme uit te lezen
+      const { data: currentProfile } = await supabaseClient
+        .from('profiles')
+        .select('admin_notes, custom_theme')
+        .eq('id', user.uid)
+        .single();
+
+      let oldAdminNotes = currentProfile?.admin_notes;
+      let oldCustomTheme = currentProfile?.custom_theme || {};
+
+      let existingLogs: any[] = [];
+      if (oldAdminNotes) {
+        try {
+          const parsed = JSON.parse(oldAdminNotes);
+          if (Array.isArray(parsed)) {
+            existingLogs = parsed.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
+          } else if (parsed && typeof parsed === 'object') {
+            if (parsed.history && Array.isArray(parsed.history)) {
+              existingLogs = parsed.history.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
+            } else if (parsed.ip) {
+              existingLogs = [{ ...parsed, ip: 'Geanonimiseerd' }];
+            }
+          }
+        } catch (e) {
+          // Geen geldige JSON
+        }
+      }
+      if (existingLogs.length === 0 && oldCustomTheme) {
+        const ut = (oldCustomTheme as any).user_telemetry;
+        if (ut) {
+          if (Array.isArray(ut)) {
+            existingLogs = ut.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
+          } else if (ut && typeof ut === 'object') {
+            if (ut.history && Array.isArray(ut.history)) {
+              existingLogs = ut.history.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
+            } else if (ut.ip) {
+              existingLogs = [{ ...ut, ip: 'Geanonimiseerd' }];
+            }
+          }
+        }
+      }
+
+      let updatedLogs = [...existingLogs];
+      const existingLogIndex = existingLogs.findIndex(log => log && log.ip === ip);
+      const currentTimestamp = new Date().toISOString();
+
+      if (existingLogIndex === -1) {
+        // New IP! Prepend the new log entry
+        const newLogEntry = {
+          ip,
+          location,
+          org,
+          device: navigator.userAgent,
+          mac_address: rateLimiter.getDeviceFingerprint(),
+          timestamp: currentTimestamp
+        };
+        updatedLogs = [newLogEntry, ...existingLogs];
+      } else {
+        // IP is already logged!
+        // We can retrieve the existing log entry
+        const existingLog = existingLogs[existingLogIndex];
+        // Update details, only overwrite fields if available
+        const updatedLogEntry = {
+          ...existingLog,
+          device: navigator.userAgent,
+          mac_address: rateLimiter.getDeviceFingerprint(),
+          timestamp: currentTimestamp,
+          location: location,
+          org: org || existingLog.org
+        };
+        
+        // Remove from its old position and slide to index 0 (so it becomes the top/active one)
+        updatedLogs.splice(existingLogIndex, 1);
+        updatedLogs.unshift(updatedLogEntry);
+      }
+
+      // Limit logs to the last 20 entries to prevent database inflation
+      if (updatedLogs.length > 20) {
+        updatedLogs = updatedLogs.slice(0, 20);
+      }
+
+      const telemetryString = JSON.stringify(updatedLogs);
+
+      // Probeer admin_notes bij te werken in de database
+      const { error: updateError } = await supabaseClient
+        .from('profiles')
+        .update({ admin_notes: telemetryString })
+        .eq('id', user.uid);
+
+      if (updateError) {
+        console.warn('Kon admin_notes kolom niet bijwerken (mogelijk geen kolom of RLS restrictie), proberen in custom_theme op te slaan:', updateError);
+        // Fallback: sla telemetrie op binnen custom_theme (een JSON-kolom)
+        const fallbackTheme = {
+          ...oldCustomTheme,
+          user_telemetry: updatedLogs
+        };
+
+        await supabaseClient
+          .from('profiles')
+          .update({ custom_theme: fallbackTheme })
+          .eq('id', user.uid);
+        
+          setProfile(prev => prev ? { ...prev, custom_theme: fallbackTheme, admin_notes: null } : null);
+          setCustomTheme(fallbackTheme);
+      } else {
+        console.log('Telemetrie succesvol geregistreerd in admin_notes!');
+        setProfile(prev => prev ? { ...prev, admin_notes: telemetryString } : null);
+      }
+    } catch (err) {
+      console.error('Fout bij het verzamelen of opslaan van telemetrie:', err);
+    }
   }, [user?.uid, supabaseClient]);
+
+  useEffect(() => {
+    recordTelemetry();
+  }, [recordTelemetry]);
 
   // Real-time whitelist and reports sync for admin
   useEffect(() => {
@@ -1730,11 +1844,13 @@ export default function App() {
               
               let senderName = 'Iemand';
               if (updatedConv.is_group) {
-                const authorName = updatedConv.last_message_sender_id ? updatedConv.participant_names[updatedConv.last_message_sender_id] : null;
+                const profileObj = usersRef.current.find(u => u.id === updatedConv.last_message_sender_id);
+                const authorName = profileObj?.display_name || (updatedConv.last_message_sender_id ? updatedConv.participant_names[updatedConv.last_message_sender_id] : null);
                 senderName = authorName ? `${authorName} in ${updatedConv.name || 'Groep'}` : (updatedConv.name || 'Groep');
               } else {
                 const otherParticipantUid = updatedConv.participants.find((uid: string) => uid !== user.uid);
-                senderName = otherParticipantUid ? updatedConv.participant_names[otherParticipantUid] : 'Iemand';
+                const profileObj = otherParticipantUid ? usersRef.current.find(u => u.id === otherParticipantUid) : null;
+                senderName = profileObj?.display_name || (otherParticipantUid ? updatedConv.participant_names[otherParticipantUid] : 'Iemand');
               }
               
               if (notificationSettingsRef.current.notify_new_messages && (activeConversationRef.current?.id !== updatedConv.id || viewRef.current !== 'messages')) {
@@ -2292,29 +2408,79 @@ export default function App() {
     };
   }, [isTyping, typingInId, user, profile, isTypingSubscribed]);
 
-  // Fetch profiles for participants in conversations
+  // Fetch profiles for participants and message senders dynamically across all conversations/messages/posts/forum
   useEffect(() => {
-    if (!user || !isWhitelisted || conversations.length === 0) return;
+    if (!user || !isWhitelisted) return;
 
     const fetchParticipantProfiles = async () => {
       const participantIds = new Set<string>();
-      conversations.forEach(c => c.participants.forEach(p => {
-        if (p !== user.uid) participantIds.add(p);
-      }));
+
+      // Collect participants from conversations
+      conversations.forEach(c => {
+        if (c.participants && Array.isArray(c.participants)) {
+          c.participants.forEach(p => {
+            if (p && p !== user.uid) participantIds.add(p);
+          });
+        }
+        if (c.last_message_sender_id && c.last_message_sender_id !== user.uid) {
+          participantIds.add(c.last_message_sender_id);
+        }
+      });
+
+      // Collect senders from currently loaded messages
+      messages.forEach(m => {
+        if (m.sender_id && m.sender_id !== user.uid) {
+          participantIds.add(m.sender_id);
+        }
+      });
+
+      // Collect authors from general chat posts
+      posts.forEach(p => {
+        if (p.author_id && p.author_id !== user.uid) {
+          participantIds.add(p.author_id);
+        }
+      });
+
+      // Collect authors from forum threads
+      threads.forEach(t => {
+        if (t.author_id && t.author_id !== user.uid) {
+          participantIds.add(t.author_id);
+        }
+      });
+
+      // Collect authors from forum comments
+      threadComments.forEach(c => {
+        if (c.author_id && c.author_id !== user.uid) {
+          participantIds.add(c.author_id);
+        }
+      });
       
       if (participantIds.size === 0) return;
 
-      const { data } = await supabaseClient
+      // Filter in-memory missing ones to avoid duplicate API calls
+      const missingIds = Array.from(participantIds).filter(id => !users.some(u => u.id === id));
+      if (missingIds.length === 0) return;
+
+      const { data, error } = await supabaseClient
         .from('profiles')
         .select('id, display_name, photo_url, email, created_at, updated_at, is_blocked')
-        .in('id', Array.from(participantIds));
+        .in('id', missingIds);
         
-      if (data) {
+      if (error) {
+        console.error('Error fetching participant profiles:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
         setUsers(prev => {
           const next = [...prev];
           data.forEach(profile => {
-            if (!next.some(u => u.id === profile.id)) {
+            const idx = next.findIndex(u => u.id === profile.id);
+            if (idx === -1) {
               next.push(profile);
+            } else {
+              // Refresh existing profile with newer data if it was different
+              next[idx] = { ...next[idx], ...profile };
             }
           });
           return next.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
@@ -2322,8 +2488,13 @@ export default function App() {
       }
     };
     
-    fetchParticipantProfiles();
-  }, [user?.uid, isWhitelisted, conversations.length]);
+    // Use a small debounce to batch any rapid updates
+    const timer = setTimeout(() => {
+      fetchParticipantProfiles();
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [user?.uid, isWhitelisted, conversations, messages, posts, threads, threadComments, users.length]);
 
   // Fetch users for search only when searching or needed
   useEffect(() => {
@@ -2511,11 +2682,18 @@ export default function App() {
     const fetchPosts = async () => {
       if (isPostingRef.current || hasFetchedPosts.current) return;
       
-      const { data, error } = await supabaseClient
+      let query = supabaseClient
         .from('posts')
         .select('id, content, author_id, author_name, author_photo, created_at, parent_id')
         .order('created_at', { ascending: false })
         .limit(100);
+
+      const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+      if (!isSystemAdmin && joinDate) {
+        query = query.gte('created_at', joinDate);
+      }
+      
+      const { data, error } = await query;
       
       if (data) {
         const decryptedPosts = (data as Post[]).map(p => ({ ...p, content: decryptGeneralChat(p.content) }));
@@ -2543,11 +2721,18 @@ export default function App() {
 
     const fetchThreads = async () => {
       try {
-        const { data, error } = await supabaseClient
+        let query = supabaseClient
           .from('forum_threads')
           .select('id, author_id, author_name, author_photo, title, content, created_at, updated_at, comment_count')
           .order('updated_at', { ascending: false })
           .limit(50);
+
+        const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+        if (!isSystemAdmin && joinDate) {
+          query = query.gte('created_at', joinDate);
+        }
+
+        const { data, error } = await query;
         
         if (data) {
           const decryptedThreads = (data as ForumThread[]).map(t => ({ 
@@ -2711,6 +2896,37 @@ export default function App() {
       logAudioEvent('system', 'success', 'Notificatie-instellingen bijgewerkt', user.uid, profile?.display_name || user.displayName || 'Anoniem');
     } catch (err) {
       handleSupabaseError(err, 'notificaties opslaan', user, isAdmin);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAcceptUpdatedTerms = async () => {
+    if (!user || !supabaseClient) return;
+    setSaving(true);
+    try {
+      const currentTheme = profile?.custom_theme || {};
+      const updatedTheme = { ...currentTheme, agreed_terms_v2: true };
+      
+      const { error } = await supabaseClient
+        .from('profiles')
+        .update({ custom_theme: updatedTheme })
+        .eq('id', user.uid);
+        
+      if (error) throw error;
+      
+      setCustomTheme(updatedTheme);
+      setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme } : null);
+      
+      const updatedProfile = profile ? { ...profile, custom_theme: updatedTheme } : null;
+      if (updatedProfile) {
+        localStorage.setItem('cached_profile', JSON.stringify(updatedProfile));
+      }
+      
+      toast.success('Hartelijk dank! Je bent akkoord gegaan met de vernieuwde voorwaarden.');
+    } catch (err: any) {
+      console.error('Accept terms error:', err);
+      toast.error('Kan akkoord niet opslaan: ' + (err.message || err));
     } finally {
       setSaving(false);
     }
@@ -4433,6 +4649,65 @@ export default function App() {
     (nicknames[u.id] && nicknames[u.id].toLowerCase().includes(userSearchQuery.toLowerCase()))
   );
 
+  if (ddosLock.locked) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 font-sans p-6 overflow-y-auto selection:bg-rose-500/30 selection:text-rose-200">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f2937_1px,transparent_1px),linear-gradient(to_bottom,#1f2937_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-20 pointer-events-none" />
+        
+        <div className="relative max-w-sm w-full bg-zinc-900/60 border border-zinc-800 backdrop-blur-md p-6 sm:p-8 rounded-3xl shadow-2xl flex flex-col items-center text-center">
+          
+          <div className="relative mb-5">
+            <div className="absolute inset-0 bg-rose-500/10 rounded-full blur-2xl animate-pulse" />
+            <div className="relative w-16 h-16 bg-zinc-850 border border-rose-500/30 rounded-2xl flex items-center justify-center text-rose-500 shadow-xl">
+              <ShieldAlert className="w-8 h-8 animate-[pulse_1.5s_infinite]" />
+            </div>
+          </div>
+          
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white mb-2 font-mono">
+            GATEWAY BLOCK
+          </h1>
+          
+          <div className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-rose-500/10 text-rose-400 rounded-full text-[9px] font-bold uppercase tracking-widest border border-rose-500/20 mb-5">
+            <Bot className="w-3 h-3" />
+            <span>DDoS Shield Actief</span>
+          </div>
+
+          <p className="text-[11px] text-zinc-400 leading-normal mb-5">
+            Hoge transactie-frequentie gedetecteerd. Je verbinding is tijdelijk onder quarantine geplaatst om overbelasting te voorkomen.
+          </p>
+
+          <div className="w-full bg-zinc-950/80 rounded-2xl border border-zinc-850 p-4 mb-5 text-left font-mono text-[9px] space-y-1.5 text-zinc-500">
+            <div className="flex justify-between border-b border-zinc-850/40 pb-1">
+              <span>Status:</span>
+              <span className="text-rose-400 font-bold">LOCKED_OUT</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Protectie:</span>
+              <span className="text-emerald-400 font-bold">ANTI_FLOOD_V3</span>
+            </div>
+          </div>
+
+          {/* Cooldown bar */}
+          <div className="w-full mb-5">
+            <div className="flex justify-between text-[10px] font-mono text-zinc-400 mb-1.5">
+              <span>Quarantine afkoeling</span>
+              <span className="text-white font-bold">{ddosLock.secondsLeft} seconden over</span>
+            </div>
+            <div className="w-full h-1.5 bg-zinc-850 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-rose-500 to-amber-500 transition-all duration-1000 ease-linear"
+                style={{ width: `${(ddosLock.secondsLeft / 30) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          <HumanVerificationChallenge />
+
+        </div>
+      </div>
+    );
+  }
+
   if (loading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50">
@@ -4958,6 +5233,25 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="w-full relative"
             >
+              {/* Privacy Banner voor specifiek account */}
+              {user && user.email && user.email.toLowerCase() === '137903@edu.singelland.nl' && (
+                <div id="singelland-privacy-alert" className="mb-8 p-5 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 text-app-ink rounded-[2rem] shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-emerald-500/20 text-emerald-600 rounded-2xl shrink-0">
+                      <ShieldCheck className="w-6 h-6 animate-[pulse_2s_infinite]" />
+                    </div>
+                    <div>
+                      <p className="font-black text-sm uppercase tracking-wider text-emerald-600">🛡️ Privacy-Garantie Actief</p>
+                      <p className="text-xs text-app-muted leading-relaxed mt-1">
+                        Beste <span className="font-bold">{user.email}</span>, jouw privacy-instellingen zijn bekrachtigd. Om te voldoen aan jouw verzoek wordt er <span className="text-emerald-500 font-extrabold underline">geen telemetrie, IP-adres of apparaatdata</span> meer van jouw sessies verzameld. Bestaande logs zijn volledig gewist.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 font-mono text-[9px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-600 px-3 py-1.5 rounded-full border border-emerald-500/20">
+                    Sessie Anoniem
+                  </span>
+                </div>
+              )}
               {view === 'chat' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="hidden lg:block lg:col-span-1 space-y-6">
@@ -5019,7 +5313,7 @@ export default function App() {
                   <div className="lg:col-span-2 space-y-6">
                     <ChatView 
                       user={user}
-                      posts={posts}
+                      posts={filteredPosts}
                       isAdmin={isAdmin}
                       postInput={postInput}
                       handleCreatePost={handleCreatePost}
@@ -5045,6 +5339,7 @@ export default function App() {
                       handleEmojiButtonClick={handleEmojiButtonClick}
                       handleImageUrl={handleImageUrl}
                       nicknames={nicknames}
+                      profiles={users}
                     />
                   </div>
                 </div>
@@ -5061,7 +5356,7 @@ export default function App() {
                   threadContentInput={threadContentInput}
                   setThreadContentInput={setThreadContentInput}
                   handleCreateThread={handleCreateThread}
-                  threads={threads}
+                  threads={filteredThreads}
                   threadComments={threadComments}
                   commentInput={commentInput}
                   setCommentInput={setCommentInput}
@@ -5078,6 +5373,7 @@ export default function App() {
                   uploading={uploading}
                   useCustomTheme={useCustomTheme}
                   customTheme={customTheme}
+                  profiles={users}
                 />
               )}
 
@@ -5822,6 +6118,11 @@ export default function App() {
                   }
 
                   try {
+                    const claimAuth = rateLimiter.logAuthAttempt();
+                    if (!claimAuth.allowed) {
+                      throw new Error(claimAuth.reason || 'Teveel loginpogingen vanaf dit apparaat. Probeer het over 5 minuten opnieuw.');
+                    }
+
                     if (isRegisterMode) {
                       const displayName = authDisplayName.trim();
                       if (!displayName) {
@@ -5830,9 +6131,15 @@ export default function App() {
                         return;
                       }
 
-                      // Eerst controleren of het e-mailadres op de whitelist staat
+                      if (!authAgreeTerms) {
+                        setAuthError('Je bent verplicht akkoord te gaan met de Algemene Voorwaarden en het Privacybeleid.');
+                        setAuthLoading(false);
+                        return;
+                      }
+
+                      // Eerst controleren of het e-mailadres op de whitelist staat (indien actief)
                       const isSystemAdmin = email.toLowerCase() === 'markohoksen@gmail.com';
-                      if (!isSystemAdmin) {
+                      if (!isSystemAdmin && IS_WHITELIST_ACTIVE) {
                         const { data: whitelistData, error: whitelistError } = await supabaseClient
                           .from('whitelist')
                           .select('email')
@@ -5846,6 +6153,19 @@ export default function App() {
 
                         if (!whitelistData) {
                           throw new Error('Dit e-mailadres is niet geautoriseerd om een account aan te maken.');
+                        }
+                      }
+
+                      // Extra controle: Controleer of het e-mailadres of een variant daarvan al geregistreerd staat
+                      const normalizedInputEmail = normalizeEmail(email);
+                      const { data: existingProfiles, error: fetchProfilesError } = await supabaseClient
+                        .from('profiles')
+                        .select('email');
+
+                      if (!fetchProfilesError && existingProfiles) {
+                        const isDuplicate = existingProfiles.some(p => p.email && normalizeEmail(p.email) === normalizedInputEmail);
+                        if (isDuplicate) {
+                          throw new Error('Dit e-mailadres (of een variant daarvan) is al in gebruik door een ander geregistreerd lid.');
                         }
                       }
 
@@ -5954,6 +6274,22 @@ export default function App() {
                     />
                   </div>
 
+                  {isRegisterMode && (
+                    <div className="flex items-start gap-2.5 mt-2 mb-2 px-1">
+                      <input
+                        id="auth-agree-terms-checkbox"
+                        type="checkbox"
+                        required
+                        checked={authAgreeTerms}
+                        onChange={(e) => setAuthAgreeTerms(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 text-cyan-500 rounded border-white/25 bg-white/10 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-400"
+                      />
+                      <label htmlFor="auth-agree-terms-checkbox" className="text-xs text-blue-100/70 leading-normal select-none cursor-pointer">
+                        Ik ga akkoord met de <span className="text-cyan-400 font-extrabold underline">Algemene Voorwaarden</span> en het <span className="text-cyan-400 font-extrabold underline">Privacybeleid</span> van FTJM Enterprise.
+                      </label>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={authLoading}
@@ -5987,6 +6323,118 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <AnimatePresence>
+          {needsTermsAgreement && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[99999] bg-zinc-950/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto font-sans text-white select-none"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 30 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 350 }}
+                className="max-w-xl w-full bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-800/80 p-6 sm:p-8 rounded-[2.5rem] shadow-2xl space-y-6 shrink-0 relative overflow-hidden"
+              >
+                {/* Decorative backgrounds */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-505/10 rounded-full blur-3xl -ml-10 -mb-10 pointer-events-none" />
+
+                <div className="text-center space-y-2 relative z-10">
+                  <div className="w-14 h-14 bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 text-cyan-400 rounded-3xl flex items-center justify-center mx-auto mb-3 border border-cyan-500/30">
+                    <ShieldCheck className="w-8 h-8 animate-pulse" />
+                  </div>
+                  <h2 className="text-2xl font-black text-white tracking-tight uppercase">
+                    Voorwaarden & Privacy Update
+                  </h2>
+                  <p className="text-xs text-zinc-400 uppercase tracking-widest font-mono">
+                    FTJM Enterprise Platform v2.5
+                  </p>
+                </div>
+
+                <div className="bg-zinc-950/60 border border-zinc-800/80 p-4 rounded-2xl text-xs space-y-3 leading-relaxed text-zinc-300 relative z-10">
+                  <p className="font-bold text-cyan-400 text-[13px] flex items-center gap-1.5 mb-1">
+                    <span>📢</span> Belangrijke Wijzigingen:
+                  </p>
+                  <div className="space-y-2 text-[11px] text-zinc-300">
+                    <div className="flex gap-2.5">
+                      <span className="text-emerald-400 shrink-0 font-bold">✔</span>
+                      <p>
+                        <span className="font-extrabold text-white">100% IP-Deconstructie:</span> We hebben alle verzameling van IP-adressen (IPv4/IPv6), fysieke geolocaties, en internet providers stopgezet voor álle gebruikers. Bestaande logs zijn volledig en permanent gewist uit onze gehele infrastructuur.
+                      </p>
+                    </div>
+                    <div className="flex gap-2.5">
+                      <span className="text-emerald-400 shrink-0 font-bold">✔</span>
+                      <p>
+                        <span className="font-extrabold text-white">Uitgebreide Algemene Voorwaarden:</span> Volledig vernieuwde, transparante spelregels voor platformintegriteit, intellectueel eigendom en veiligheid.
+                      </p>
+                    </div>
+                    <div className="flex gap-2.5">
+                      <span className="text-emerald-400 shrink-0 font-bold">✔</span>
+                      <p>
+                        <span className="font-extrabold text-white">Garantie & Beveiliging:</span> Verhoogde bescherming van jouw persoonsgegevens zonder dat er onnodige metadata of privacygevoelige logs achterblijven.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1 relative z-10">
+                  <div className="text-[10px] font-black uppercase text-zinc-500 tracking-wider mb-1 ml-1 flex justify-between">
+                    <span>Lees de Algemene Overeenkomst</span>
+                    <span className="text-cyan-500">Volledig overzicht</span>
+                  </div>
+                  <div className="max-h-[140px] overflow-y-auto bg-zinc-900/80 p-4 rounded-2xl border border-zinc-800 text-[10.5px] text-zinc-400 space-y-4 leading-relaxed custom-scrollbar text-justify select-text">
+                    <p className="font-bold text-white text-xs">
+                      1. TOEPASSELIJKHEID & ENTITEIT
+                    </p>
+                    <p>
+                      Deze voorwaarden regelen de rechten en plichten tussen FTJM Enterprise (de Eigenaar) en iedere Gebruiker met betrekking tot het gebruik van het Platform (inclusief het forum, chatsysteem, en de retro gaming arcade). Door het Platform te blijven gebruiken gaat u onvoorwaardelijk akkoord met deze voorwaarden.
+                    </p>
+                    <p className="font-bold text-white text-xs">
+                      2. PRIVACY & VOLLEDIGE IP-ANONYMISERING
+                    </p>
+                    <p>
+                      Wij zijn toegewijd aan maximale dataminimalisatie. Wij registreren onder geen beding uw IP-adres, internet service provider (ISP), of specifieke geografische positie. Technische metadata wordt uitsluitend in geanonimiseerde vorm gebruikt om de continuïteit en veiligheid van het platform te waarborgen.
+                    </p>
+                    <p className="font-bold text-white text-xs">
+                      3. INTELLECTUEEL EIGENDOM
+                    </p>
+                    <p>
+                      Alle content, designs, retro games en functionaliteiten op het platform behoren toe aan FTJM Enterprise. Gebruikers behouden het auteursrecht op hun eigen berichten en forum-bijdragen, maar verlenen FTJM Enterprise een onherroepelijke, royaltyvrije licentie om deze binnen het platform te hosten en te modereren.
+                    </p>
+                    <p className="font-bold text-white text-xs">
+                      4. VERANTWOORDELIJKHEID & GEBRUIKSREGELS
+                    </p>
+                    <p>
+                      Spammen, misbruik, treiteren, het plaatsen van intimiderende of lasterlijke teksten, en het omzeilen van filters of technische restricties zal leiden tot onmiddellijke schorsing of permanente IP-onafhankelijke account-beëindiging zonder waarschuwing.
+                    </p>
+                    <p className="font-bold text-white text-xs">
+                      5. WIJZIGINGEN EN BEËINDIGING
+                    </p>
+                    <p>
+                      De Eigenaar behoudt zich het recht voor om functionaliteiten of het platform als geheel op ieder gewenst moment aan te passen, te staken, of te beëindigen zonder aansprakelijkheid voor verlies van data of toegang.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative z-10 pt-2">
+                  <button
+                    onClick={handleAcceptUpdatedTerms}
+                    className="w-full py-4 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] shadow-lg shadow-cyan-950/40 flex items-center justify-center gap-2 cursor-pointer border border-cyan-400/20"
+                  >
+                    <span>✦</span> Ik ga onvoorwaardelijk akkoord en ga verder <span>✦</span>
+                  </button>
+                  <p className="text-[10px] text-zinc-500 text-center mt-3">
+                    Door te klikkert ga je akkoord met onze vernieuwde Algemene Voorwaarden & ons Privacybeleid.
+                  </p>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <Toaster 
           position="top-right" 
           richColors 

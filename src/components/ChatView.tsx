@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Send, Loader2, X, ChevronLeft, Smile, Link } from 'lucide-react';
-import { Post, CustomTheme } from '../types';
+import { Post, CustomTheme, UserProfile } from '../types';
 import { PostItem } from './PostItem';
 
 interface ChatViewProps {
@@ -32,6 +32,7 @@ interface ChatViewProps {
   handleEmojiButtonClick: (e: React.MouseEvent, type: 'post') => void;
   handleImageUrl: () => void;
   nicknames: Record<string, string>;
+  profiles?: UserProfile[];
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -61,7 +62,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   uploading,
   handleEmojiButtonClick,
   handleImageUrl,
-  nicknames
+  nicknames,
+  profiles
 }) => {
   return (
     <div 
@@ -203,6 +205,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               allPosts={posts}
               useCustomTheme={useCustomTheme}
               customTheme={customTheme}
+              profiles={profiles}
             />
           ))
         )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Gamepad2, Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, Bot, Zap, Play, Smile, Volume2, Star, RefreshCw } from 'lucide-react';
+import { Gamepad2, Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, Bot, Zap, Play, Smile, Volume2, Star, RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { HamsterGame } from './HamsterGame';
 
@@ -75,15 +75,75 @@ const playRetroSound = (type: 'eat' | 'die' | 'point' | 'click' | 'victory' | 'j
 
 interface GameProps {
   onBack: () => void;
+  isFullscreen?: boolean;
 }
 
 export function GamesView() {
   const [selectedGame, setSelectedGame] = useState<'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster'>('lobby');
+  const [isGameFullscreen, setIsGameFullscreen] = useState(false);
+  const gameWrapperRef = useRef<HTMLDivElement>(null);
 
   const selectGame = (game: 'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster') => {
     playRetroSound('click');
     setSelectedGame(game);
   };
+
+  const toggleFullscreen = async () => {
+    playRetroSound('click');
+    if (!isGameFullscreen) {
+      setIsGameFullscreen(true);
+      if (gameWrapperRef.current) {
+        try {
+          if (gameWrapperRef.current.requestFullscreen) {
+            await gameWrapperRef.current.requestFullscreen();
+          } else if ((gameWrapperRef.current as any).webkitRequestFullscreen) {
+            await (gameWrapperRef.current as any).webkitRequestFullscreen();
+          }
+        } catch (e) {
+          console.warn('Native requestFullscreen trigger rejected or locked in iframe sands:', e);
+        }
+      }
+    } else {
+      setIsGameFullscreen(false);
+      try {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        }
+      } catch (e) {
+        console.warn('Native exitFullscreen trigger rejected:', e);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isCurrentlyNative = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      if (!isCurrentlyNative && isGameFullscreen) {
+        setIsGameFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, [isGameFullscreen]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isGameFullscreen) {
+        setIsGameFullscreen(false);
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isGameFullscreen]);
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] flex flex-col font-primary">
@@ -97,12 +157,21 @@ export function GamesView() {
           <p className="text-app-muted font-medium text-sm">Een geheime verzameling grappige retro games easter eggs!</p>
         </div>
         {selectedGame !== 'lobby' && (
-          <button
-            onClick={() => selectGame('lobby')}
-            className="flex items-center gap-1.5 px-4 py-2 bg-app-accent hover:bg-app-accent/80 text-app-ink h-10 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-sm cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" /> Lobby
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={toggleFullscreen}
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white h-10 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-sm cursor-pointer"
+            >
+              {isGameFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              <span className="hidden sm:inline">{isGameFullscreen ? 'Krimpen' : 'Volledig Scherm'}</span>
+            </button>
+            <button
+              onClick={() => { selectGame('lobby'); setIsGameFullscreen(false); }}
+              className="flex items-center gap-1.5 px-4 py-2 bg-app-accent hover:bg-app-accent/80 text-app-ink h-10 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-sm cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" /> Lobby
+            </button>
+          </div>
         )}
       </div>
 
@@ -233,11 +302,28 @@ export function GamesView() {
         )}
 
         {/* GAMES RENDERING */}
-        {selectedGame === 'snake' && <SnakeGame onBack={() => setSelectedGame('lobby')} />}
-        {selectedGame === 'ttt' && <TicTacToeGame onBack={() => setSelectedGame('lobby')} />}
-        {selectedGame === 'flappy' && <FlappyGame onBack={() => setSelectedGame('lobby')} />}
-        {selectedGame === 'sysadmin' && <SysAdminGame onBack={() => setSelectedGame('lobby')} />}
-        {selectedGame === 'hamster' && <HamsterGame onBack={() => setSelectedGame('lobby')} />}
+        {selectedGame !== 'lobby' && (
+          <div 
+            ref={gameWrapperRef} 
+            className={isGameFullscreen ? "fixed inset-0 z-[100] bg-[#070614] flex flex-col items-center justify-center p-4 overflow-y-auto" : "relative w-full"}
+          >
+            {isGameFullscreen && (
+              <div className="absolute top-4 right-4 z-[110]">
+                <button
+                  onClick={toggleFullscreen}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs uppercase cursor-pointer shadow-lg transition-all"
+                >
+                  <Minimize2 className="w-4 h-4" /> Sluit Volledig Scherm (ESC)
+                </button>
+              </div>
+            )}
+            {selectedGame === 'snake' && <SnakeGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
+            {selectedGame === 'ttt' && <TicTacToeGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
+            {selectedGame === 'flappy' && <FlappyGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
+            {selectedGame === 'sysadmin' && <SysAdminGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
+            {selectedGame === 'hamster' && <HamsterGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -246,7 +332,7 @@ export function GamesView() {
 /* ==========================================================================
    1. SNAKE GAME
    ========================================================================== */
-function SnakeGame({ onBack }: GameProps) {
+function SnakeGame({ onBack, isFullscreen }: GameProps) {
   const [gridSize] = useState(20);
   const [snake, setSnake] = useState<[number, number][]>([[10, 10], [10, 11], [10, 12]]);
   const [food, setFood] = useState<[number, number]>([5, 5]);
@@ -377,8 +463,11 @@ function SnakeGame({ onBack }: GameProps) {
     return () => clearInterval(tick);
   }, [isPlaying, gameOver, dir, food, speed, highScore]);
 
+  const cellSize = isFullscreen ? '19px' : '15px';
+  const boardSize = isFullscreen ? '380px' : '300px';
+
   return (
-    <div className="bg-app-card border border-app-border rounded-[2rem] p-6 max-w-md mx-auto w-full flex flex-col items-center">
+    <div className={`bg-app-card border border-app-border rounded-[2rem] p-6 mx-auto w-full flex flex-col items-center select-none transition-all duration-300 ${isFullscreen ? 'max-w-2xl scale-105 shadow-2xl' : 'max-w-md'}`}>
       {/* Stats */}
       <div className="flex justify-between w-full mb-4 px-2 font-mono text-sm items-center h-8">
         <div className="flex items-center gap-1.5 text-app-ink font-bold">
@@ -401,7 +490,10 @@ function SnakeGame({ onBack }: GameProps) {
       </div>
 
       {/* Snake Board Grid */}
-      <div className="w-[300px] h-[300px] bg-slate-950 rounded-2xl relative border-2 border-slate-800 overflow-hidden shadow-inner flex flex-wrap">
+      <div 
+        style={{ width: boardSize, height: boardSize }}
+        className="bg-slate-950 rounded-2xl relative border-2 border-slate-800 overflow-hidden shadow-inner flex flex-wrap"
+      >
         {isPlaying && isPaused && (
           <div className="absolute inset-0 bg-black/75 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-4 text-center">
             <span className="text-4xl animate-pulse">⏸️</span>
@@ -448,7 +540,7 @@ function SnakeGame({ onBack }: GameProps) {
 
         {/* Draw Board */}
         {Array.from({ length: gridSize }).map((_, y) => (
-          <div key={y} className="flex w-full h-[15px]">
+          <div key={y} className="flex w-full" style={{ height: cellSize }}>
             {Array.from({ length: gridSize }).map((_, x) => {
               const isSnakeSegment = snake.some(s => s[0] === x && s[1] === y);
               const isHead = snake[0][0] === x && snake[0][1] === y;
@@ -457,7 +549,8 @@ function SnakeGame({ onBack }: GameProps) {
               return (
                 <div
                   key={x}
-                  className={`w-[15px] h-[15px] border-[0.5px] border-slate-900/40 rounded-[2px] transition-all duration-100 ${
+                  style={{ width: cellSize, height: cellSize }}
+                  className={`border-[0.5px] border-slate-900/40 rounded-[2px] transition-all duration-100 ${
                     isHead
                       ? 'bg-gradient-to-tr from-cyan-400 to-emerald-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]'
                       : isSnakeSegment
@@ -558,7 +651,7 @@ const SASSY_BOT_REMARKS = {
   ]
 };
 
-function TicTacToeGame({ onBack }: GameProps) {
+function TicTacToeGame({ onBack, isFullscreen }: GameProps) {
   const [board, setBoard] = useState<(string | null)[]>(Array(9).fill(null));
   const [isPlayerTurn, setIsPlayerTurn] = useState(true);
   const [status, setStatus] = useState('Jouw beurt! Zet een X.');
@@ -740,7 +833,7 @@ function TicTacToeGame({ onBack }: GameProps) {
   };
 
   return (
-    <div className="bg-app-card border border-app-border rounded-[2rem] p-6 max-w-md mx-auto w-full flex flex-col items-center">
+    <div className={`bg-app-card border border-app-border rounded-[2rem] p-6 mx-auto w-full flex flex-col items-center select-none transition-all duration-300 ${isFullscreen ? 'max-w-2xl scale-105 shadow-2xl' : 'max-w-md'}`}>
       {/* Bot Chat bubble */}
       <div className="w-full flex items-start gap-3 bg-[#0f172a] p-4 rounded-2xl border border-slate-800 mb-6 text-left relative overflow-hidden">
         <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center text-xs shrink-0 shadow-md">
@@ -761,7 +854,10 @@ function TicTacToeGame({ onBack }: GameProps) {
       </p>
 
       {/* Grid container */}
-      <div className="grid grid-cols-3 gap-3 w-[260px] h-[260px] relative">
+      <div 
+        style={{ width: isFullscreen ? '340px' : '260px', height: isFullscreen ? '340px' : '260px' }}
+        className="grid grid-cols-3 gap-3 relative"
+      >
         {board.map((cell, i) => {
           const isWinningCell = winLine?.includes(i);
           return (
@@ -769,7 +865,9 @@ function TicTacToeGame({ onBack }: GameProps) {
               key={i}
               onClick={() => handleCellClick(i)}
               disabled={cell !== null || winner !== null || !isPlayerTurn}
-              className={`w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-black shadow-inner relative overflow-hidden border transition-all ${
+              className={`rounded-2xl flex items-center justify-center font-black shadow-inner relative overflow-hidden border transition-all ${
+                isFullscreen ? 'w-28 h-28 text-4xl' : 'w-20 h-20 text-3xl'
+              } ${
                 isWinningCell
                   ? 'bg-gradient-to-tr from-cyan-400 to-blue-500 text-white border-cyan-400 shadow-cyan-500/10'
                   : 'bg-slate-950 hover:bg-slate-900 text-slate-100 border-slate-800/80 active:scale-95'
@@ -805,7 +903,7 @@ function TicTacToeGame({ onBack }: GameProps) {
 /* ==========================================================================
    3. FLAPPY LOGO GAME
    ========================================================================== */
-function FlappyGame({ onBack }: GameProps) {
+function FlappyGame({ onBack, isFullscreen }: GameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -1083,7 +1181,7 @@ function FlappyGame({ onBack }: GameProps) {
   }, []);
 
   return (
-    <div className="bg-app-card border border-app-border rounded-[2rem] p-6 max-w-sm mx-auto w-full flex flex-col items-center select-none">
+    <div className={`bg-app-card border border-app-border rounded-[2rem] p-6 mx-auto w-full flex flex-col items-center select-none transition-all duration-300 ${isFullscreen ? 'max-w-2xl scale-105 shadow-2xl' : 'max-w-sm'}`}>
       {/* Score */}
       <div className="flex justify-between w-full mb-4 px-1 font-mono text-sm leading-none select-none items-center h-8">
         <div className="flex items-center gap-1.5 text-app-ink font-bold leading-none">
@@ -1109,7 +1207,7 @@ function FlappyGame({ onBack }: GameProps) {
       <div
         ref={containerRef}
         onClick={jump}
-        className="w-[300px] h-[340px] rounded-2xl relative border-2 border-slate-800/80 shadow-md overflow-hidden cursor-pointer"
+        className={`rounded-2xl relative border-2 border-slate-800/80 shadow-md overflow-hidden cursor-pointer transition-all duration-300 ${isFullscreen ? 'w-[420px] h-[480px]' : 'w-[300px] h-[340px]'}`}
       >
         <canvas ref={canvasRef} className="w-full h-full block" />
       </div>
@@ -1135,7 +1233,7 @@ interface FallObject {
   emoji: string;
 }
 
-function SysAdminGame({ onBack }: GameProps) {
+function SysAdminGame({ onBack, isFullscreen }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -1660,7 +1758,7 @@ function SysAdminGame({ onBack }: GameProps) {
   }, [gameState]);
 
   return (
-    <div className="bg-app-card border border-app-border rounded-[2rem] p-6 max-w-sm mx-auto w-full flex flex-col items-center select-none font-primary">
+    <div className={`bg-app-card border border-app-border rounded-[2rem] p-6 mx-auto w-full flex flex-col items-center select-none font-primary transition-all duration-300 ${isFullscreen ? 'max-w-2xl scale-105 shadow-2xl' : 'max-w-sm'}`}>
       {/* Gameplay Stats Header */}
       <div className="w-full space-y-3 mb-4">
         <div className="flex justify-between items-center font-mono text-xs h-8">
@@ -1716,7 +1814,7 @@ function SysAdminGame({ onBack }: GameProps) {
         }}
         onTouchMove={handleTouchMove}
         onMouseMove={handleMouseMove}
-        className="w-[300px] h-[360px] rounded-2xl relative border-2 border-slate-800/80 shadow-inner overflow-hidden cursor-crosshair"
+        className={`rounded-2xl relative border-2 border-slate-800/80 shadow-inner overflow-hidden cursor-crosshair transition-all duration-300 ${isFullscreen ? 'w-[420px] h-[480px]' : 'w-[300px] h-[360px]'}`}
       >
         <canvas ref={canvasRef} className="w-full h-full block" />
       </div>

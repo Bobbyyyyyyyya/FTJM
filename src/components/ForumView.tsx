@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Layout, Plus, ChevronLeft, MessageSquare, Clock, User as UserIcon, Loader2, X, Smile, Link, Send } from 'lucide-react';
-import { ForumThread, ForumComment } from '../types';
+import { ForumThread, ForumComment, UserProfile } from '../types';
 import { formatDate } from '../utils/helpers';
 import { RichContent } from './RichContent';
 
@@ -32,6 +32,7 @@ interface ForumViewProps {
   nicknames: Record<string, string>;
   useCustomTheme: boolean;
   customTheme: any;
+  profiles?: UserProfile[];
 }
 
 export const ForumView: React.FC<ForumViewProps> = ({
@@ -60,7 +61,8 @@ export const ForumView: React.FC<ForumViewProps> = ({
   setReplyingToComment,
   nicknames,
   useCustomTheme,
-  customTheme
+  customTheme,
+  profiles
 }) => {
   return (
     <div className="space-y-8">
@@ -99,20 +101,29 @@ export const ForumView: React.FC<ForumViewProps> = ({
               color: customTheme.text_color
             } : {}}
           >
-            <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5" style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent', borderColor: 'transparent' } : {}}>
+              <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5" style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent', borderColor: 'transparent' } : {}}>
                 <div className="flex items-center gap-3 mb-4">
-                  {(activeThread.author_photo) ? (
-                    <img src={activeThread.author_photo} alt="" className="w-8 h-8 rounded-full border border-app-border" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                      <UserIcon className="w-4 h-4 text-app-muted" />
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 text-xs text-app-muted">
-                    <span className="font-bold text-app-ink">{nicknames[activeThread.author_id] || activeThread.author_name}</span>
-                    <span>•</span>
-                    <span>{formatDate(activeThread.created_at)}</span>
-                  </div>
+                  {(() => {
+                    const threadAuthorProfile = activeThread ? profiles?.find(p => p.id === activeThread.author_id) : null;
+                    const threadAuthorName = threadAuthorProfile?.display_name || activeThread?.author_name || 'Anoniem';
+                    const threadAuthorPhoto = threadAuthorProfile?.photo_url || activeThread?.author_photo;
+                    return (
+                      <>
+                        {threadAuthorPhoto ? (
+                          <img src={threadAuthorPhoto} alt="" className="w-8 h-8 rounded-full border border-app-border object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
+                            <UserIcon className="w-4 h-4 text-app-muted" />
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-xs text-app-muted">
+                          <span className="font-bold text-app-ink">{nicknames[activeThread!.author_id] || threadAuthorName}</span>
+                          <span>•</span>
+                          <span>{formatDate(activeThread!.created_at)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               <h1 className="text-2xl sm:text-3xl font-bold text-app-ink mb-4 leading-tight">{activeThread.title}</h1>
               <div className="text-app-ink text-base sm:text-lg leading-relaxed whitespace-pre-wrap">
@@ -203,46 +214,53 @@ export const ForumView: React.FC<ForumViewProps> = ({
                     <p className="text-app-muted text-sm">Nog geen reacties. Wees de eerste!</p>
                   </div>
                 ) : (
-                  threadComments.map(comment => (
-                    <div key={comment.id} className="flex gap-4 group">
-                      <div className="w-10 h-10 flex-shrink-0">
-                        {comment.author_photo ? (
-                          <img src={comment.author_photo} alt="" className="w-full h-full rounded-full border border-app-border object-cover" />
-                        ) : (
-                          <div className="w-full h-full rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                            <UserIcon className="w-5 h-5 text-app-muted" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex flex-col">
-                            {comment.parent_id && (
-                              <div className="mb-1.5 space-y-1">
-                                {(() => {
-                                  const parent = threadComments.find(c => c.id === comment.parent_id);
-                                  if (!parent) return null;
-                                  return (
-                                    <>
-                                      <div className="flex items-center gap-1 text-[10px] text-app-muted font-medium bg-app-accent/30 w-fit px-2 py-0.5 rounded-full border border-app-border/50">
-                                        <MessageSquare className="w-2.5 h-2.5" />
-                                        <span>Geantwoord op <span className="font-bold text-app-ink">{nicknames[parent.author_id] || parent.author_name}</span></span>
-                                      </div>
-                                      <div className="pl-2 border-l-2 border-app-border ml-1.5">
-                                        <p className="text-[10px] text-app-muted italic line-clamp-1 opacity-70">
-                                          "{parent.content}"
-                                        </p>
-                                      </div>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="font-bold text-app-ink">{nicknames[comment.author_id] || comment.author_name}</span>
-                              <span className="text-app-muted">{formatDate(comment.created_at)}</span>
+                  threadComments.map(comment => {
+                    const commentAuthor = profiles?.find(p => p.id === comment.author_id);
+                    const commentAuthorName = commentAuthor?.display_name || comment.author_name || 'Anoniem';
+                    const commentAuthorPhoto = commentAuthor?.photo_url || comment.author_photo;
+
+                    return (
+                      <div key={comment.id} className="flex gap-4 group">
+                        <div className="w-10 h-10 flex-shrink-0">
+                          {commentAuthorPhoto ? (
+                            <img src={commentAuthorPhoto} alt="" className="w-full h-full rounded-full border border-app-border object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-full h-full rounded-full bg-app-accent flex items-center justify-center border border-app-border">
+                              <UserIcon className="w-5 h-5 text-app-muted" />
                             </div>
-                          </div>
+                          )}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex flex-col">
+                              {comment.parent_id && (
+                                <div className="mb-1.5 space-y-1">
+                                  {(() => {
+                                    const parent = threadComments.find(c => c.id === comment.parent_id);
+                                    if (!parent) return null;
+                                    const parentAuthor = profiles?.find(p => p.id === parent.author_id);
+                                    const parentAuthorName = parentAuthor?.display_name || parent.author_name || 'Anoniem';
+                                    return (
+                                      <>
+                                        <div className="flex items-center gap-1 text-[10px] text-app-muted font-medium bg-app-accent/30 w-fit px-2 py-0.5 rounded-full border border-app-border/50">
+                                          <MessageSquare className="w-2.5 h-2.5" />
+                                          <span>Geantwoord op <span className="font-bold text-app-ink">{nicknames[parent.author_id] || parentAuthorName}</span></span>
+                                        </div>
+                                        <div className="pl-2 border-l-2 border-app-border ml-1.5">
+                                          <p className="text-[10px] text-app-muted italic line-clamp-1 opacity-70">
+                                            "{parent.content}"
+                                          </p>
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="font-bold text-app-ink">{nicknames[comment.author_id] || commentAuthorName}</span>
+                                <span className="text-app-muted">{formatDate(comment.created_at)}</span>
+                              </div>
+                            </div>
                           <button 
                             onClick={() => setReplyingToComment(comment)}
                             className="p-1.5 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg transition-all opacity-0 group-hover:opacity-100"
@@ -263,7 +281,8 @@ export const ForumView: React.FC<ForumViewProps> = ({
                         </div>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -366,7 +385,13 @@ export const ForumView: React.FC<ForumViewProps> = ({
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-3 flex-1">
                     <div className="flex items-center gap-2 text-xs text-app-muted">
-                      <span className="font-bold text-app-ink">{nicknames[thread.author_id] || thread.author_name}</span>
+                      {(() => {
+                        const threadAuthor = profiles?.find(p => p.id === thread.author_id);
+                        const threadAuthorName = threadAuthor?.display_name || thread.author_name || 'Anoniem';
+                        return (
+                          <span className="font-bold text-app-ink">{nicknames[thread.author_id] || threadAuthorName}</span>
+                        );
+                      })()}
                       <span>•</span>
                       <span>{formatDate(thread.created_at)}</span>
                     </div>

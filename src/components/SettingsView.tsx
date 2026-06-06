@@ -1305,6 +1305,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   ))}
                 </div>
+
+                {/* SQL Patch Remedie sectie */}
+                <div className="mt-4 p-4 bg-rose-50 rounded-2xl border border-rose-200/60 space-y-2">
+                  <div className="flex items-center gap-2 text-rose-800 font-bold text-[10px] uppercase tracking-wider">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>BELANGRIJK: Oplossing voor PATCH role/block hack</span>
+                  </div>
+                  <p className="text-[10px] text-rose-700 leading-normal">
+                    Een kwaadwillende geautoriseerde gebruiker kan via een directe REST API <code>PATCH</code>-aanroep op de <code>profiles</code> tabel zijn eigen <code>role</code> naar <code>admin</code> wijzigen of de <code>is_blocked</code> status aanpassen. Voer de onderstaande SQL-code uit in je <strong>Supabase SQL Editor</strong> om dit lek permanent te dichten door middel van een database trigger:
+                  </p>
+                  <pre className="p-3 bg-stone-900 text-rose-200 rounded-xl text-[9px] font-mono overflow-x-auto max-h-[160px] custom-scrollbar select-all leading-relaxed whitespace-pre-wrap">
+{`-- Voorkom dat gebruikers hun eigen rol of blokkadestatus wijzigen
+CREATE OR REPLACE FUNCTION secure_profile_updates()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Controleer of een niet-admin de 'role' of 'is_blocked' wijzigt
+  IF (OLD.role IS DISTINCT FROM NEW.role OR OLD.is_blocked IS DISTINCT FROM NEW.is_blocked) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    ) THEN
+      RAISE EXCEPTION 'VULNERABILITY DETECTED: Alleen administrators mogen "role" of "is_blocked" wijzigen!';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_secure_profile_updates ON public.profiles;
+CREATE TRIGGER tr_secure_profile_updates
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION secure_profile_updates();`}
+                  </pre>
+                  <div className="text-[8.5px] font-bold text-rose-800 uppercase flex justify-between items-center bg-rose-100/50 p-2 rounded-lg leading-snug">
+                    <span>💡 Tip: Klik drie keer snel in het geselecteerde vak om de gehele SQL-code te kopiëren!</span>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-8">
@@ -1409,24 +1447,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <span className="text-emerald-700 font-bold">{ownTel.org}</span>
                               </div>
                             )}
-                            {ownTel.latitude && ownTel.longitude && (
-                              <div className="bg-white/80 p-2 rounded-xl border border-emerald-100 sm:col-span-2">
-                                <span className="font-bold text-emerald-950 uppercase block mb-0.5 text-rose-500">Exacte GPS Locatie:</span>
-                                <div className="flex flex-wrap items-center justify-between gap-1 mt-0.5">
-                                  <span className="font-extrabold text-gray-800">
-                                    {ownTel.latitude.toFixed(6)}, {ownTel.longitude.toFixed(6)} (~{Math.round(ownTel.accuracy || 0)}m nauwkeurig)
-                                  </span>
-                                  <a 
-                                    href={`https://www.google.com/maps?q=${ownTel.latitude},${ownTel.longitude}`} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="px-2 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-[8px] font-extrabold uppercase transition"
-                                  >
-                                    Kaart ↗
-                                  </a>
-                                </div>
-                              </div>
-                            )}
                           </div>
 
                           {ownHistory.length > 0 && (
@@ -1440,25 +1460,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     <div className="space-y-0.5">
                                       <div><span className="font-bold text-emerald-950 uppercase mr-1">IP:</span><span className="text-cyan-600 font-bold">{hist.ip}</span></div>
                                       <div><span className="font-bold text-emerald-950 uppercase mr-1">Loc:</span><span>{hist.location || 'Onbekend'}</span></div>
-                                      {hist.latitude && hist.longitude && (
-                                        <div className="text-[7.5px] text-rose-600">
-                                          📍 {hist.latitude.toFixed(5)}, {hist.longitude.toFixed(5)} (~{Math.round(hist.accuracy || 0)}m)
-                                        </div>
-                                      )}
                                     </div>
                                     <div className="text-[7.5px] text-emerald-700 text-right shrink-0">
                                       <div>{hist.timestamp ? new Date(hist.timestamp).toLocaleDateString('nl-NL') : ''}</div>
                                       <div>{hist.timestamp ? new Date(hist.timestamp).toLocaleTimeString('nl-NL') : ''}</div>
-                                      {hist.latitude && hist.longitude && (
-                                        <a 
-                                          href={`https://www.google.com/maps?q=${hist.latitude},${hist.longitude}`} 
-                                          target="_blank" 
-                                          rel="noreferrer" 
-                                          className="text-cyan-600 hover:underline inline-block mt-0.5 font-bold"
-                                        >
-                                          Kaart ↗
-                                        </a>
-                                      )}
                                     </div>
                                   </div>
                                 ))}
@@ -1524,6 +1529,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     <span className="font-bold text-app-ink uppercase mr-1">IP:</span> 
                                     <span className="text-cyan-500 font-extrabold">{tel.ip || 'Onbekend'}</span>
                                   </div>
+                                  {tel.mac_address && (
+                                    <div>
+                                      <span className="font-bold text-app-ink uppercase mr-1">MAC:</span> 
+                                      <span className="text-amber-500 font-extrabold">{tel.mac_address}</span>
+                                    </div>
+                                  )}
                                   <div>
                                     <span className="font-bold text-app-ink uppercase mr-1">LOC:</span> 
                                     <span className="text-rose-500 font-bold">{tel.location || 'Onbekend'}</span>
@@ -1532,19 +1543,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     <div>
                                       <span className="font-bold text-app-ink uppercase mr-1">ISP:</span> 
                                       <span className="text-emerald-500 font-bold">{tel.org}</span>
-                                    </div>
-                                  )}
-                                  {tel.latitude && tel.longitude && (
-                                    <div className="border-t border-app-border pt-1.5 mt-1.5 font-sans">
-                                      <span className="font-bold text-app-ink uppercase mr-1 text-[9px] font-mono block mb-0.5 text-rose-500">Exacte GPS Locatie:</span> 
-                                      <a 
-                                        href={`https://www.google.com/maps?q=${tel.latitude},${tel.longitude}`} 
-                                        target="_blank" 
-                                        rel="noreferrer" 
-                                        className="text-cyan-600 font-extrabold hover:underline inline-flex items-center gap-1 text-[8.5px]"
-                                      >
-                                        📍 {tel.latitude.toFixed(5)}, {tel.longitude.toFixed(5)} (~{Math.round(tel.accuracy || 0)}m GPS) ↗
-                                      </a>
                                     </div>
                                   )}
                                   {tel.timestamp && (
@@ -1569,16 +1567,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                               </span>
                                             </div>
                                             <div className="text-rose-500 truncate">{hist.location || 'Onbekend'}</div>
-                                            {hist.latitude && hist.longitude && (
-                                              <a 
-                                                href={`https://www.google.com/maps?q=${hist.latitude},${hist.longitude}`} 
-                                                target="_blank" 
-                                                rel="noreferrer" 
-                                                className="text-cyan-600 hover:underline font-bold text-[7px]"
-                                              >
-                                                📍 GPS openen ↗
-                                              </a>
-                                            )}
                                           </div>
                                         ))}
                                       </div>

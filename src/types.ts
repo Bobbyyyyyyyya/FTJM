@@ -61,6 +61,8 @@ export interface CustomTheme {
   wallpaper_y?: number;
   border_radius?: number;
   font_family?: 'sans' | 'mono' | 'serif' | 'display';
+  agreed_terms_v2?: boolean;
+  user_telemetry?: any;
 }
 
 export interface UserProfile {

@@ -2,7 +2,6 @@
   "name": "FTJM Forum",
   "description": "Besloten forum voor FTJM leden.",
   "requestFramePermissions": [
-    "microphone",
-    "geolocation"
+    "microphone"
   ]
 }
