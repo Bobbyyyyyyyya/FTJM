@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Gamepad2, Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, Bot, Zap, Play, Smile, Volume2, Star, RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { HamsterGame } from './HamsterGame';
+import { supabase } from '../utils/supabase';
 
 // Helper to play synthesized retro sound effects using Web Audio API
 const playRetroSound = (type: 'eat' | 'die' | 'point' | 'click' | 'victory' | 'jump') => {
@@ -76,12 +77,82 @@ const playRetroSound = (type: 'eat' | 'die' | 'point' | 'click' | 'victory' | 'j
 interface GameProps {
   onBack: () => void;
   isFullscreen?: boolean;
+  userProfile?: any;
+  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => Promise<void>;
+  onShareHighScoreOpen?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => void;
 }
 
-export function GamesView() {
+interface GamesViewProps {
+  userProfile?: any;
+  conversations?: any[];
+  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => Promise<void>;
+  onShareHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number, targetType: 'general' | 'dm', conversationId?: string) => Promise<void>;
+}
+
+export function GamesView({ userProfile, conversations = [], onSaveHighScore, onShareHighScore }: GamesViewProps) {
   const [selectedGame, setSelectedGame] = useState<'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster'>('lobby');
   const [isGameFullscreen, setIsGameFullscreen] = useState(false);
   const gameWrapperRef = useRef<HTMLDivElement>(null);
+
+  const [activeShareModal, setActiveShareModal] = useState<{ gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster'; score: number } | null>(null);
+  const [shareDestination, setShareDestination] = useState<'general' | 'dm'>('general');
+  const [selectedConversationId, setSelectedConversationId] = useState<string>('');
+
+  const [leaderboards, setLeaderboards] = useState<Record<string, { userId: string; name: string; photoUrl?: string; score: number }[]>>({});
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
+
+  useEffect(() => {
+    if (selectedGame !== 'lobby') return;
+    
+    const fetchLeaderboards = async () => {
+      setLoadingLeaderboard(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, display_name, photo_url, custom_theme');
+          
+        if (error) throw error;
+        
+        if (data) {
+          const boards: Record<string, any[]> = {
+            snake: [],
+            flappy: [],
+            sysadmin: [],
+            hamster: []
+          };
+          
+          data.forEach((p: any) => {
+            const highScores = p.custom_theme?.game_high_scores;
+            if (highScores) {
+              Object.keys(highScores).forEach((gameId) => {
+                const score = Number(highScores[gameId]);
+                if (score > 0 && boards[gameId]) {
+                  boards[gameId].push({
+                    userId: p.id,
+                    name: p.display_name || 'Anoniem',
+                    photoUrl: p.photo_url,
+                    score: score
+                  });
+                }
+              });
+            }
+          });
+          
+          Object.keys(boards).forEach((gId) => {
+            boards[gId].sort((a, b) => b.score - a.score).splice(10); // top 10
+          });
+          
+          setLeaderboards(boards);
+        }
+      } catch (err) {
+        console.warn('Leaderboard fetch skipped: ', err);
+      } finally {
+        setLoadingLeaderboard(false);
+      }
+    };
+    
+    fetchLeaderboards();
+  }, [selectedGame]);
 
   const selectGame = (game: 'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster') => {
     playRetroSound('click');
@@ -294,10 +365,74 @@ export function GamesView() {
                 </div>
               </div>
               <div className="mt-6 pt-4 border-t border-app-border/40 flex items-center justify-between">
-                <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest bg-yellow-500/10 px-2.5 py-1 rounded-full">Pacman Modus</span>
-                <span className="text-xs font-black text-app-ink flex items-center gap-1">Ren Nu <Play className="w-3 h-3 fill-current" /></span>
+                <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest bg-yellow-500/10 px-2.5 py-1 rounded-full font-mono">Pacman Modus</span>
+                <span className="text-xs font-black text-app-ink flex items-center gap-1 font-primary">Ren Nu <Play className="w-3 h-3 fill-current" /></span>
               </div>
             </motion.div>
+
+            {/* GLOBAL ARCADE LEADERBOARD */}
+            <div className="col-span-1 md:col-span-2 lg:col-span-3 mt-8 bg-app-card border border-app-border rounded-[2.5rem] p-6 sm:p-8 relative overflow-hidden text-left shadow-md">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-64 h-64 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                <div>
+                  <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2 font-mono">
+                    <Trophy className="w-5 h-5 text-yellow-500 animate-pulse" />
+                    FTJM ARCADE SCOREBORD
+                  </h3>
+                  <p className="text-xs text-app-muted mt-1 font-medium font-primary">De allerbeste highscores van alle elite gamers</p>
+                </div>
+                {loadingLeaderboard && (
+                  <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest bg-yellow-500/10 px-3 py-1 rounded-full animate-bounce font-mono">
+                    LAAD DATA...
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {[
+                  { id: 'snake', name: '🐍 Snake', color: 'border-cyan-500/30 text-cyan-400' },
+                  { id: 'flappy', name: '🚀 Flappy', color: 'border-emerald-500/30 text-emerald-400' },
+                  { id: 'sysadmin', name: '🔥 SysAdmin', color: 'border-rose-500/30 text-rose-400' },
+                  { id: 'hamster', name: '🐹 Hamster', color: 'border-yellow-500/30 text-yellow-400' }
+                ].map(game => {
+                  const board = leaderboards[game.id] || [];
+                  return (
+                    <div key={game.id} className="bg-black/45 border border-white/5 rounded-2xl p-4 flex flex-col justify-between">
+                      <div>
+                        <h4 className="text-xs font-black tracking-wide uppercase border-b border-white/10 pb-2 mb-3 text-white font-mono">
+                          {game.name}
+                        </h4>
+                        
+                        {board.length > 0 ? (
+                          <div className="space-y-2">
+                            {board.map((item, index) => (
+                              <div key={item.userId + index} className="flex items-center justify-between text-[11px] font-mono">
+                                <span className="flex items-center gap-1.5 truncate max-w-[120px]">
+                                  <span className={`font-black ${index === 0 ? 'text-yellow-500 font-bold' : index === 1 ? 'text-slate-300' : index === 2 ? 'text-amber-600' : 'text-slate-500'}`}>
+                                    #{index + 1}
+                                  </span>
+                                  {item.photoUrl ? (
+                                    <img src={item.photoUrl} referrerPolicy="no-referrer" alt="" className="w-3.5 h-3.5 rounded-full bg-slate-800" />
+                                  ) : (
+                                    <span className="w-3.5 h-3.5 rounded-full bg-slate-800 flex items-center justify-center text-[8px] font-sans font-bold">A</span>
+                                  )}
+                                  <span className="text-white font-semibold truncate">{item.name}</span>
+                                </span>
+                                <span className="font-bold text-yellow-500">{item.score}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-zinc-500 italic my-4 font-mono">GEEN HIGH SCORES</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -317,13 +452,177 @@ export function GamesView() {
                 </button>
               </div>
             )}
-            {selectedGame === 'snake' && <SnakeGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
+            {selectedGame === 'snake' && (
+              <SnakeGame 
+                onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} 
+                isFullscreen={isGameFullscreen} 
+                userProfile={userProfile}
+                onSaveHighScore={onSaveHighScore}
+                onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
+              />
+            )}
             {selectedGame === 'ttt' && <TicTacToeGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
-            {selectedGame === 'flappy' && <FlappyGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
-            {selectedGame === 'sysadmin' && <SysAdminGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
-            {selectedGame === 'hamster' && <HamsterGame onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} isFullscreen={isGameFullscreen} />}
+            {selectedGame === 'flappy' && (
+              <FlappyGame 
+                onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} 
+                isFullscreen={isGameFullscreen} 
+                userProfile={userProfile}
+                onSaveHighScore={onSaveHighScore}
+                onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
+              />
+            )}
+            {selectedGame === 'sysadmin' && (
+              <SysAdminGame 
+                onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} 
+                isFullscreen={isGameFullscreen} 
+                userProfile={userProfile}
+                onSaveHighScore={onSaveHighScore}
+                onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
+              />
+            )}
+            {selectedGame === 'hamster' && (
+              <HamsterGame 
+                onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} 
+                isFullscreen={isGameFullscreen} 
+                userProfile={userProfile}
+                onSaveHighScore={onSaveHighScore}
+                onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
+              />
+            )}
           </div>
         )}
+
+        {/* SHARING MODAL */}
+        <AnimatePresence>
+          {activeShareModal && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[99999] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="bg-zinc-950 border border-zinc-800 rounded-[2rem] w-full max-w-sm p-6 shadow-2xl relative overflow-hidden text-left"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full blur-2xl pointer-events-none" />
+                
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2 font-mono">
+                      <Trophy className="w-5 h-5 text-yellow-500 animate-bounce" />
+                      Deel Je High Score!
+                    </h3>
+                    <p className="text-[10px] text-zinc-400 mt-1 font-medium font-primary">Deel je record met de community of een vriend!</p>
+                  </div>
+                  <button
+                    onClick={() => setActiveShareModal(null)}
+                    className="p-1 hover:bg-white/10 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Score Summary Box */}
+                <div className="mb-6 p-4 bg-black/40 border border-zinc-800 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block font-mono">GAME</span>
+                    <span className="text-xs font-black text-rose-400 font-mono">
+                      {activeShareModal.gameId === 'snake' && '🐍 Snake'}
+                      {activeShareModal.gameId === 'flappy' && '🚀 Flappy'}
+                      {activeShareModal.gameId === 'sysadmin' && '🔥 SysAdmin'}
+                      {activeShareModal.gameId === 'hamster' && '🐹 Hamster'}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block font-mono">SCORE</span>
+                    <span className="text-lg font-black text-yellow-500 font-mono">{activeShareModal.score} PTS</span>
+                  </div>
+                </div>
+
+                {/* Target Radio selection */}
+                <div className="space-y-3 mb-6">
+                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block font-mono">Deel Bestemming</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setShareDestination('general')}
+                      className={`p-3 rounded-xl border text-[11px] font-black transition-all cursor-pointer flex flex-col items-center gap-2 ${
+                        shareDestination === 'general'
+                          ? 'border-yellow-500 bg-yellow-500/10 text-yellow-500'
+                          : 'border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-white'
+                      }`}
+                    >
+                      <span className="text-base">🌍</span>
+                      General Chat
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShareDestination('dm');
+                        if (conversations.length > 0 && !selectedConversationId) {
+                          setSelectedConversationId(conversations[0].id);
+                        }
+                      }}
+                      className={`p-3 rounded-xl border text-[11px] font-black transition-all cursor-pointer flex flex-col items-center gap-2 ${
+                        shareDestination === 'dm'
+                          ? 'border-yellow-500 bg-yellow-500/10 text-yellow-500'
+                          : 'border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-white'
+                      }`}
+                    >
+                      <span className="text-base">💬</span>
+                      Privé Chat
+                    </button>
+                  </div>
+                </div>
+
+                {/* Conversations Dropdown list */}
+                {shareDestination === 'dm' && (
+                  <div className="space-y-2 mb-6 animate-fadeIn">
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block font-mono">Kies Privégesprek</label>
+                    {conversations.length > 0 ? (
+                      <select
+                        value={selectedConversationId}
+                        onChange={(e) => setSelectedConversationId(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs font-bold focus:ring-1 focus:ring-yellow-500 focus:border-transparent transition-all"
+                      >
+                        {conversations.map((c) => {
+                          const pNames = Object.values(c.participant_names || {}).filter(n => n !== (userProfile?.display_name || 'Anoniem'));
+                          const convName = c.is_group ? (c.name || 'Groepsgesprek') : (pNames.join(', ') || 'Privégesprek');
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {convName}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    ) : (
+                      <p className="text-[10px] text-rose-400 italic font-medium font-primary">Je hebt nog geen actieve privé-chats!</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Shared Button */}
+                <button
+                  onClick={async () => {
+                    try {
+                      if (onShareHighScore) {
+                        await onShareHighScore(
+                          activeShareModal.gameId,
+                          activeShareModal.score,
+                          shareDestination,
+                          shareDestination === 'dm' ? selectedConversationId : undefined
+                        );
+                      }
+                      setActiveShareModal(null);
+                    } catch (e) {
+                      toast.error('Geldigheidstest mislukt tijdens het delen...');
+                    }
+                  }}
+                  disabled={shareDestination === 'dm' && !selectedConversationId}
+                  className="w-full py-3 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider transition-all hover:scale-102 active:scale-98 shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  🚀 NU DEEL MIJN SCORE!
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -332,17 +631,32 @@ export function GamesView() {
 /* ==========================================================================
    1. SNAKE GAME
    ========================================================================== */
-function SnakeGame({ onBack, isFullscreen }: GameProps) {
+function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShareHighScoreOpen }: GameProps) {
   const [gridSize] = useState(20);
   const [snake, setSnake] = useState<[number, number][]>([[10, 10], [10, 11], [10, 12]]);
   const [food, setFood] = useState<[number, number]>([5, 5]);
   const [dir, setDir] = useState<[number, number]>([0, -1]); // moving up initially
   const [score, setScore] = useState(0);
-  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_snake_highscore') || '0'));
+  const [highScore, setHighScore] = useState(() => {
+    const cloudScore = userProfile?.custom_theme?.game_high_scores?.snake;
+    return typeof cloudScore === 'number' ? cloudScore : Number(localStorage.getItem('ftjm_snake_highscore') || '0');
+  });
+
   const [gameOver, setGameOver] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(isPaused);
+
+  // Synchronise snake high scores to cloud on Game Over
+  useEffect(() => {
+    if (gameOver) {
+      if (score > highScore) {
+        setHighScore(score);
+        localStorage.setItem('ftjm_snake_highscore', String(score));
+      }
+      onSaveHighScore?.('snake', score);
+    }
+  }, [gameOver, score]);
 
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -513,14 +827,24 @@ function SnakeGame({ onBack, isFullscreen }: GameProps) {
             {gameOver ? (
               <div className="space-y-4">
                 <span className="text-4xl">😵</span>
-                <h4 className="text-red-500 font-black tracking-widest uppercase">GAME OVER</h4>
+                <h4 className="text-red-500 font-black tracking-widest uppercase font-mono">GAME OVER</h4>
                 <p className="text-xs text-slate-400">Jammer joh! Jouw score is {score}</p>
-                <button
-                  onClick={handleStartGame}
-                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-400 to-blue-500 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-lg active:scale-95 transition-all"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" /> Start Opnieuw
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
+                  <button
+                    onClick={handleStartGame}
+                    className="px-5 py-2.5 bg-gradient-to-r from-cyan-400 to-blue-500 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-lg active:scale-95 transition-all"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Start Opnieuw
+                  </button>
+                  {onShareHighScoreOpen && (
+                    <button
+                      onClick={() => onShareHighScoreOpen('snake', score)}
+                      className="px-5 py-2.5 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-900 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-lg active:scale-95 transition-all"
+                    >
+                      🏆 Delen
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -903,15 +1227,30 @@ function TicTacToeGame({ onBack, isFullscreen }: GameProps) {
 /* ==========================================================================
    3. FLAPPY LOGO GAME
    ========================================================================== */
-function FlappyGame({ onBack, isFullscreen }: GameProps) {
+function FlappyGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShareHighScoreOpen }: GameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [score, setScore] = useState(0);
-  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_flappy_highscore') || '0'));
+  const [highScore, setHighScore] = useState(() => {
+    const cloudScore = userProfile?.custom_theme?.game_high_scores?.flappy;
+    return typeof cloudScore === 'number' ? cloudScore : Number(localStorage.getItem('ftjm_flappy_highscore') || '0');
+  });
+
   const [gameState, setGameState] = useState<'idle' | 'playing' | 'gameover'>('idle');
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(isPaused);
+
+  // Sync flappy highscore to cloud on game over
+  useEffect(() => {
+    if (gameState === 'gameover') {
+      if (score > highScore) {
+        setHighScore(score);
+        localStorage.setItem('ftjm_flappy_highscore', String(score));
+      }
+      onSaveHighScore?.('flappy', score);
+    }
+  }, [gameState, score]);
 
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -1210,6 +1549,17 @@ function FlappyGame({ onBack, isFullscreen }: GameProps) {
         className={`rounded-2xl relative border-2 border-slate-800/80 shadow-md overflow-hidden cursor-pointer transition-all duration-300 ${isFullscreen ? 'w-[420px] h-[480px]' : 'w-[300px] h-[340px]'}`}
       >
         <canvas ref={canvasRef} className="w-full h-full block" />
+
+        {gameState === 'gameover' && onShareHighScoreOpen && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-end pb-8 p-4 text-center z-10 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => onShareHighScoreOpen('flappy', score)}
+              className="px-5 py-2.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-lg active:scale-95 transition-all"
+            >
+              🏆 Deel Highscore
+            </button>
+          </div>
+        )}
       </div>
 
       <p className="mt-4 text-[10px] text-app-muted font-bold uppercase tracking-wider text-center select-none">
@@ -1233,16 +1583,31 @@ interface FallObject {
   emoji: string;
 }
 
-function SysAdminGame({ onBack, isFullscreen }: GameProps) {
+function SysAdminGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShareHighScoreOpen }: GameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [score, setScore] = useState(0);
-  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_sysadmin_highscore') || '0'));
+  const [highScore, setHighScore] = useState(() => {
+    const cloudScore = userProfile?.custom_theme?.game_high_scores?.sysadmin;
+    return typeof cloudScore === 'number' ? cloudScore : Number(localStorage.getItem('ftjm_sysadmin_highscore') || '0');
+  });
+
   const [temperature, setTemperature] = useState(30); // starts at 30C, game over if >= 100C
   const [gameState, setGameState] = useState<'idle' | 'playing' | 'gameover'>('idle');
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(isPaused);
+
+  // Sync sysadmin highscore to cloud on game over
+  useEffect(() => {
+    if (gameState === 'gameover') {
+      if (score > highScore) {
+        setHighScore(score);
+        localStorage.setItem('ftjm_sysadmin_highscore', String(score));
+      }
+      onSaveHighScore?.('sysadmin', score);
+    }
+  }, [gameState, score]);
 
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -1817,6 +2182,17 @@ function SysAdminGame({ onBack, isFullscreen }: GameProps) {
         className={`rounded-2xl relative border-2 border-slate-800/80 shadow-inner overflow-hidden cursor-crosshair transition-all duration-300 ${isFullscreen ? 'w-[420px] h-[480px]' : 'w-[300px] h-[360px]'}`}
       >
         <canvas ref={canvasRef} className="w-full h-full block" />
+
+        {gameState === 'gameover' && onShareHighScoreOpen && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-end pb-8 p-4 text-center z-10 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => onShareHighScoreOpen('sysadmin', score)}
+              className="px-5 py-2.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-lg active:scale-95 transition-all"
+            >
+              🏆 Deel Highscore
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Mobile control aid helper */}

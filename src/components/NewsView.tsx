@@ -28,7 +28,7 @@ export const NewsView: React.FC<NewsViewProps> = ({ expandedNewsId, setExpandedN
           </h2>
         </div>
         <div className="text-right">
-          <p className="text-sm font-bold uppercase tracking-wider text-app-ink">Update log v2.1.0</p>
+          <p className="text-sm font-bold uppercase tracking-wider text-app-ink">Update log v2.2.0</p>
           <p className="text-[10px] font-semibold text-app-muted uppercase tracking-wider mt-1">Status: Operational</p>
         </div>
       </header>

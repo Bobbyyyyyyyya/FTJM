@@ -2,16 +2,20 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info } from 'lucide-react';
 import { toast } from 'sonner';
+import { rateLimiter } from '../utils/rateLimiter';
+import { secureLocalStorage } from '../utils/encryption';
+import CryptoJS from 'crypto-js';
 import { UserProfile, CustomTheme, NotificationSettings, User } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS } from '../constants';
 import { formatDate, convertEmoticons, maskEmail } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
+import { SecurityCheckView } from './SecurityCheckView';
 
 interface SettingsViewProps {
   user: User;
   profile: UserProfile | null;
-  settingsTab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs';
-  setSettingsTab: (tab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs') => void;
+  settingsTab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security';
+  setSettingsTab: (tab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security') => void;
   isAdmin: boolean;
   displayNameInput: string;
   setDisplayNameInput: (input: string) => void;
@@ -415,6 +419,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           { id: 'theme', icon: Palette, label: 'Thema' },
           { id: 'app', icon: Layout, label: 'App' },
           { id: 'audiologs', icon: Activity, label: 'Audio Logs' },
+          { id: 'security', icon: ShieldCheck, label: 'Veiligheid Check' },
           ...(isAdmin ? [{ id: 'admin', icon: Shield, label: 'Beheer' }] : [])
         ].map(tab => (
           <button
@@ -1234,6 +1239,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     Controleer op updates
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {settingsTab === 'security' && (
+            <motion.div
+              key="security-settings"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm space-y-8"
+            >
+              <div className="flex items-center gap-4 border-b border-app-border pb-6">
+                <div className="w-16 h-16 bg-app-accent rounded-2xl flex items-center justify-center">
+                  <ShieldCheck className="w-8 h-8 text-app-ink" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Veiligheidscontrole</h3>
+                  <p className="text-app-muted text-sm font-medium">Controleer encryptie-latencies en beveiligingsstatus.</p>
+                </div>
+              </div>
+              <div>
+                <SecurityCheckView />
               </div>
             </motion.div>
           )}

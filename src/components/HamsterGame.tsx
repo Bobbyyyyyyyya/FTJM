@@ -7,6 +7,9 @@ import { toast } from 'sonner';
 interface HamsterGameProps {
   onBack: () => void;
   isFullscreen?: boolean;
+  userProfile?: any;
+  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => Promise<void>;
+  onShareHighScoreOpen?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => void;
 }
 
 // Direction Type
@@ -57,7 +60,7 @@ const INITIAL_MAZE = [
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ];
 
-export function HamsterGame({ onBack, isFullscreen }: HamsterGameProps) {
+export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShareHighScoreOpen }: HamsterGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playStateRef = useRef<'idle' | 'playing' | 'gameover'>('idle');
   const [gameState, setGameStateInner] = useState<'idle' | 'playing' | 'gameover'>('idle');
@@ -70,7 +73,22 @@ export function HamsterGame({ onBack, isFullscreen }: HamsterGameProps) {
   useEffect(() => {
     isPausedRef.current = isPaused;
   }, [isPaused]);
-  const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('ftjm_hamster_highscore') || '0'));
+  const [highScore, setHighScore] = useState(() => {
+    const cloudScore = userProfile?.custom_theme?.game_high_scores?.hamster;
+    return typeof cloudScore === 'number' ? cloudScore : Number(localStorage.getItem('ftjm_hamster_highscore') || '0');
+  });
+
+  // Synchronise high scores to cloud on Game Over
+  useEffect(() => {
+    if (gameState === 'gameover') {
+      if (score > highScore) {
+        setHighScore(score);
+        localStorage.setItem('ftjm_hamster_highscore', String(score));
+      }
+      onSaveHighScore?.('hamster', score);
+    }
+  }, [gameState, score]);
+
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
   const [frightenedTimer, setFrightenedTimer] = useState(0);
@@ -1251,18 +1269,30 @@ export function HamsterGame({ onBack, isFullscreen }: HamsterGameProps) {
               <h3 className="text-3xl font-black text-rose-400 uppercase tracking-tight">Game Over</h3>
               <p className="text-xs text-rose-200 mt-2">De frisdrank heeft de overhand genomen!</p>
               
-              <div className="mt-4 p-3 bg-black/40 rounded-xl border border-rose-500/20">
+              <div className="mt-4 p-3 bg-black/40 rounded-xl border border-rose-500/20 min-w-[140px]">
                 <span className="text-[10px] text-rose-300 uppercase block font-bold">Jouw Score</span>
                 <span className="text-2xl font-black text-amber-400 font-mono">{score}</span>
               </div>
 
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={handleStartGame}
-                className="mt-6 px-6 py-3 bg-gradient-to-r from-rose-500 to-red-600 text-white font-black uppercase text-xs tracking-wider rounded-xl hover:scale-105 transition-all shadow-md shadow-rose-500/20 cursor-pointer flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-4 h-4" /> Nogmaals Proberen
-              </motion.button>
+              <div className="flex flex-col sm:flex-row gap-3 mt-6">
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleStartGame}
+                  className="px-6 py-3 bg-gradient-to-r from-rose-500 to-red-600 text-white font-black uppercase text-xs tracking-wider rounded-xl hover:scale-105 transition-all shadow-md shadow-rose-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <RotateCcw className="w-4 h-4" /> Nogmaals Proberen
+                </motion.button>
+
+                {onShareHighScoreOpen && (
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => onShareHighScoreOpen('hamster', score)}
+                    className="px-6 py-3 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-900 font-black uppercase text-xs tracking-wider rounded-xl hover:scale-105 transition-all shadow-md shadow-yellow-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    🏆 Deel Highscore
+                  </motion.button>
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

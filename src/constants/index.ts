@@ -1,5 +1,12 @@
 export const NEWS_ITEMS = [
   {
+    id: 9,
+    title: "FTJM Militair-Beveiligde Core Update v2.2.0 ⚡",
+    content: "Absolute Hack-Bestendigheid! Met trots presenteren we v2.2.0. We hebben ons complete netwerk voorzien van hardware MAC-verificatie fingerprinting, gelaagde Anti-DDoS-shields met geavanceerde rate limiters op database transacties, brute-force inbraakdetectie met IP/account lockouts, en militair-grade AES-256 / HMAC-SHA256 opslagsignering. Onnodige introducties zijn volledig weggesneden om de site direct en flitsend te laden. Jouw data is onkraakbaar en optimaal afgeschermd tegen scrapers en bots!",
+    date: "2026-06-07",
+    category: "Zwaarbeveiligd"
+  },
+  {
     id: 8,
     title: "FTJM Ultra-Beveiligde Core Update v2.1.0 ⚡",
     content: "Onafhankelijkheid en absolute controle! Met trots introduceren we de v2.1.0 core update. In deze versie hebben we Google Auth volledig vervangen wegens onbetrouwbaarheid. Alle authenticatie verloopt nu via onze eigen, hoog-beveiligde en versleutelde Supabase registers. Registratie is strikt dichtgetimmerd; enkel gewhitelisteerde e-mailadressen kunnen voortaan toetreden. Geniet van een naadloze onboarding zonder extra inlogschermen na registratie, en beheer je profiel sneller dan ooit met geïntegreerde ondersteuning voor image2url links!",

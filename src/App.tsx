@@ -55,7 +55,8 @@ import {
   Link,
   Bot,
   Phone,
-  PhoneOff
+  PhoneOff,
+  Fingerprint
 } from 'lucide-react';
 
 // Components
@@ -251,7 +252,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs' | 'arcade'>('chat');
 
-  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs'>('profile');
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security'>('profile');
   const [threads, setThreads] = useState<ForumThread[]>([]);
   const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
   const [threadComments, setThreadComments] = useState<ForumComment[]>([]);
@@ -325,14 +326,14 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v2.1') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.2') !== 'true';
   });
   const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v2.1') === 'true';
+    return localStorage.getItem('has_seen_news_v2.2') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v2.1') === 'true';
+    return localStorage.getItem('has_seen_menu_v2.2') === 'true';
   });
   const cleanNotificationSettings = (settings: any): NotificationSettings => {
     const defaultSettings = {
@@ -467,6 +468,17 @@ export default function App() {
       window.removeEventListener('touchstart', autoUnlock);
       window.removeEventListener('keydown', autoUnlock);
     };
+  }, []);
+
+  useEffect(() => {
+    const handleSwitchView = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setView(customEvent.detail);
+      }
+    };
+    window.addEventListener('ftjm_switch_view', handleSwitchView);
+    return () => window.removeEventListener('ftjm_switch_view', handleSwitchView);
   }, []);
 
   const unlockAudio = async () => {
@@ -4314,6 +4326,121 @@ export default function App() {
     }
   };
 
+  const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => {
+    if (!user || isWhitelisted !== true) return;
+    
+    const currentTheme = profile?.custom_theme || {};
+    const gameHighScores = currentTheme.game_high_scores || {};
+    
+    const oldScore = gameHighScores[gameId] || 0;
+    if (score <= oldScore) return;
+    
+    const updatedHighScores = {
+      ...gameHighScores,
+      [gameId]: score
+    };
+    
+    const updatedTheme = {
+      ...currentTheme,
+      game_high_scores: updatedHighScores
+    };
+    
+    try {
+      const { error } = await supabaseClient
+        .from('profiles')
+        .update({
+          custom_theme: updatedTheme
+        })
+        .eq('id', user.uid);
+        
+      if (error) throw error;
+      
+      setProfile(prev => prev ? {
+        ...prev,
+        custom_theme: updatedTheme
+      } : null);
+      
+      setCustomTheme(updatedTheme);
+      secureLocalStorage.setItem('cached_customTheme', JSON.stringify(updatedTheme));
+      
+      toast.success(`🎉 Nieuw persoonlijk record opgeslagen voor ${gameId}: ${score}!`);
+    } catch (err) {
+      console.error('Error saving high score:', err);
+    }
+  };
+
+  const handleShareHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number, targetType: 'general' | 'dm', conversationId?: string) => {
+    if (!user || isWhitelisted !== true) return;
+    
+    const gameIdLabel = gameId === 'snake' ? 'snake' : gameId === 'flappy' ? 'flappy' : gameId === 'sysadmin' ? 'sysadmin' : 'hamster';
+    const playerName = profile?.display_name || user.displayName || 'Anoniem';
+    
+    const messageText = `[ARCADE_SCORE_SHARE:${gameIdLabel}:${score}:${playerName}]`;
+    
+    if (targetType === 'general') {
+      try {
+        const encryptedContent = encryptGeneralChat(messageText);
+        const { data: insertData, error } = await supabaseClient.from('posts').insert({
+          content: encryptedContent,
+          author_id: user.uid,
+          created_at: new Date().toISOString()
+        }).select().single();
+        
+        if (error) throw error;
+        
+        if (insertData) {
+          const decryptedPost = { ...insertData, content: messageText };
+          setPosts(prev => [decryptedPost, ...prev].slice(0, 100));
+          
+          if (postsChannelRef.current) {
+            postsChannelRef.current.send({
+              event: 'new_post',
+              payload: decryptedPost
+            });
+          }
+        }
+        toast.success(`Highscore gedeeld in Algemene Chat! 🏆`);
+      } catch (err) {
+        toast.error('Kan highscore niet delen');
+        console.error(err);
+      }
+    } else if (targetType === 'dm' && conversationId) {
+      try {
+        const encryptedText = encryptGeneralChat(messageText);
+        const { data: insertedMsg, error: msgError } = await supabaseClient
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            sender_id: user.uid,
+            text: encryptedText,
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+          
+        if (msgError) throw msgError;
+        
+        if (insertedMsg) {
+          const localMsg = { ...insertedMsg, text: messageText };
+          if (activeConversation && activeConversation.id === conversationId) {
+            setMessages(prev => [localMsg, ...prev]);
+          }
+          
+          setConversations(prev => prev.map(c => c.id === conversationId ? {
+            ...c,
+            last_message: messageText,
+            last_message_sender_id: user.uid,
+            updated_at: new Date().toISOString()
+          } : c));
+        }
+        toast.success(`Highscore gedeeld in de privé-chat! 💌`);
+      } catch (err) {
+        toast.error('Kan highscore niet delen');
+        console.error(err);
+      }
+    }
+  };
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!user || !messageInput.trim() || !activeConversation || isWhitelisted !== true) return;
@@ -4839,7 +4966,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v2.1', 'true');
+                      localStorage.setItem('has_seen_menu_v2.2', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -4890,7 +5017,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v2.1', 'true');
+                              localStorage.setItem('has_seen_news_v2.2', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -5480,7 +5607,12 @@ export default function App() {
               )}
               {view === 'arcade' && (
                 <div className="max-w-6xl mx-auto h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
-                  <GamesView />
+                  <GamesView 
+                    userProfile={profile}
+                    conversations={conversations}
+                    onSaveHighScore={handleSaveHighScore}
+                    onShareHighScore={handleShareHighScore}
+                  />
                 </div>
               )}
               {view === 'news' && (
@@ -5915,129 +6047,76 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-gradient-to-tr from-cyan-400 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                        <Zap className="w-6 h-6 text-white animate-pulse" />
+                        <ShieldAlert className="w-6 h-6 text-white animate-pulse" />
                       </div>
                       <div>
                         <h2 className="text-2xl font-black text-white tracking-tighter uppercase leading-none">
-                          {whatsNewStep === 1 ? 'Introductie Video' : 'V2.1 Update'}
+                          V2.2 Update
                         </h2>
                         <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1">
-                          {whatsNewStep === 1 ? 'Bekijk de update in actie' : 'Nieuwe functionaliteiten'}
+                          MILITAIR GRADE BEVEILIGING & SNELHEID
                         </p>
                       </div>
                     </div>
-                    {/* Step indicator pills */}
-                    <div className="flex gap-1.5 bg-white/5 border border-white/10 rounded-full p-1.5">
-                      <span className={`w-2 h-2 rounded-full transition-all duration-300 ${whatsNewStep === 1 ? 'bg-cyan-400 scale-125' : 'bg-white/20'}`} />
-                      <span className={`w-2 h-2 rounded-full transition-all duration-300 ${whatsNewStep === 2 ? 'bg-cyan-400 scale-125' : 'bg-white/20'}`} />
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="space-y-3 py-1">
+                    <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                        <LockIcon className="w-5 h-5 text-cyan-400 shrink-0" />
+                        <div>
+                          <h4 className="font-extrabold text-sm text-white">Geavanceerd Anti-DDoS-scherm</h4>
+                          <p className="text-xs text-blue-100/70 mt-1">
+                            Geïntegreerde slimme database en endpoint rate-limiters schermen ons netwerk af tegen bot-aanvallen en kwaadwillige scraping.
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                        <Fingerprint className="w-5 h-5 text-amber-400 shrink-0" />
+                        <div>
+                          <h4 className="font-extrabold text-sm text-white">Hardware MAC Fingerprinting</h4>
+                          <p className="text-xs text-blue-100/70 mt-1">
+                            Unieke persistent hardwarevingerafdrukken registreren elk apparaat, wat brute-force inbraken en multi-account spamming onmogelijk maakt.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                        <Activity className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <div>
+                          <h4 className="font-extrabold text-sm text-white">Directe Extreme Snelheid</h4>
+                          <p className="text-xs text-blue-100/70 mt-1">
+                            Alle trage introductievideo's en laadlussen zijn definitief verwijderd. Schermen en media openen nu direct en flitsend snel.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                        <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0" />
+                        <div>
+                          <h4 className="font-extrabold text-sm text-white">AES-256 & HMAC Beveiliging</h4>
+                          <p className="text-xs text-blue-100/70 mt-1">
+                            Je browser caches zijn cryptografisch verzegeld met sterke AES-encryptie en direct ondertekend met HMAC verificatiehashes.
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Body Content Switcher */}
-                  <AnimatePresence mode="wait">
-                    {whatsNewStep === 1 ? (
-                      <motion.div
-                        key="video-step"
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 10 }}
-                        className="space-y-4"
-                      >
-                        {/* YouTube Embed Container */}
-                        <div className="aspect-video w-full rounded-2xl overflow-hidden border border-white/10 shadow-inner bg-black relative">
-                          <iframe
-                            className="w-full h-full"
-                            src="https://www.youtube.com/embed/tueQbG66g24?rel=0&modestbranding=1"
-                            title="FTJM v2.1 Introductie"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            allowFullScreen
-                          />
-                        </div>
-                        <p className="text-xs text-blue-100/75 leading-relaxed text-center font-medium bg-white/5 border border-white/5 p-4 rounded-2xl">
-                          Welkom bij de toekomst van het FTJM netwerk! Bekijk gratis de bovenstaande introductievideo om alle vernieuwingen live te zien. Klik daarna op de pijl hieronder om door de release notes te bladeren.
-                        </p>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="details-step"
-                        initial={{ opacity: 0, x: 10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        className="space-y-3 py-1"
-                      >
-                        <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
-                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                            <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0" />
-                            <div>
-                              <h4 className="font-extrabold text-sm text-white">Consistente Onafhankelijkheid</h4>
-                              <p className="text-xs text-blue-100/70 mt-1">
-                                Google Auth is volledig verwijderd. Alle accounts zijn nu anoniem, extreem beveiligd en beheerd binnen een gecodeerde database.
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                            <LockIcon className="w-5 h-5 text-amber-400 shrink-0" />
-                            <div>
-                              <h4 className="font-extrabold text-sm text-white">Strikte Whitelist Gatekeeper</h4>
-                              <p className="text-xs text-blue-100/70 mt-1">
-                                Alleen geverifieerde en door de beheerder goedgekeurde e-mailadressen kunnen nu een account registreren.
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                            <Sparkles className="w-5 h-5 text-emerald-400 shrink-0" />
-                            <div>
-                              <h4 className="font-extrabold text-sm text-white">Directe Onboarding</h4>
-                              <p className="text-xs text-blue-100/70 mt-1">
-                                Na het registreren van een nieuw account word je meteen ingelogd. Geen extra inlogschermen of loops!
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                            <Palette className="w-5 h-5 text-purple-400 shrink-0" />
-                            <div>
-                              <h4 className="font-extrabold text-sm text-white">Image2Url Integrator</h4>
-                              <p className="text-xs text-blue-100/70 mt-1">
-                                Profielfoto links kunnen nu direct en anoniem gegenereerd worden via de ingebouwde link naar image2url.com.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
                   {/* Footer Navigation bar */}
                   <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                    {whatsNewStep === 2 ? (
-                      <button
-                        onClick={() => setWhatsNewStep(1)}
-                        className="flex items-center gap-2 px-5 py-3.5 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold text-xs uppercase tracking-wider cursor-pointer transition-all border border-white/10 active:scale-95"
-                      >
-                        <ArrowLeft className="w-4 h-4" /> Vorige
-                      </button>
-                    ) : (
-                      <div className="w-[10px]" /> /* spacer */
-                    )}
-
-                    {whatsNewStep === 1 ? (
-                      <button
-                        onClick={() => setWhatsNewStep(2)}
-                        className="flex items-center gap-2 px-6 py-3.5 bg-white hover:bg-cyan-100 text-[#002f54] rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 ml-auto shadow-lg shadow-black/20"
-                      >
-                        Details <ArrowRight className="w-4 h-4" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setShowWhatsNew(false);
-                          localStorage.setItem('has_seen_whats_new_v2.1', 'true');
-                        }}
-                        className="flex items-center gap-2 px-6 py-3.5 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
-                      >
-                        Aan de slag!
-                      </button>
-                    )}
+                    <div className="w-[10px]" />
+                    <button
+                      onClick={() => {
+                        setShowWhatsNew(false);
+                        localStorage.setItem('has_seen_whats_new_v2.2', 'true');
+                      }}
+                      className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
+                    >
+                      Aan de slag!
+                    </button>
                   </div>
                 </div>
               </motion.div>

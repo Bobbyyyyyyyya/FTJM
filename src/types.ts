@@ -63,6 +63,7 @@ export interface CustomTheme {
   font_family?: 'sans' | 'mono' | 'serif' | 'display';
   agreed_terms_v2?: boolean;
   user_telemetry?: any;
+  game_high_scores?: Record<string, number>;
 }
 
 export interface UserProfile {

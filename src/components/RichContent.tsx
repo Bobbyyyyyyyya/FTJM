@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trophy, Gamepad2 } from 'lucide-react';
 import { decryptGeneralChat } from '../utils/encryption';
 
 interface RichContentProps {
@@ -8,6 +9,88 @@ interface RichContentProps {
 export const RichContent: React.FC<RichContentProps> = React.memo(({ content }) => {
   // Attempt to decrypt if it looks like an encrypted general chat message
   const decryptedContent = decryptGeneralChat(content);
+
+  const shareMatch = decryptedContent.match(/\[ARCADE_SCORE_SHARE:(\w+):(\d+):([^\]]+)\]/);
+  if (shareMatch) {
+    const gameId = shareMatch[1];
+    const score = parseInt(shareMatch[2], 10);
+    const playerName = shareMatch[3];
+
+    const getGameConfig = (id: string) => {
+      switch (id) {
+        case 'snake':
+          return {
+            name: 'FTJM Slang (Snake) 🐍',
+            color: 'border-cyan-500 bg-cyan-950/25 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.3)]',
+            accent: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+          };
+        case 'flappy':
+          return {
+            name: 'Flappy FTJM Logo 🚀',
+            color: 'border-emerald-500 bg-emerald-950/25 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:shadow-[0_0_25px_rgba(16,185,129,0.3)]',
+            accent: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+          };
+        case 'sysadmin':
+          return {
+            name: 'SysAdmin Bitterbal Chaos 🔥',
+            color: 'border-rose-500 bg-rose-950/25 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.15)] hover:shadow-[0_0_25px_rgba(244,63,94,0.3)]',
+            accent: 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+          };
+        case 'hamster':
+          return {
+            name: 'Hamster Vodka Run 🐹',
+            color: 'border-yellow-500 bg-yellow-950/25 text-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.15)] hover:shadow-[0_0_25px_rgba(234,179,8,0.3)]',
+            accent: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+          };
+        default:
+          return {
+            name: 'FTJM Arcade Game 🕹️',
+            color: 'border-purple-500 bg-purple-950/25 text-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_25px_rgba(168,85,247,0.3)]',
+            accent: 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+          };
+      }
+    };
+
+    const cfg = getGameConfig(gameId);
+
+    const handlePlayTooClick = () => {
+      const event = new CustomEvent('ftjm_switch_view', { detail: 'arcade' });
+      window.dispatchEvent(event);
+    };
+
+    return (
+      <div className={`border rounded-2xl p-5 w-full max-w-sm font-primary transition-all duration-300 ${cfg.color}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${cfg.accent}`}>
+              🏆 FTJM ARCADE RECORD
+            </span>
+            <h4 className="text-base font-black text-white mt-2 leading-tight">
+              {cfg.name}
+            </h4>
+            <p className="text-xs text-white/70 font-medium leading-relaxed mt-1">
+              Behaald door <span className="font-extrabold text-white">{playerName}</span>
+            </p>
+          </div>
+          <div className="p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-xl animate-pulse">
+            <Trophy className="w-6 h-6 text-yellow-500" />
+          </div>
+        </div>
+        
+        <div className="my-4 py-3 px-4 bg-black/40 border border-white/5 rounded-xl text-center">
+          <span className="text-[10px] text-white/50 block font-bold uppercase tracking-wider font-mono">SCOORE</span>
+          <span className="text-2xl font-black text-white tracking-tight font-mono">{score} <span className="text-xs text-yellow-500 font-bold">PUNTEN</span></span>
+        </div>
+
+        <button 
+          onClick={handlePlayTooClick}
+          className="w-full py-2 bg-white hover:bg-slate-100 text-slate-900 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+        >
+          <Gamepad2 className="w-4 h-4 text-cyan-600" /> Speel Het Ook! 🕹️
+        </button>
+      </div>
+    );
+  }
   
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
