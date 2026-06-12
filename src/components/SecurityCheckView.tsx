@@ -384,6 +384,71 @@ streng gestelde militair-beveiligde tolerantiewaarden van FTJM.
           </div>
         </div>
       </div>
+
+      {/* Supabase RLS & Database Optimization Center */}
+      <div className="bg-app-card rounded-2xl p-6 border border-app-border space-y-5">
+        <div className="flex items-center gap-3 border-b border-app-border pb-4">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+            <Database className="w-4 h-4" />
+          </div>
+          <div>
+            <h5 className="font-bold text-app-ink">Supabase Row-Level Security (RLS) & Query Matchers</h5>
+            <p className="text-[11px] text-app-muted">Zorg ervoor dat database policies perfect dichtgetimmerd zijn op de Supabase host.</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <p className="text-xs text-app-muted leading-relaxed">
+            De nicknames-functionaliteit in de FTJM-client is ontworpen als <strong>persoonlijke aliassen</strong>. Gebruikers slaan bijnamen op om andere accounts herkenbaar te maken. De client dwingt via queries strict af dat je alleen nicknames kunt toevoegen of bewerken met jouw eigen <code className="bg-slate-900 px-1 py-0.5 rounded text-cyan-400">user_id</code>.
+          </p>
+
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-3">
+            <span className="text-xs font-bold text-white uppercase tracking-wider block flex items-center gap-1.5 font-mono">
+              <Terminal className="w-3.5 h-3.5 text-cyan-400" /> Aanbevolen Supabase RLS SQL Script
+            </span>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Voer dit SQL-script uit in jouw <strong>Supabase SQL Editor</strong> om de <code className="text-emerald-400 font-mono text-[10px]">nicknames</code> tabel 100% te beveiligen zodat accounts uitsluitend hun eigen bijnamen kunnen registreren, updaten of wissen:
+            </p>
+            <pre className="bg-black text-[10.5px] font-mono p-4 rounded-xl text-emerald-400 overflow-x-auto select-all border border-slate-800 leading-relaxed">
+{`-- 1. Schakel RLS in op de nicknames tabel
+ALTER TABLE public.nicknames ENABLE ROW LEVEL SECURITY;
+
+-- 2. Drop oude policies om conflicten te voorkomen
+DROP POLICY IF EXISTS "Gebruikers kunnen eigen bijnamen selecteren" ON public.nicknames;
+DROP POLICY IF EXISTS "Gebruikers kunnen eigen bijnamen invoegen" ON public.nicknames;
+DROP POLICY IF EXISTS "Gebruikers kunnen eigen bijnamen updaten" ON public.nicknames;
+DROP POLICY IF EXISTS "Gebruikers kunnen eigen bijnamen verwijderen" ON public.nicknames;
+
+-- 3. Maak SELECT policy (alleen bijnamen lezen die door jou zijn aangemaakt)
+CREATE POLICY "Gebruikers kunnen eigen bijnamen selecteren" 
+ON public.nicknames 
+FOR SELECT 
+USING (auth.uid()::text = user_id::text);
+
+-- 4. Maak INSERT policy (alleen bijnamen invoegen waar user_id gelijk is aan jouw uid)
+CREATE POLICY "Gebruikers kunnen eigen bijnamen invoegen" 
+ON public.nicknames 
+FOR INSERT 
+WITH CHECK (auth.uid()::text = user_id::text);
+
+-- 5. Maak UPDATE policy (alleen eigen bijnamen updaten)
+CREATE POLICY "Gebruikers kunnen eigen bijnamen updaten" 
+ON public.nicknames 
+FOR UPDATE 
+USING (auth.uid()::text = user_id::text);
+
+-- 6. Maak DELETE policy (alleen eigen bijnamen verwijderen)
+CREATE POLICY "Gebruikers kunnen eigen bijnamen verwijderen" 
+ON public.nicknames 
+FOR DELETE 
+USING (auth.uid()::text = user_id::text);`}
+            </pre>
+            <div className="flex items-center gap-1.5 text-[10px] text-amber-500 font-semibold">
+              <ShieldAlert className="w-3.5 h-3.5" /> Over firebase_uid_from_header(): Deze applicatie maakt GEEN gebruik van header-gebaseerde Firebase UID spoofing. Alle authenticatie verloopt via officiële JWT tokens geverifieerd via auth.uid()!
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

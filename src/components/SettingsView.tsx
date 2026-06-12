@@ -57,6 +57,10 @@ interface SettingsViewProps {
   uploadingSound: boolean;
   showInstallButton: boolean;
   handleInstallClick: () => void;
+  scheduledMaintenance?: { isActive: boolean; targetTime: string } | null;
+  maintenanceTimeLeft?: number | null;
+  handleScheduleMaintenance?: (target: number | Date) => void;
+  handleCancelMaintenance?: () => void;
 }
 
 const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: any }> = {
@@ -407,12 +411,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   saving,
   uploadingSound,
   showInstallButton,
-  handleInstallClick
+  handleInstallClick,
+  scheduledMaintenance,
+  maintenanceTimeLeft,
+  handleScheduleMaintenance,
+  handleCancelMaintenance
 }) => {
+  const [adminSubTab, setAdminSubTab] = React.useState<'overview' | 'users' | 'security'>('overview');
+  const [adminUserSearch, setAdminUserSearch] = React.useState('');
+  const [adminWhitelistSearch, setAdminWhitelistSearch] = React.useState('');
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
       {/* Settings Sidebar */}
-      <div className="lg:col-span-1 space-y-2">
+      <div className="lg:col-span-1 flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 border-b lg:border-b-0 border-app-border shrink-0 scrollbar-none">
         {[
           { id: 'profile', icon: UserCog, label: 'Profiel' },
           { id: 'notifications', icon: Bell, label: 'Notificaties' },
@@ -425,10 +437,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             key={tab.id}
             onClick={() => setSettingsTab(tab.id as any)}
-            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl font-bold transition-all ${
+            className={`flex items-center gap-3 px-4 py-3 lg:px-6 lg:py-4 rounded-xl lg:rounded-2xl font-bold whitespace-nowrap transition-all shrink-0 ${
               settingsTab === tab.id 
-                ? 'bg-app-ink text-app-bg shadow-lg shadow-app-ink/10' 
-                : 'text-app-muted hover:bg-app-accent hover:text-app-ink'
+                ? 'bg-app-ink text-app-bg shadow-md lg:shadow-lg shadow-app-ink/10' 
+                : 'text-app-muted bg-app-card/65 lg:bg-transparent border border-app-border lg:border-0 hover:bg-app-accent hover:text-app-ink'
             }`}
           >
             <tab.icon className="w-5 h-5" />
@@ -1287,146 +1299,200 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <AudioLogsView />
               </div>
             </motion.div>
-          )}
-
-          {settingsTab === 'admin' && isAdmin && (
+          )}          {settingsTab === 'admin' && isAdmin && (
             <motion.div
               key="admin-settings"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm space-y-10"
+              className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm space-y-8"
             >
-              <div className="flex items-center gap-4 border-b border-app-border pb-6">
-                <div className="w-16 h-16 bg-app-ink rounded-2xl flex items-center justify-center">
-                  <ShieldCheck className="w-8 h-8 text-app-bg" />
+              {/* Modernized Header */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-app-border pb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-app-ink text-app-bg rounded-2xl flex items-center justify-center shadow-lg shadow-app-ink/10">
+                    <ShieldCheck className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Beheerderspaneel</h3>
+                    <p className="text-app-muted text-xs font-medium">Beheer toegang, security policies en de actieve applicatiestatus.</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Beheerderspaneel</h3>
-                  <p className="text-app-muted text-sm font-medium">Beheer toegang, status en veiligheid.</p>
-                </div>
-              </div>
 
-              {/* Security Auditor Checklist */}
-              <div className="bg-emerald-50/50 rounded-3xl p-6 border border-emerald-200/50 shadow-sm space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                  <h4 className="text-sm font-bold text-emerald-900 uppercase tracking-wide">Veiligheids Audit Checklist</h4>
-                </div>
-                <p className="text-[10px] font-bold text-emerald-800 opacity-80 leading-relaxed uppercase tracking-tight">
-                  Controleer in je Supabase Dashboard of de volgende Row Level Security (RLS) policies actief zijn voor maximale veiligheid.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Sub-tab selection pillbox */}
+                <div className="flex flex-wrap md:flex-nowrap gap-1 bg-app-bg/50 border border-app-border p-1 rounded-xl w-full md:w-auto">
                   {[
-                    { label: 'profiles: Alleen admins mogen role/is_blocked wijzigen', icon: LockIcon },
-                    { label: 'reports: Alleen admins mogen rapportages inzien/verwijderen', icon: Flag },
-                    { label: 'whitelist: Alleen admins mogen whitelists beheren', icon: UserPlus },
-                    { label: 'threads/posts: Alleen auteurs mogen hun eigen berichten verwijderen', icon: Trash2 },
-                    { label: 'Database: Forceer SSL/HTTPS voor alle verbindingen', icon: Zap },
-                    { label: 'Auth: Rate limiting ingeschakeld voor inlogpogingen', icon: Activity }
-                  ].map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-emerald-100">
-                      <div className="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center">
-                        <item.icon className="w-3.5 h-3.5 text-emerald-600" />
-                       </div>
-                      <span className="text-[10px] font-bold text-emerald-900 uppercase tracking-tight leading-tight">{item.label}</span>
-                    </div>
+                    { id: 'overview', icon: Activity, label: 'Dashboard' },
+                    { id: 'users', icon: UserIcon, label: 'Gebruikers' },
+                    { id: 'security', icon: LockIcon, label: 'Audit & SPF' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setAdminSubTab(tab.id as any)}
+                      className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-3 py-2 sm:px-4 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all ${
+                        adminSubTab === tab.id 
+                          ? 'bg-app-ink text-app-bg shadow-sm' 
+                          : 'text-app-muted hover:text-app-ink'
+                      }`}
+                    >
+                      <tab.icon className="w-3.5 h-3.5" />
+                      {tab.label}
+                    </button>
                   ))}
                 </div>
-
-                {/* SQL Patch Remedie sectie */}
-                <div className="mt-4 p-4 bg-rose-50 rounded-2xl border border-rose-200/60 space-y-2">
-                  <div className="flex items-center gap-2 text-rose-800 font-bold text-[10px] uppercase tracking-wider">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>BELANGRIJK: Oplossing voor PATCH role/block hack</span>
-                  </div>
-                  <p className="text-[10px] text-rose-700 leading-normal">
-                    Een kwaadwillende geautoriseerde gebruiker kan via een directe REST API <code>PATCH</code>-aanroep op de <code>profiles</code> tabel zijn eigen <code>role</code> naar <code>admin</code> wijzigen of de <code>is_blocked</code> status aanpassen. Voer de onderstaande SQL-code uit in je <strong>Supabase SQL Editor</strong> om dit lek permanent te dichten door middel van een database trigger:
-                  </p>
-                  <pre className="p-3 bg-stone-900 text-rose-200 rounded-xl text-[9px] font-mono overflow-x-auto max-h-[160px] custom-scrollbar select-all leading-relaxed whitespace-pre-wrap">
-{`-- Voorkom dat gebruikers hun eigen rol of blokkadestatus wijzigen
-CREATE OR REPLACE FUNCTION secure_profile_updates()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Controleer of een niet-admin de 'role' of 'is_blocked' wijzigt
-  IF (OLD.role IS DISTINCT FROM NEW.role OR OLD.is_blocked IS DISTINCT FROM NEW.is_blocked) THEN
-    IF NOT EXISTS (
-      SELECT 1 FROM public.profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    ) THEN
-      RAISE EXCEPTION 'VULNERABILITY DETECTED: Alleen administrators mogen "role" of "is_blocked" wijzigen!';
-    END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS tr_secure_profile_updates ON public.profiles;
-CREATE TRIGGER tr_secure_profile_updates
-  BEFORE UPDATE ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION secure_profile_updates();`}
-                  </pre>
-                  <div className="text-[8.5px] font-bold text-rose-800 uppercase flex justify-between items-center bg-rose-100/50 p-2 rounded-lg leading-snug">
-                    <span>💡 Tip: Klik drie keer snel in het geselecteerde vak om de gehele SQL-code te kopiëren!</span>
-                  </div>
-                </div>
               </div>
 
-              <div className="space-y-8">
-                {/* Whitelist Management */}
-                <div className="space-y-6">
-                  <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
-                    <UserPlus className="w-4 h-4" />
-                    Whitelist Beheer
-                  </h4>
-                  <div className="flex gap-2">
-                    <input 
-                      type="email"
-                      value={whitelistInput}
-                      onChange={(e) => setWhitelistInput(e.target.value)}
-                      placeholder="E-mailadres toevoegen..."
-                      className="flex-1 px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink transition-all text-sm text-app-ink"
-                    />
-                    <button 
-                      onClick={handleAddWhitelist}
-                      disabled={saving || !whitelistInput.trim()}
-                      className="px-6 py-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-md"
-                    >
-                      Toevoegen
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                    {whitelist.map((item, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-app-bg border border-app-border rounded-xl group">
-                        <span className="text-xs font-bold text-app-ink truncate mr-2">
-                          {isAdmin ? item.email : maskEmail(item.email)}
-                        </span>
-                        <button onClick={() => handleRemoveWhitelist(item.email)} className="p-1.5 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+              {/* 1. OVERVIEW / DASHBOARD TAB */}
+              {adminSubTab === 'overview' && (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
+                  {/* Website status & Maintenance controls */}
+                  <div className="lg:col-span-5 flex flex-col gap-6">
+                    {/* Website status card */}
+                    <div className="bg-app-bg/45 border border-app-border rounded-3xl p-6 flex flex-col justify-between space-y-6">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-bold text-app-muted uppercase tracking-wider font-mono">App Status</span>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide border ${
+                            websiteStatus.toLowerCase() === 'online'
+                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                              : websiteStatus.toLowerCase() === 'onderhoud'
+                              ? 'bg-amber-50 text-amber-600 border-amber-200'
+                              : 'bg-red-50 text-red-600 border-red-200'
+                          }`}>
+                            {websiteStatus}
+                          </span>
+                        </div>
+                        <h4 className="text-base font-bold text-app-ink uppercase tracking-tight">Systeem Status Regeling</h4>
+                        <p className="text-xs text-app-muted font-medium mt-1">Hier kun je de openbare status van de website handmatig overrident of tijdelijk in onderhoud modus zetten.</p>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* User Blocking Management */}
-                <div className="space-y-6 pt-8 border-t border-app-border">
-                  <div className="flex flex-col gap-1">
-                    <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
-                      <ShieldAlert className="w-4 h-4" />
-                      Gebruikersbeheer
-                    </h4>
-                    <div className="flex flex-col gap-2 p-3 bg-app-accent rounded-2xl border border-app-border mb-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase text-app-muted">Jouw Rol</span>
-                        <span className="text-[10px] font-bold uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{profile?.role || 'User'}</span>
+                      <div className="space-y-4">
+                        <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            value={statusInput}
+                            onChange={(e) => setStatusInput(e.target.value)}
+                            placeholder={`Huidige status: "${websiteStatus}"`}
+                            className="flex-1 px-4 py-2.5 bg-app-card border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink transition-all text-sm text-app-ink outline-none"
+                          />
+                          <button 
+                            onClick={handleUpdateStatus}
+                            disabled={saving || !statusInput.trim()}
+                            className="px-5 py-2.5 bg-app-ink text-app-bg rounded-xl text-xs font-extrabold hover:opacity-90 disabled:opacity-50 transition-all shadow-md"
+                          >
+                            Bijwerken
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <button 
+                            onClick={() => { setStatusInput('Online'); handleUpdateStatus(); }}
+                            className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-[9px] font-extrabold uppercase text-emerald-700 text-center transition-all"
+                          >
+                            Zet Online
+                          </button>
+                          <button 
+                            onClick={() => { setStatusInput('Onderhoud'); handleUpdateStatus(); }}
+                            className="px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl text-[9px] font-extrabold uppercase text-amber-700 text-center transition-all"
+                          >
+                            Onderhoud
+                          </button>
+                          <button 
+                            onClick={() => { setStatusInput('Offline'); handleUpdateStatus(); }}
+                            className="px-3 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl text-[9px] font-extrabold uppercase text-red-700 text-center transition-all"
+                          >
+                            Offline
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase text-app-muted">Whitelist Status</span>
-                        <span className="text-[10px] font-bold uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Actief</span>
+                    </div>
+
+                    {/* Gepland Onderhoud Control Card */}
+                    <div className="bg-app-bg/45 border border-app-border rounded-3xl p-6 space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-5 h-5 text-app-ink" />
+                        <h4 className="text-base font-bold text-app-ink uppercase tracking-tight">Gepland Onderhoud</h4>
                       </div>
-                    </div>                    {/* Own Admin Telemetry box */}
+                      <p className="text-xs text-app-muted font-medium">
+                        Stel gepland onderhoud in met een offline of realtime aftelfunctie. Gebruikers horen geluidsmeldingen 5, 4, 3, 2 en 1 minuut voor aanvang.
+                      </p>
+
+                      {scheduledMaintenance && scheduledMaintenance.isActive ? (
+                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                              Aftellen Actief
+                            </span>
+                            <span className="text-xs font-mono font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">
+                              Nog {maintenanceTimeLeft !== undefined && maintenanceTimeLeft !== null ? `${Math.floor(maintenanceTimeLeft / 60)}m ${maintenanceTimeLeft % 60}s` : 'laden...'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-amber-900 leading-tight">
+                            Starttijd: <span className="font-bold">{new Date(scheduledMaintenance.targetTime).toLocaleTimeString()}</span> ({new Date(scheduledMaintenance.targetTime).toLocaleDateString()})
+                          </div>
+                          <button
+                            onClick={handleCancelMaintenance}
+                            className="w-full py-2 bg-red-610 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            <X className="w-3.5 h-3.5" /> Stop / Annuleer Aftelling
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-3 gap-1 grid-flow-row">
+                            <button
+                              onClick={() => handleScheduleMaintenance && handleScheduleMaintenance(5)}
+                              className="px-1.5 py-2 bg-app-accent hover:bg-app-accent/80 border border-app-border rounded-xl text-[10px] font-bold text-app-ink transition-all active:scale-95"
+                            >
+                              5 min test
+                            </button>
+                            <button
+                              onClick={() => handleScheduleMaintenance && handleScheduleMaintenance(10)}
+                              className="px-1.5 py-2 bg-app-accent hover:bg-app-accent/80 border border-app-border rounded-xl text-[10px] font-bold text-app-ink transition-all active:scale-95"
+                            >
+                              10 min
+                            </button>
+                            <button
+                              onClick={() => handleScheduleMaintenance && handleScheduleMaintenance(30)}
+                              className="px-1.5 py-2 bg-app-accent hover:bg-app-accent/80 border border-app-border rounded-xl text-[10px] font-bold text-app-ink transition-all active:scale-95"
+                            >
+                              30 min
+                            </button>
+                          </div>
+
+                          <div className="border-t border-app-border/40 pt-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
+                            <input
+                              type="datetime-local"
+                              id="custom-maintenance-time"
+                              className="flex-grow px-3 py-1.5 bg-app-card border border-app-border rounded-xl text-xs text-app-ink outline-none outline-0 focus:ring-1 focus:ring-app-ink transition-all font-mono"
+                            />
+                            <button
+                              onClick={() => {
+                                const input = document.getElementById('custom-maintenance-time') as HTMLInputElement;
+                                if (input && input.value && handleScheduleMaintenance) {
+                                  handleScheduleMaintenance(new Date(input.value));
+                                } else {
+                                  toast.error('Kies eerst een datum/tijd.');
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-app-ink text-app-bg text-[11px] font-bold rounded-xl hover:opacity-90 transition-all select-none whitespace-nowrap active:scale-95"
+                            >
+                              Plannen
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Admin Telemetry details card */}
+                  <div className="lg:col-span-7 bg-app-bg/45 border border-app-border rounded-3xl p-6 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-app-ink" />
+                      <h4 className="text-base font-bold text-app-ink uppercase tracking-tight">Jouw Beheerder Telemetrie</h4>
+                    </div>
+                    
                     {(() => {
                       let ownTelArray: any[] = [];
                       if (profile?.admin_notes) {
@@ -1452,44 +1518,46 @@ CREATE TRIGGER tr_secure_profile_updates
                       const ownHistory = ownTelArray.slice(1);
 
                       return ownTel ? (
-                        <div className="p-4 bg-emerald-50 border border-emerald-250/60 rounded-2xl space-y-2 mb-4">
-                          <div className="flex items-center justify-between border-b border-emerald-200/55 pb-1.5 mb-1.5">
-                            <span className="text-[10px] font-extrabold uppercase text-emerald-900 tracking-wider flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-                              Jouw Actieve Telemetrie (Beheerder)
-                            </span>
-                            <span className="text-[8px] font-bold text-emerald-700 font-mono uppercase bg-emerald-100 px-1.5 py-0.5 rounded">Live</span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[9px] font-mono leading-tight">
-                            <div className="bg-white/80 p-2 rounded-xl border border-emerald-100">
-                              <span className="font-bold text-emerald-950 uppercase block mb-0.5">IP Adres:</span>
-                              <span className="text-cyan-600 font-extrabold">{ownTel.ip || 'Onbekend'}</span>
+                        <div className="space-y-4">
+                          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
+                            <div className="flex items-center justify-between border-b border-emerald-100 pb-2 mb-2">
+                              <span className="text-[10px] font-extrabold uppercase text-emerald-900 tracking-wider flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                Live Verbinding Telemetrie
+                              </span>
+                              <span className="text-[8px] font-bold text-emerald-750 uppercase bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">Actief</span>
                             </div>
-                            <div className="bg-white/80 p-2 rounded-xl border border-emerald-100">
-                              <span className="font-bold text-emerald-950 uppercase block mb-0.5">Schatting Locatie:</span>
-                              <span className="text-rose-600 font-bold">{ownTel.location || 'Onbekend'}</span>
-                            </div>
-                            {ownTel.org && (
-                              <div className="bg-white/80 p-2 rounded-xl border border-emerald-100 sm:col-span-2">
-                                <span className="font-bold text-emerald-950 uppercase block mb-0.5">ISP / Provider:</span>
-                                <span className="text-emerald-700 font-bold">{ownTel.org}</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[90%] font-mono leading-tight">
+                              <div className="bg-white/90 p-3 rounded-xl border border-emerald-100 shadow-sm">
+                                <span className="font-bold text-emerald-950 text-[10px] uppercase block mb-1">IP ADRES</span>
+                                <span className="text-emerald-700 font-extrabold">{ownTel.ip || 'Onbekend'}</span>
                               </div>
-                            )}
+                              <div className="bg-white/90 p-3 rounded-xl border border-emerald-100 shadow-sm">
+                                <span className="font-bold text-emerald-950 text-[10px] uppercase block mb-1">CITY / REGIO</span>
+                                <span className="text-emerald-700 font-bold">{ownTel.location || 'Onbekend'}</span>
+                              </div>
+                              {ownTel.org && (
+                                <div className="bg-white/90 p-3 rounded-xl border border-emerald-100 shadow-sm col-span-2">
+                                  <span className="font-bold text-emerald-950 text-[10px] uppercase block mb-1">PROVIDER / ORG</span>
+                                  <span className="text-emerald-800 font-bold truncate block">{ownTel.org}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {ownHistory.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-emerald-200/55 space-y-1.5">
-                              <span className="text-[9px] font-extrabold uppercase text-emerald-800 tracking-wider block">
-                                Eerdere Verbindingen ({ownHistory.length})
+                            <div className="space-y-2">
+                              <span className="text-[10px] font-extrabold uppercase text-app-muted tracking-wider block">
+                                Recent Verbindingslogboek ({ownHistory.length})
                               </span>
-                              <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar">
+                              <div className="space-y-1.5 max-h-[140px] overflow-y-auto custom-scrollbar pr-1 font-mono text-[9px]">
                                 {ownHistory.map((hist, idx) => (
-                                  <div key={idx} className="bg-white/50 border border-emerald-100/70 rounded-lg p-2 text-[8px] font-mono leading-normal flex items-start justify-between gap-2">
-                                    <div className="space-y-0.5">
-                                      <div><span className="font-bold text-emerald-950 uppercase mr-1">IP:</span><span className="text-cyan-600 font-bold">{hist.ip}</span></div>
-                                      <div><span className="font-bold text-emerald-950 uppercase mr-1">Loc:</span><span>{hist.location || 'Onbekend'}</span></div>
+                                  <div key={idx} className="bg-app-card border border-app-border rounded-xl p-2.5 flex items-start justify-between gap-3 shadow-xs">
+                                    <div className="space-y-0.5 animate-fadeIn">
+                                      <div><span className="font-bold text-app-ink uppercase mr-1">IP:</span><span className="text-cyan-600 font-bold">{hist.ip}</span></div>
+                                      <div><span className="font-bold text-app-muted uppercase mr-1">LOC:</span><span>{hist.location || 'Onbekend'}</span></div>
                                     </div>
-                                    <div className="text-[7.5px] text-emerald-700 text-right shrink-0">
+                                    <div className="text-[8px] text-app-muted text-right shrink-0">
                                       <div>{hist.timestamp ? new Date(hist.timestamp).toLocaleDateString('nl-NL') : ''}</div>
                                       <div>{hist.timestamp ? new Date(hist.timestamp).toLocaleTimeString('nl-NL') : ''}</div>
                                     </div>
@@ -1500,101 +1568,246 @@ CREATE TRIGGER tr_secure_profile_updates
                           )}
                         </div>
                       ) : (
-                        <div className="p-3 bg-app-accent/30 rounded-2xl border border-dashed border-app-border text-center mb-4">
-                          <p className="text-[9px] font-bold text-app-muted uppercase">Een moment geduld, jouw telemetriegegevens worden verzameld...</p>
+                        <div className="p-4 bg-app-bg border border-dashed border-app-border rounded-2xl text-center">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-app-muted mb-2" />
+                          <p className="text-[10px] font-bold text-app-muted uppercase">Bezig met verzamelen van beheerder telemetrie...</p>
                         </div>
                       );
                     })()}
-
-                    <p className="text-[10px] font-bold text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-100">
-                      Let op: RLS in Supabase moet een Admin-policy hebben op de 'profiles' tabel om anderen te kunnen blokkeren. 
-                      Als het blokkeren mislukt, wordt de gebruiker als fallback alleen uit de whitelist verwijderd.
-                    </p>
                   </div>
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                    {users.filter(u => u.id !== user.uid).map(u => {
-                      // Probeer telemetrie te parsen uit admin_notes of custom_theme
-                      let telArray: any[] = [];
-                      if (u.admin_notes) {
-                        try {
-                          const parsed = JSON.parse(u.admin_notes);
-                          if (Array.isArray(parsed)) {
-                            telArray = parsed;
-                          } else if (parsed && typeof parsed === 'object') {
-                            telArray = [parsed];
+                </div>
+              )}
+
+              {/* 2. USERS & WHITELIST TAB */}
+              {adminSubTab === 'users' && (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+                  {/* Whitelist Panel */}
+                  <div className="lg:col-span-5 space-y-6">
+                    <div className="bg-app-bg/45 border border-app-border rounded-3xl p-6 space-y-4">
+                      <div>
+                        <h4 className="text-base font-bold text-app-ink uppercase tracking-tight flex items-center gap-2">
+                          <UserPlus className="w-4 h-4" />
+                          Whitelist Systeem
+                        </h4>
+                        <p className="text-xs text-app-muted font-medium mt-1">E-mailadressen die op deze lijst staan krijgen direct toegang, inclusief admin rollen.</p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <input 
+                          type="email"
+                          value={whitelistInput}
+                          onChange={(e) => setWhitelistInput(e.target.value)}
+                          placeholder="E-mailadres toevoegen..."
+                          className="flex-1 px-4 py-2.5 bg-app-card border border-app-border rounded-xl text-xs text-app-ink outline-none"
+                        />
+                        <button 
+                          onClick={handleAddWhitelist}
+                          disabled={saving || !whitelistInput.trim()}
+                          className="px-5 py-2.5 bg-app-ink text-app-bg rounded-xl text-xs font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-md"
+                        >
+                          Toevoegen
+                        </button>
+                      </div>
+
+                      <div className="relative">
+                        <Search className="absolute left-3.5 top-2.5 w-3.5 h-3.5 text-app-muted" />
+                        <input 
+                          type="text"
+                          value={adminWhitelistSearch}
+                          onChange={(e) => setAdminWhitelistSearch(e.target.value)}
+                          placeholder="Zoek in whitelist..."
+                          className="w-full pl-9 pr-4 py-2 bg-app-bg/40 border border-app-border rounded-lg text-xs text-app-ink outline-none"
+                        />
+                      </div>
+
+                      {/* Whitelisted list */}
+                      {(() => {
+                        const filteredWhitelist = whitelist.filter(item => 
+                          item.email.toLowerCase().includes(adminWhitelistSearch.toLowerCase())
+                        );
+
+                        return (
+                          <div className="space-y-1.5 max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
+                            {filteredWhitelist.length > 0 ? (
+                              filteredWhitelist.map((item, i) => (
+                                <div key={i} className="flex items-center justify-between p-2.5 bg-app-card border border-app-border rounded-xl group transition-all hover:bg-app-bg/10">
+                                  <span className="text-xs font-bold text-app-ink truncate mr-2">
+                                    {isAdmin ? item.email : maskEmail(item.email)}
+                                  </span>
+                                  <button 
+                                    onClick={() => handleRemoveWhitelist(item.email)} 
+                                    className="p-1 text-app-muted hover:text-red-500 rounded hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                                    title="Verwijderen uit whitelist"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-center text-[10px] text-app-muted uppercase font-bold py-4">Geen resultaten gevonden</p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Users directory panel */}
+                  <div className="lg:col-span-7 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-base font-bold text-app-ink uppercase tracking-tight flex items-center gap-2">
+                          <UserIcon className="w-4 h-4" />
+                          Gebruikerslijst ({users.length})
+                        </h4>
+                        <p className="text-xs text-app-muted font-medium mt-0.5">Blokkeer of deblokkeer accounts en monitor live IP gegevens.</p>
+                      </div>
+
+                      <div className="relative w-full sm:w-60">
+                        <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-app-muted/60" />
+                        <input 
+                          type="text"
+                          value={adminUserSearch}
+                          onChange={(e) => setAdminUserSearch(e.target.value)}
+                          placeholder="Zoek gebruiker..."
+                          className="w-full pl-8 pr-4 py-2 bg-app-bg/60 border border-app-border rounded-xl text-xs text-app-ink outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 max-h-[460px] overflow-y-auto custom-scrollbar pr-1">
+                      {(() => {
+                        const filteredUsers = users
+                          .filter(u => u.id !== user.uid)
+                          .filter(u => 
+                            u.display_name?.toLowerCase().includes(adminUserSearch.toLowerCase()) || 
+                            u.email?.toLowerCase().includes(adminUserSearch.toLowerCase())
+                          );
+
+                        if (filteredUsers.length === 0) {
+                          return (
+                            <div className="text-center p-8 bg-app-bg/20 border border-app-border border-dashed rounded-2xl">
+                              <p className="text-xs font-bold text-app-muted uppercase">Geen gebruikers gevonden die voldoen aan het filter</p>
+                            </div>
+                          );
+                        }
+
+                        return filteredUsers.map(u => {
+                          let telArray: any[] = [];
+                          if (u.admin_notes) {
+                            try {
+                              const parsed = JSON.parse(u.admin_notes);
+                              if (Array.isArray(parsed)) {
+                                telArray = parsed;
+                              } else if (parsed && typeof parsed === 'object') {
+                                telArray = [parsed];
+                              }
+                            } catch (e) {}
                           }
-                        } catch (e) {
-                          // Mogelijk een gewone string
-                        }
-                      }
-                      if (telArray.length === 0 && u.custom_theme && (u.custom_theme as any).user_telemetry) {
-                        const ut = (u.custom_theme as any).user_telemetry;
-                        if (Array.isArray(ut)) {
-                          telArray = ut;
-                        } else if (ut && typeof ut === 'object') {
-                          telArray = [ut];
-                        }
-                      }
+                          if (telArray.length === 0 && u.custom_theme && (u.custom_theme as any).user_telemetry) {
+                            const ut = (u.custom_theme as any).user_telemetry;
+                            if (Array.isArray(ut)) {
+                              telArray = ut;
+                            } else if (ut && typeof ut === 'object') {
+                              telArray = [ut];
+                            }
+                          }
 
-                      const tel = telArray[0];
-                      const telHistory = telArray.slice(1);
+                          const tel = telArray[0];
+                          const telHistory = telArray.slice(1);
 
-                      return (
-                        <div key={u.id} className="flex items-start md:items-center justify-between p-4 bg-app-bg border border-app-border rounded-2xl gap-4">
-                          <div className="flex items-start md:items-center gap-3 flex-1 min-w-0">
-                            <img 
-                              src={u.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=random`} 
-                              className="w-10 h-10 rounded-xl object-cover flex-shrink-0"
-                              alt=""
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-app-ink uppercase tracking-tight truncate">{u.display_name}</p>
-                              <p className="text-[10px] font-bold text-app-muted truncate mb-1">{u.email}</p>
-                              
-                              {tel ? (
-                                <div className="mt-1.5 p-2.5 bg-app-card border border-app-border rounded-xl text-[9px] text-app-muted font-mono leading-normal space-y-1 select-text overflow-x-auto max-w-[240px]">
-                                  <div>
-                                    <span className="font-bold text-app-ink uppercase mr-1">IP:</span> 
-                                    <span className="text-cyan-500 font-extrabold">{tel.ip || 'Onbekend'}</span>
+                          return (
+                            <div key={u.id} className="p-4 bg-app-bg/50 border border-app-border rounded-2xl space-y-3 flex flex-col justify-between transition-all hover:bg-app-bg/80 animate-fadeIn">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <img 
+                                    src={u.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=random`} 
+                                    className="w-10 h-10 rounded-xl object-cover flex-shrink-0 border border-app-border"
+                                    alt=""
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-app-ink uppercase tracking-tight truncate flex items-center gap-1.5">
+                                      {u.display_name}
+                                      {u.role === 'admin' && (
+                                        <span className="text-[7.5px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-1 py-0.2 rounded font-sans scale-90 border border-emerald-100">Admin</span>
+                                      )}
+                                    </p>
+                                    <p className="text-[10px] font-bold text-app-muted truncate">{u.email}</p>
                                   </div>
+                                </div>
+
+                                <button
+                                  onClick={() => handleBlockUser(u.id, !u.is_blocked)}
+                                  disabled={saving}
+                                  className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-all w-full sm:w-auto ${
+                                    saving ? 'opacity-50 cursor-not-allowed' : ''
+                                  } ${
+                                    u.is_blocked 
+                                      ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100' 
+                                      : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+                                  }`}
+                                >
+                                  {saving ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : u.is_blocked ? (
+                                    <>
+                                      <Check className="w-3 h-3" /> Deblokkeren
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserMinus className="w-3 h-3" /> Blokkeren
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+
+                              {tel ? (
+                                <div className="p-3 bg-app-card border border-app-border rounded-xl text-[9.5px] text-app-muted font-mono leading-normal space-y-1">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pb-1">
+                                    <div>
+                                      <span className="font-bold text-app-ink uppercase mr-1">IP:</span> 
+                                      <span className="text-cyan-500 font-extrabold">{tel.ip || 'Onbekend'}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-bold text-app-ink uppercase mr-1">LOC:</span> 
+                                      <span className="text-rose-500 font-bold truncate inline-block max-w-[120px] align-bottom">{tel.location || 'Onbekend'}</span>
+                                    </div>
+                                  </div>
+
                                   {tel.mac_address && (
                                     <div>
-                                      <span className="font-bold text-app-ink uppercase mr-1">MAC:</span> 
+                                      <span className="font-bold text-app-ink uppercase mr-1">MAC ADDR:</span> 
                                       <span className="text-amber-500 font-extrabold">{tel.mac_address}</span>
                                     </div>
                                   )}
-                                  <div>
-                                    <span className="font-bold text-app-ink uppercase mr-1">LOC:</span> 
-                                    <span className="text-rose-500 font-bold">{tel.location || 'Onbekend'}</span>
-                                  </div>
+
                                   {tel.org && (
-                                    <div>
+                                    <div className="truncate">
                                       <span className="font-bold text-app-ink uppercase mr-1">ISP:</span> 
                                       <span className="text-emerald-500 font-bold">{tel.org}</span>
                                     </div>
                                   )}
+
                                   {tel.timestamp && (
-                                    <div className="text-[8px] opacity-70 mt-1 border-t border-app-border pt-1 flex items-center gap-1">
-                                      <span>⏱️</span>
+                                    <div className="text-[7.5px] opacity-70 mt-1 border-t border-app-border/40 pt-1 flex items-center gap-1">
+                                      <span>⏱️ Laatst ingelogd:</span>
                                       <span>{new Date(tel.timestamp).toLocaleString('nl-NL')}</span>
                                     </div>
                                   )}
 
                                   {telHistory.length > 0 && (
-                                    <div className="mt-2.5 pt-2 border-t border-app-border space-y-1">
-                                      <span className="text-[8px] font-extrabold uppercase text-app-ink tracking-wider block">
-                                        Eerdere Verbindingen ({telHistory.length}):
+                                    <div className="mt-2 pt-1.5 border-t border-app-border/45">
+                                      <span className="text-[8px] font-extrabold uppercase text-app-ink tracking-wider block mb-1">
+                                        Eerdere Sessies ({telHistory.length}):
                                       </span>
-                                      <div className="space-y-1 max-h-[80px] overflow-y-auto custom-scrollbar">
+                                      <div className="space-y-1 max-h-[60px] overflow-y-auto custom-scrollbar">
                                         {telHistory.map((hist, idx) => (
-                                          <div key={idx} className="bg-app-bg/65 border border-app-border rounded p-1 text-[7.5px] leading-tight space-y-0.5">
-                                            <div className="flex justify-between font-bold">
-                                              <span className="text-cyan-600">{hist.ip}</span>
-                                              <span className="text-[7px] text-app-muted font-normal">
-                                                {hist.timestamp ? new Date(hist.timestamp).toLocaleDateString('nl-NL') : ''}
-                                              </span>
-                                            </div>
-                                            <div className="text-rose-500 truncate">{hist.location || 'Onbekend'}</div>
+                                          <div key={idx} className="bg-app-bg/50 border border-app-border rounded p-1 text-[7px] leading-snug flex justify-between gap-1">
+                                            <span className="text-cyan-600 font-bold">{hist.ip}</span>
+                                            <span className="text-rose-500 truncate max-w-[100px]">{hist.location || 'Onbekend'}</span>
+                                            <span className="text-[6.5px] text-app-muted">
+                                              {hist.timestamp ? new Date(hist.timestamp).toLocaleDateString('nl-NL') : ''}
+                                            </span>
                                           </div>
                                         ))}
                                       </div>
@@ -1602,93 +1815,93 @@ CREATE TRIGGER tr_secure_profile_updates
                                   )}
                                 </div>
                               ) : (
-                                <div className="mt-1.5 p-2 bg-app-bg/50 border border-dashed border-app-border rounded-xl text-[8px] text-app-muted italic">
-                                  Geen telemetrie gecollecteerd (deze gebruiker moet eerst inloggen)
+                                <div className="p-2 bg-app-card/60 border border-dashed border-app-border rounded-xl text-[8px] text-app-muted italic text-center">
+                                  Geen telemetrie actief (deze gebruiker heeft deze appversie nog niet ingelogd)
                                 </div>
                               )}
                             </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. SECURITY TAB / TRIGGERS */}
+              {adminSubTab === 'security' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Security auditor checklist */}
+                  <div className="bg-emerald-50 rounded-3xl p-6 border border-emerald-200 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                      <h4 className="text-sm font-bold text-emerald-900 uppercase tracking-wide">Veiligheids Audit Checklist (RLS en Policies)</h4>
+                    </div>
+                    <p className="text-[10px] uppercase font-bold text-emerald-800 tracking-tight leading-relaxed">
+                      Controleer in je Supabase database console of de volgende beveiligingspolicies correct geconfigureerd zijn:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[
+                        { label: 'profiles RLS: Alleen admins mogen role/is_blocked wijzigen', icon: LockIcon },
+                        { label: 'reports RLS: Alleen admins mogen rapportages inzien/verwijderen', icon: Flag },
+                        { label: 'whitelist RLS: Alleen admins mogen whitelists beheren', icon: UserPlus },
+                        { label: 'threads/posts RLS: Alleen auteurs mogen eigen berichten deleten', icon: Trash2 },
+                        { label: 'Cloud SSL: Forceer SSL/HTTPS voor alle instantie-queries', icon: Zap },
+                        { label: 'Login limit: Auth rates beveiligd', icon: Activity }
+                      ].map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-3 bg-white/80 p-3 rounded-xl border border-emerald-100 shadow-xs">
+                          <div className="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center">
+                            <item.icon className="w-3.5 h-3.5 text-emerald-600" />
                           </div>
-                        <button
-                          onClick={() => handleBlockUser(u.id, !u.is_blocked)}
-                          disabled={saving}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wide transition-all ${
-                            saving ? 'opacity-50 cursor-not-allowed' : ''
-                          } ${
-                            u.is_blocked 
-                              ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' 
-                              : 'bg-red-50 text-red-600 hover:bg-red-100'
-                          }`}
-                        >
-                          {saving ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : u.is_blocked ? (
-                            <>
-                              <Check className="w-3 h-3" /> Deblokkeren
-                            </>
-                          ) : (
-                            <>
-                              <UserMinus className="w-3 h-3" /> Blokkeren
-                            </>
-                          )}
-                        </button>
+                          <span className="text-[9px] font-extrabold text-emerald-900 uppercase tracking-tight leading-normal">{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* SQL Exploit Solution section */}
+                    <div className="mt-4 p-4 bg-rose-50 rounded-2xl border border-rose-200/60 space-y-3">
+                      <div className="flex items-center gap-2 text-rose-800 font-extrabold text-[10px] uppercase tracking-wider">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Cruciaal: PATCH role & block hack dichten</span>
                       </div>
-                    );
-                  })}
+                      <p className="text-[10px] text-rose-700 leading-normal">
+                        Zonder triggers kan een slimme ingelogde gebruiker rechtstreeks via REST API zijn eigen profile-role updaten naar <code>admin</code> of zijn <code>is_blocked</code> status wijzigen. Voer deze code uit in de <strong>Supabase SQL Editor</strong> om dit lek permanent te dichten:
+                      </p>
+                      
+                      <div className="relative group">
+                        <pre className="p-3 bg-stone-900 text-rose-200 rounded-xl text-[9px] font-mono overflow-x-auto max-h-[160px] custom-scrollbar select-all leading-relaxed whitespace-pre font-medium">
+{`-- Voorkom dat gebruikers hun eigen rol of blokkadestatus wijzigen
+CREATE OR REPLACE FUNCTION secure_profile_updates()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Controleer of een niet-admin de 'role' of 'is_blocked' wijzigt
+  IF (OLD.role IS DISTINCT FROM NEW.role OR OLD.is_blocked IS DISTINCT FROM NEW.is_blocked) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE id = auth.uid() AND role = 'admin'
+    ) THEN
+      RAISE EXCEPTION 'VULNERABILITY DETECTED: Alleen administrators mogen "role" of "is_blocked" wijzigen!';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_secure_profile_updates ON public.profiles;
+CREATE TRIGGER tr_secure_profile_updates
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION secure_profile_updates();`}
+                        </pre>
+                      </div>
+
+                      <div className="text-[8.5px] font-bold text-rose-800 uppercase flex justify-between items-center bg-rose-150 p-2 rounded-lg">
+                        <span>💡 Tip: Selecteer alles in het code-vak en kopieer direct naar de Supabase Console editor!</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                {/* System Status */}
-                <div className="space-y-6 pt-8 border-t border-app-border">
-                  <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" />
-                    Systeem Status
-                  </h4>
-                  <div className="flex gap-2">
-                    <input 
-                      type="text"
-                      value={statusInput}
-                      onChange={(e) => setStatusInput(e.target.value)}
-                      placeholder={websiteStatus}
-                      className="flex-1 px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink transition-all text-sm text-app-ink"
-                    />
-                    <button 
-                      onClick={handleUpdateStatus}
-                      disabled={saving || !statusInput.trim()}
-                      className="px-6 py-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-md"
-                    >
-                      Update Status
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <button 
-                      onClick={() => {
-                        setStatusInput('Online');
-                        handleUpdateStatus();
-                      }}
-                      className="px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl text-[10px] font-bold uppercase tracking-wide hover:bg-emerald-100 transition-all"
-                    >
-                      Zet Online
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setStatusInput('Onderhoud');
-                        handleUpdateStatus();
-                      }}
-                      className="px-4 py-2 bg-amber-50 text-amber-600 border border-amber-100 rounded-xl text-[10px] font-bold uppercase tracking-wide hover:bg-amber-100 transition-all"
-                    >
-                      Zet Onderhoud
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setStatusInput('Offline');
-                        handleUpdateStatus();
-                      }}
-                      className="px-4 py-2 bg-red-50 text-red-600 border border-red-100 rounded-xl text-[10px] font-bold uppercase tracking-wide hover:bg-red-100 transition-all"
-                    >
-                      Zet Offline
-                    </button>
-                  </div>
-                </div>
-              </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

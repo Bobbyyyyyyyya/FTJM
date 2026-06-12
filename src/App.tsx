@@ -43,6 +43,7 @@ import {
   Upload, 
   Play, 
   Trash2, 
+  Keyboard, 
   UserPlus, 
   CloudOff, 
   Flag, 
@@ -156,7 +157,7 @@ const localStorage = {
 };
 
 // App component
-const IS_WHITELIST_ACTIVE = true; // Zet op true om de whitelist-beveiliging weer in te schakelen!
+const IS_WHITELIST_ACTIVE = false; // Zet op true om de whitelist-beveiliging weer in te schakelen!
 
 const normalizeEmail = (rawEmail: string): string => {
   const parts = rawEmail.trim().toLowerCase().split('@');
@@ -253,6 +254,7 @@ export default function App() {
   const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs' | 'arcade'>('chat');
 
   const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security'>('profile');
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [threads, setThreads] = useState<ForumThread[]>([]);
   const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
   const [threadComments, setThreadComments] = useState<ForumComment[]>([]);
@@ -612,6 +614,12 @@ export default function App() {
     return secureLocalStorage.getItem('cached_websiteStatus') || 'Online';
   });
   const [statusInput, setStatusInput] = useState('');
+  const [scheduledMaintenance, setScheduledMaintenance] = useState<{ isActive: boolean; targetTime: string }>({
+    isActive: false,
+    targetTime: '',
+  });
+  const [maintenanceTimeLeft, setMaintenanceTimeLeft] = useState<number | null>(null);
+  const playedMaintenanceTriggersRef = useRef<Set<string>>(new Set());
   const [reports, setReports] = useState<Report[]>([]); // Reports state remains but we don't fetch for admin UI anymore
   
   const hasFetchedConversations = useRef(false);
@@ -1202,38 +1210,125 @@ export default function App() {
           // Recreate Supabase client with UID for Realtime headers
           const newClient = createSupabaseClient(currentUser.id);
           setSupabaseClient(newClient);
-          
-          // Initial profile fetch
+                  // Initial unified parallel bootstrapping of Whitelist, Profile, and Nicknames
+          setLoading(true);
           try {
-            const { data, error } = await newClient
-              .from('profiles')
-              .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes')
-              .eq('id', currentUser.id)
-              .single();
+            const [wlRes, pRes, nRes] = await Promise.all([
+              // 1. Whitelist Check (resolve immediately if not active)
+              !IS_WHITELIST_ACTIVE
+                ? Promise.resolve({ data: { email: currentUser.email, added_at: new Date().toISOString() }, error: null })
+                : newClient.from('whitelist').select('email, added_at').eq('email', currentUser.email).maybeSingle(),
               
-            if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
-              handleSupabaseError(error, 'profiel ophalen', mappedUser, profile?.role === 'admin' || currentUser?.email === 'markohoksen@gmail.com');
-            } else if (data) {
-              setProfile(data);
-              localStorage.setItem('cached_profile', JSON.stringify(data));
-              setDisplayNameInput(data.display_name || mappedUser.displayName || '');
-              setPhotoURLInput(data.photo_url || mappedUser.photoURL || '');
-              setBioInput(data.bio || '');
-              if (data.notification_settings) {
-                setNotificationSettings(cleanNotificationSettings(data.notification_settings));
+              // 2. Profile Fetch
+              newClient
+                .from('profiles')
+                .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes, is_blocked')
+                .eq('id', currentUser.id)
+                .maybeSingle(),
+              
+              // 3. Nicknames Fetch
+              newClient
+                .from('nicknames')
+                .select('target_id, nickname')
+                .eq('user_id', currentUser.id)
+            ]);
+
+            // Determine admin role status from fetched profile
+            const profileRole = pRes.data?.role;
+            const isUserAdmin = profileRole === 'admin' || currentUser.email === 'markohoksen@gmail.com';
+
+            // Whitelist verification
+            const wlData = wlRes.data;
+            const exists = !!wlData;
+            let whitelisted = exists || isUserAdmin;
+
+            if (isUserAdmin && !exists) {
+              try {
+                await newClient.from('whitelist').insert({
+                  email: currentUser.email,
+                  added_at: new Date().toISOString(),
+                  added_by: 'system'
+                });
+                whitelisted = true;
+              } catch (e) {
+                console.warn('Admin whitelist seeding bypassed:', e);
               }
-              if (data.custom_sounds) {
-                setCustomSounds(data.custom_sounds);
+            }
+
+            console.log('Bootstrapped whitelist check result:', { whitelisted, exists, isUserAdmin });
+            logAudioEvent('system', whitelisted ? 'success' : 'warning', whitelisted ? 'Whitelist check geslaagd' : 'Niet op de whitelist', currentUser.id, mappedUser.displayName || 'Anoniem');
+            setIsWhitelisted(whitelisted);
+            secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(whitelisted));
+
+            // Populate nicknames dictionary
+            if (nRes.data) {
+              const nicknameMap = nRes.data.reduce((acc: Record<string, string>, curr: any) => {
+                acc[curr.target_id] = curr.nickname;
+                return acc;
+              }, {});
+              setNicknames(nicknameMap);
+              localStorage.setItem('cached_nicknames', JSON.stringify(nicknameMap));
+            }
+
+            // Populate profile settings
+            if (pRes.data) {
+              const profileData = pRes.data as UserProfile;
+              setProfile(profileData);
+              localStorage.setItem('cached_profile', JSON.stringify(profileData));
+              setDisplayNameInput(profileData.display_name || mappedUser.displayName || '');
+              setPhotoURLInput(profileData.photo_url || mappedUser.photoURL || '');
+              setBioInput(profileData.bio || '');
+
+              if (profileData.notification_settings) {
+                setNotificationSettings(cleanNotificationSettings(profileData.notification_settings));
               }
-              if (data.custom_theme) {
-                setCustomTheme(prev => ({ ...prev, ...data.custom_theme }));
+              if (profileData.custom_sounds) {
+                setCustomSounds(profileData.custom_sounds);
               }
-              if (data.use_custom_theme !== undefined) {
-                setUseCustomTheme(data.use_custom_theme);
+              if (profileData.custom_theme) {
+                setCustomTheme(prev => ({ ...prev, ...profileData.custom_theme }));
+              }
+              if (profileData.use_custom_theme !== undefined) {
+                setUseCustomTheme(profileData.use_custom_theme);
+              }
+              hasFetchedProfile.current = true;
+            } else if (whitelisted) {
+              // Automatically provision profile inline on first login
+              const newProfile: UserProfile = {
+                id: currentUser.id,
+                display_name: mappedUser.displayName || 'Anoniem',
+                email: mappedUser.email || '',
+                photo_url: mappedUser.photoURL || undefined,
+                use_custom_theme: useCustomTheme,
+                notification_settings: {
+                  enable_sounds: notificationSettings.enable_sounds,
+                  notify_new_posts: notificationSettings.notify_new_posts,
+                  notify_new_messages: notificationSettings.notify_new_messages,
+                  notify_mentions: notificationSettings.notify_mentions,
+                  message_sound: notificationSettings.message_sound,
+                  post_sound: notificationSettings.post_sound,
+                  ringtone_url: notificationSettings.ringtone_url
+                },
+                custom_theme: {
+                  ...customTheme,
+                  agreed_terms_v2: true
+                },
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                role: 'user',
+                bio: ''
+              };
+              const { error: insertError } = await newClient.from('profiles').insert(newProfile);
+              if (!insertError) {
+                setProfile(newProfile);
+                localStorage.setItem('cached_profile', JSON.stringify(newProfile));
+                hasFetchedProfile.current = true;
               }
             }
           } catch (err) {
-            console.error('Initial profile fetch error:', err);
+            console.error('Initial bootstrapping error:', err);
+          } finally {
+            setLoading(false);
           }
         }
       } else {
@@ -1253,86 +1348,155 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Whitelist check
+  // Keyboard Shortcuts Listener
   useEffect(() => {
-    if (!user) return;
-
-    const checkWhitelist = async () => {
-      if (!IS_WHITELIST_ACTIVE) {
-        setIsWhitelisted(true);
-        secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(true));
-        setLoading(false);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      if (
+        activeEl && 
+        (activeEl.tagName === 'INPUT' || 
+         activeEl.tagName === 'TEXTAREA' || 
+         activeEl.hasAttribute('contenteditable'))
+      ) {
+        if (e.key === 'Escape') {
+          setShowShortcutsModal(false);
+        }
         return;
       }
-      try {
-        const { data, error } = await supabaseClient
-          .from('whitelist')
-          .select('email, added_at')
-          .eq('email', user.email)
-          .single();
-          
-        const exists = !!data;
-        let whitelisted = exists || isAdmin;
 
-        if (isAdmin && !exists) {
-          // Seed admin into whitelist
-          try {
-            await supabaseClient.from('whitelist').insert({
-              email: user.email,
-              added_at: new Date().toISOString(),
-              added_by: 'system'
-            });
-            whitelisted = true;
-          } catch (e) {
-            console.warn('Admin seeding failed, but bypassing locally:', e);
+      const isModifierActive = e.altKey || e.ctrlKey || e.metaKey;
+
+      // 1. Alternate numbers 1-7
+      let digit: number | null = null;
+      if (e.code && e.code.startsWith('Digit')) {
+        const d = parseInt(e.code.replace('Digit', ''), 10);
+        if (d >= 1 && d <= 7) {
+          digit = d;
+        }
+      } else {
+        const parsed = parseInt(e.key, 10);
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 7) {
+          digit = parsed;
+        }
+      }
+
+      if (isModifierActive && digit !== null) {
+        const hasAlt = e.altKey;
+        const hasCtrl = e.ctrlKey;
+        const hasShift = e.shiftKey;
+        const hasMeta = e.metaKey; // Command ⌘ key on macOS
+
+        // Match Alt+Digit, Ctrl+Digit, Ctrl+Shift+Digit or Command+Shift+Digit (very safe on Mac)
+        const isMatched = 
+          (hasAlt && !hasCtrl && !hasMeta) || 
+          (hasCtrl && hasShift) ||
+          (hasCtrl && !hasShift && !hasAlt && !hasMeta) ||
+          (hasMeta && hasShift);
+
+        if (isMatched) {
+          e.preventDefault();
+          const views: ('chat' | 'forum' | 'messages' | 'news' | 'settings' | 'arcade' | 'audiologs')[] = [
+            'chat',
+            'forum',
+            'messages',
+            'news',
+            'settings',
+            'arcade',
+            'audiologs'
+          ];
+          const selectedView = views[digit - 1];
+          if (selectedView) {
+            setView(selectedView);
+            const labels: Record<string, string> = {
+              chat: 'Algemene Chat',
+              forum: 'Forum',
+              messages: 'Berichten/Inbox',
+              news: 'Nieuws',
+              settings: 'Instellingen',
+              arcade: 'Arcade',
+              audiologs: 'Audio Logs'
+            };
+            toast.success(`Weergave gewijzigd naar: ${labels[selectedView]}`);
+            return;
           }
         }
-        
-        console.log('Whitelist check result:', { whitelisted, exists, isAdmin });
-        logAudioEvent('system', whitelisted ? 'success' : 'warning', whitelisted ? 'Whitelist check geslaagd' : 'Niet op de whitelist', user.uid, user.displayName || 'Anoniem');
-        setIsWhitelisted(whitelisted);
-        secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(whitelisted));
-      } catch (err) {
-        console.error('Whitelist check error:', err);
-        handleSupabaseError(err, 'whitelist check', user, isAdmin);
-        setIsWhitelisted(isAdmin);
-        secureLocalStorage.setItem('cached_isWhitelisted', JSON.stringify(isAdmin));
-      } finally {
-        setLoading(false);
       }
-    };
 
-    checkWhitelist();
-  }, [user?.uid, isAdmin]);
-
-  // Fetch nicknames
-  useEffect(() => {
-    if (!user || !isWhitelisted) return;
-
-    const fetchNicknames = async () => {
-      try {
-        const { data, error } = await supabaseClient
-          .from('nicknames')
-          .select('target_id, nickname')
-          .eq('user_id', user.uid);
-
-        if (error) {
-          console.error('Error fetching nicknames:', error);
-        } else if (data) {
-          const nicknameMap = data.reduce((acc: Record<string, string>, curr: any) => {
-            acc[curr.target_id] = curr.nickname;
-            return acc;
-          }, {});
-          setNicknames(nicknameMap);
-          localStorage.setItem('cached_nicknames', JSON.stringify(nicknameMap));
+      // 2. Mnemonic single letters
+      if (isModifierActive) {
+        let keyChar = '';
+        if (e.code && e.code.startsWith('Key')) {
+          keyChar = e.code.replace('Key', '').toLowerCase();
+        } else if (e.key && e.key.length === 1) {
+          keyChar = e.key.toLowerCase();
         }
-      } catch (err) {
-        console.error('Unexpected error fetching nicknames:', err);
+
+        if (keyChar) {
+          const hasAlt = e.altKey;
+          const hasCtrl = e.ctrlKey;
+          const hasShift = e.shiftKey;
+          const hasMeta = e.metaKey;
+
+          // Support:
+          // - Alt/Option + Letter
+          // - Cmd + Shift + Letter (very natural/safe on Mac)
+          // - Ctrl + Shift + Letter (Windows)
+          const isLetterModifierMatched = 
+            (hasAlt && !hasCtrl && !hasMeta) ||
+            (hasMeta && hasShift) ||
+            (hasCtrl && hasShift);
+
+          if (isLetterModifierMatched) {
+            let targetView: 'chat' | 'forum' | 'messages' | 'news' | 'settings' | 'arcade' | 'audiologs' | null = null;
+            if (keyChar === 'c') targetView = 'chat';
+            else if (keyChar === 'f') targetView = 'forum';
+            else if (keyChar === 'm') targetView = 'messages';
+            else if (keyChar === 'n') targetView = 'news';
+            else if (keyChar === 's') targetView = 'settings';
+            else if (keyChar === 'a') targetView = 'arcade';
+            else if (keyChar === 'l') targetView = 'audiologs';
+            else if (keyChar === 'h' || keyChar === 'k') {
+              e.preventDefault();
+              setShowShortcutsModal(prev => !prev);
+              return;
+            }
+
+            if (targetView) {
+              e.preventDefault();
+              setView(targetView);
+              const labels: Record<string, string> = {
+                chat: 'Algemene Chat',
+                forum: 'Forum',
+                messages: 'Berichten/Inbox',
+                news: 'Nieuws',
+                settings: 'Instellingen',
+                arcade: 'Arcade',
+                audiologs: 'Audio Logs'
+              };
+              toast.success(`Weergave gewijzigd naar: ${labels[targetView]}`);
+              return;
+            }
+          }
+        }
+      }
+
+      // 3. Question mark ? for Help trigger
+      if (e.key === '?' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setShowShortcutsModal(prev => !prev);
+      }
+      
+      // 4. Escape key to dismiss shortcuts cheat sheet
+      if (e.key === 'Escape') {
+        setShowShortcutsModal(false);
       }
     };
 
-    fetchNicknames();
-  }, [user?.uid, isWhitelisted]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Real-time profile sync
   useEffect(() => {
@@ -1369,66 +1533,6 @@ export default function App() {
         console.log(`Profile subscription status for ${user.uid}:`, status);
         logAudioEvent('system', status === 'SUBSCRIBED' ? 'success' : 'warning', `Profiel status: ${status}`, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       });
-
-    // Create profile if it doesn't exist
-    const ensureProfile = async () => {
-      if (hasFetchedProfile.current) return;
-      
-      const { data, error } = await supabaseClient
-        .from('profiles')
-        .select('id, display_name, photo_url, bio, role, notification_settings, updated_at, email, created_at, custom_theme, use_custom_theme, public_key, is_blocked, admin_notes')
-        .eq('id', user.uid)
-        .single();
-        
-      if (error && error.code === 'PGRST116' && isWhitelisted) {
-        const newProfile: UserProfile = {
-          id: user.uid,
-          display_name: user.displayName || 'Anoniem',
-          email: user.email || '',
-          photo_url: user.photoURL || undefined,
-          use_custom_theme: useCustomTheme,
-          notification_settings: {
-            enable_sounds: notificationSettings.enable_sounds,
-            notify_new_posts: notificationSettings.notify_new_posts,
-            notify_new_messages: notificationSettings.notify_new_messages,
-            notify_mentions: notificationSettings.notify_mentions,
-            message_sound: notificationSettings.message_sound,
-            post_sound: notificationSettings.post_sound,
-            ringtone_url: notificationSettings.ringtone_url
-          },
-          custom_theme: {
-            ...customTheme,
-            agreed_terms_v2: true
-          },
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          role: 'user',
-          bio: ''
-        };
-        const { error: insertError } = await supabaseClient.from('profiles').insert(newProfile);
-        if (!insertError) {
-          setProfile(newProfile);
-          localStorage.setItem('cached_profile', JSON.stringify(newProfile));
-          hasFetchedProfile.current = true;
-        }
-      } else if (data) {
-        const profileData = data as UserProfile;
-
-        setProfile(profileData);
-        localStorage.setItem('cached_profile', JSON.stringify(profileData));
-        setBioInput(profileData.bio || '');
-        setDisplayNameInput(profileData.display_name || '');
-        setPhotoURLInput(profileData.photo_url || '');
-        
-        if (!isSavingThemeRef.current && !(view === 'settings' && settingsTab === 'theme')) {
-          if (profileData.notification_settings) setNotificationSettings(cleanNotificationSettings(profileData.notification_settings));
-          if (profileData.custom_theme) setCustomTheme(prev => ({ ...prev, ...profileData.custom_theme }));
-          if (profileData.use_custom_theme !== undefined) setUseCustomTheme(profileData.use_custom_theme);
-        }
-        hasFetchedProfile.current = true;
-      }
-    };
-    ensureProfile();
 
     return () => {
       supabaseClient.removeChannel(channel);
@@ -1792,27 +1896,206 @@ export default function App() {
     }
   };
 
-  // Website status
+  // Website status and Scheduled Maintenance
   useEffect(() => {
     if (hasFetchedStatus.current) return;
     
-    const fetchStatus = async () => {
-      const { data, error } = await supabaseClient
+    const fetchStatusAndMaintenance = async () => {
+      // 1. Fetch Website Status
+      const { data: statusRes } = await supabaseClient
         .from('settings')
         .select('value')
         .eq('key', 'websiteStatus')
-        .single();
+        .maybeSingle();
         
-      if (data) {
-        const status = data.value?.status || 'Online';
+      if (statusRes) {
+        const status = statusRes.value?.status || 'Online';
         setWebsiteStatus(status);
         setStatusInput(status);
         localStorage.setItem('cached_websiteStatus', status);
-        hasFetchedStatus.current = true;
+      }
+
+      // 2. Fetch Scheduled Maintenance
+      const { data: maintRes } = await supabaseClient
+        .from('settings')
+        .select('value')
+        .eq('key', 'scheduledMaintenance')
+        .maybeSingle();
+
+      if (maintRes && maintRes.value) {
+        setScheduledMaintenance({
+          isActive: !!maintRes.value.isActive,
+          targetTime: maintRes.value.targetTime || '',
+        });
+      }
+
+      hasFetchedStatus.current = true;
+    };
+    
+    fetchStatusAndMaintenance();
+
+    // 3. Register real-time changes channel
+    const channel = supabaseClient
+      .channel('settings_realtime')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'settings'
+      }, (payload) => {
+        const key = (payload.new as any)?.key || (payload.old as any)?.key;
+        const val = (payload.new as any)?.value;
+        if (key === 'websiteStatus' && val) {
+          setWebsiteStatus(val.status || 'Online');
+          setStatusInput(val.status || 'Online');
+        } else if (key === 'scheduledMaintenance') {
+          if (val) {
+            setScheduledMaintenance({
+              isActive: !!val.isActive,
+              targetTime: val.targetTime || '',
+            });
+          } else {
+            setScheduledMaintenance({ isActive: false, targetTime: '' });
+          }
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabaseClient.removeChannel(channel);
+    };
+  }, []);
+
+  // Countdown and play sounds for gepland onderhoud
+  useEffect(() => {
+    if (!scheduledMaintenance.isActive || !scheduledMaintenance.targetTime) {
+      setMaintenanceTimeLeft(null);
+      playedMaintenanceTriggersRef.current.clear();
+      return;
+    }
+
+    const targetMs = new Date(scheduledMaintenance.targetTime).getTime();
+    playedMaintenanceTriggersRef.current.clear();
+
+    const checkTime = () => {
+      const now = Date.now();
+      const diffSecs = Math.max(0, Math.floor((targetMs - now) / 1000));
+      setMaintenanceTimeLeft(diffSecs);
+
+      // Play matching sound triggers
+      if (diffSecs <= 300 && diffSecs > 240 && !playedMaintenanceTriggersRef.current.has('5m')) {
+        playedMaintenanceTriggersRef.current.add('5m');
+        playSound(
+          'https://www.image2url.com/r2/default/audio/1781271903929-83f9346b-b078-42d0-b5c0-fda9beeab9af.m4a',
+          true,
+          user?.uid,
+          profile?.display_name || user?.displayName || 'Anoniem'
+        );
+        toast.warning('Gepland Onderhoud: Nog 5 minuten tot aanvang!', { duration: 10000 });
+      } else if (diffSecs <= 240 && diffSecs > 180 && !playedMaintenanceTriggersRef.current.has('4m')) {
+        playedMaintenanceTriggersRef.current.add('4m');
+        playSound(
+          'https://www.image2url.com/r2/default/audio/1781272139776-42f7b69d-b732-4e34-bf93-225487e9e0d0.m4a',
+          true,
+          user?.uid,
+          profile?.display_name || user?.displayName || 'Anoniem'
+        );
+        toast.warning('Gepland Onderhoud: Nog 4 minuten tot aanvang!', { duration: 10000 });
+      } else if (diffSecs <= 180 && diffSecs > 120 && !playedMaintenanceTriggersRef.current.has('3m')) {
+        playedMaintenanceTriggersRef.current.add('3m');
+        playSound(
+          'https://www.image2url.com/r2/default/audio/1781272207070-d21eced7-6568-46f2-ace7-9b81f20ae234.m4a',
+          true,
+          user?.uid,
+          profile?.display_name || user?.displayName || 'Anoniem'
+        );
+        toast.warning('Gepland Onderhoud: Nog 3 minuten tot aanvang!', { duration: 10000 });
+      } else if (diffSecs <= 120 && diffSecs > 60 && !playedMaintenanceTriggersRef.current.has('2m')) {
+        playedMaintenanceTriggersRef.current.add('2m');
+        playSound(
+          'https://www.image2url.com/r2/default/audio/1781272257523-22f80b01-edd0-411f-9f43-b2164518db71.m4a',
+          true,
+          user?.uid,
+          profile?.display_name || user?.displayName || 'Anoniem'
+        );
+        toast.warning('Gepland Onderhoud: Nog 2 minuten tot aanvang!', { duration: 10000 });
+      } else if (diffSecs <= 60 && diffSecs > 0 && !playedMaintenanceTriggersRef.current.has('1m')) {
+        playedMaintenanceTriggersRef.current.add('1m');
+        playSound(
+          'https://www.image2url.com/r2/default/audio/1781272318128-306ce73b-c458-4980-8433-b2c0ef0ff36c.m4a',
+          true,
+          user?.uid,
+          profile?.display_name || user?.displayName || 'Anoniem'
+        );
+        toast.error('Gepland Onderhoud: Nog 1 minuut tot aanvang! Sla direct je werk op.', { duration: 10000 });
+      } else if (diffSecs === 0) {
+        if (!playedMaintenanceTriggersRef.current.has('0m')) {
+          playedMaintenanceTriggersRef.current.add('0m');
+          toast.error('Onderhoud is nu begonnen! Het forum wordt herstart.', { duration: 5000 });
+          if (isAdmin) {
+            supabaseClient
+              .from('settings')
+              .upsert({ key: 'websiteStatus', value: { status: 'Onderhoud' } })
+              .then(({ error }) => {
+                if (!error) {
+                  setWebsiteStatus('Onderhoud');
+                }
+              });
+          }
+          setScheduledMaintenance(prev => ({ ...prev, isActive: false }));
+        }
       }
     };
-    fetchStatus();
-  }, []);
+
+    checkTime();
+    const interval = setInterval(checkTime, 1000);
+    return () => clearInterval(interval);
+  }, [scheduledMaintenance.isActive, scheduledMaintenance.targetTime, isAdmin, user?.uid, profile]);
+
+  const handleScheduleMaintenance = async (target: number | Date) => {
+    if (!isAdmin) return;
+    try {
+      let targetTimeISO = '';
+      if (typeof target === 'number') {
+        const time = new Date(Date.now() + target * 60 * 1000);
+        targetTimeISO = time.toISOString();
+      } else if (target instanceof Date) {
+        targetTimeISO = target.toISOString();
+      } else {
+        return;
+      }
+
+      const { error } = await supabaseClient
+        .from('settings')
+        .upsert({ 
+          key: 'scheduledMaintenance', 
+          value: { isActive: true, targetTime: targetTimeISO } 
+        });
+
+      if (error) throw error;
+      setScheduledMaintenance({ isActive: true, targetTime: targetTimeISO });
+      toast.success('Onderhoud succesvol ingepland!');
+    } catch (err) {
+      handleSupabaseError(err, 'onderhoud inplannen', user, isAdmin);
+    }
+  };
+
+  const handleCancelMaintenance = async () => {
+    if (!isAdmin) return;
+    try {
+      const { error } = await supabaseClient
+        .from('settings')
+        .upsert({ 
+          key: 'scheduledMaintenance', 
+          value: { isActive: false, targetTime: '' } 
+        });
+
+      if (error) throw error;
+      setScheduledMaintenance({ isActive: false, targetTime: '' });
+      toast.success('Gepland onderhoud geannuleerd!');
+    } catch (err) {
+      handleSupabaseError(err, 'onderhoud annuleren', user, isAdmin);
+    }
+  };
 
   // Real-time conversations sync
   useEffect(() => {
@@ -5174,6 +5457,13 @@ export default function App() {
             </>
           )}
             <button 
+              onClick={() => setShowShortcutsModal(true)}
+              className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink relative"
+              title="Toon Snelkoppelingen (Druk op ?)"
+            >
+              <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            <button 
               onClick={() => {
                 if (useCustomTheme) {
                   toast.error('Schakel eerst je Custom Thema uit om de standaard modus te wijzigen.');
@@ -5232,6 +5522,18 @@ export default function App() {
           </div>
         </div>
       </nav>
+      )}
+      {user && maintenanceTimeLeft !== null && (
+        <div className="bg-gradient-to-r from-red-600 via-amber-600 to-red-600 text-white border-b border-red-700 font-mono tracking-tight text-xs sm:text-sm py-2 px-4 shadow-md flex items-center justify-between z-[90] relative animate-pulse">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-white animate-bounce shrink-0" />
+            <span className="font-extrabold uppercase tracking-wide">Systeemmelding:</span>
+            <span>Gepland onderhoud begint over <span className="font-extrabold text-[#fffb00] underline">{Math.floor(maintenanceTimeLeft / 60)}m {maintenanceTimeLeft % 60}s</span>! Sla je werk op.</span>
+          </div>
+          <div className="text-[10px] sm:text-xs font-bold uppercase select-none bg-black/25 px-2 py-0.5 rounded border border-white/20 whitespace-nowrap hidden sm:block">
+            Kritieke Status
+          </div>
+        </div>
       )}
 
       {/* Bottom Navigation for Mobile */}
@@ -5539,7 +5841,7 @@ export default function App() {
               )}
 
               {view === 'settings' && (
-                <div className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
+                <div className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
                   <div className="mb-8 font-primary">
                       <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">Instellingen</h2>
                     <p className="text-app-muted font-medium text-sm">Beheer je account en app voorkeuren</p>
@@ -5591,6 +5893,10 @@ export default function App() {
                     uploadingSound={uploadingSound}
                     showInstallButton={deferredPrompt !== null}
                     handleInstallClick={handleInstallClick}
+                    scheduledMaintenance={scheduledMaintenance}
+                    maintenanceTimeLeft={maintenanceTimeLeft}
+                    handleScheduleMaintenance={handleScheduleMaintenance}
+                    handleCancelMaintenance={handleCancelMaintenance}
                   />
                 </div>
               )}
@@ -6508,6 +6814,119 @@ export default function App() {
                   <p className="text-[10px] text-zinc-500 text-center mt-3">
                     Door te klikkert ga je akkoord met onze vernieuwde Algemene Voorwaarden & ons Privacybeleid.
                   </p>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showShortcutsModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[99999] bg-zinc-950/85 backdrop-blur-md flex items-center justify-center p-4"
+              onClick={() => setShowShortcutsModal(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: "spring", damping: 25, stiffness: 350 }}
+                className="max-w-lg w-full bg-zinc-900 border border-zinc-800 p-6 sm:p-8 rounded-[2.5rem] shadow-2xl space-y-6 relative overflow-hidden text-white"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Glow decor */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-505/10 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="flex items-center justify-between pb-4 border-b border-zinc-850">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-cyan-950/40 border border-cyan-500/20 text-cyan-400 rounded-2xl">
+                      <Keyboard className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight text-white leading-none">Snelkoppelingen</h3>
+                      <p className="text-[10px] text-zinc-400 uppercase tracking-widest mt-1">Systeemnavigatie via toetsenbord</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowShortcutsModal(false)}
+                    className="p-1.5 hover:bg-zinc-850 rounded-xl transition-colors text-zinc-400 hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+                  <p className="text-xs text-zinc-400 leading-normal">
+                    Gebruik de onderstaande toetsencombinaties om flitsend snel door het platform te navigeren. Druk buiten invoervelden op <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-[11px] font-mono font-bold mx-0.5 text-cyan-400">?</kbd> om dit paneel op te roepen.
+                  </p>
+
+                  <div className="space-y-2.5">
+                    <div className="text-[10px] uppercase font-black tracking-wider text-cyan-400 mb-1 ml-1 font-mono">Navigatie (Tabbladen)</div>
+                    {(() => {
+                      const isMacPlatform = typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent || navigator.platform || '');
+                      const shortcutsList = [
+                        { keys: isMacPlatform ? ['⌥ Opt + 1', '⌥ Opt + C'] : ['Alt + 1', 'Alt + C'], action: 'Algemene Chat', icon: '💬' },
+                        { keys: isMacPlatform ? ['⌥ Opt + 2', '⌥ Opt + F'] : ['Alt + 2', 'Alt + F'], action: 'Community Forum', icon: '🏛️' },
+                        { keys: isMacPlatform ? ['⌥ Opt + 3', '⌥ Opt + M'] : ['Alt + 3', 'Alt + M'], action: 'Berichten / DM Inbox', icon: '📩' },
+                        { keys: isMacPlatform ? ['⌥ Opt + 4', '⌥ Opt + N'] : ['Alt + 4', 'Alt + N'], action: 'Nieuws & Updates', icon: '📢' },
+                        { keys: isMacPlatform ? ['⌥ Opt + 5', '⌥ Opt + S'] : ['Alt + 5', 'Alt + S'], action: 'Systeem Instellingen', icon: '⚙️' },
+                        { keys: isMacPlatform ? ['⌥ Opt + 6', '⌥ Opt + A'] : ['Alt + 6', 'Alt + A'], action: 'Retro Arcade Games', icon: '🕹️' },
+                        { keys: isMacPlatform ? ['⌥ Opt + 7', '⌥ Opt + L'] : ['Alt + 7', 'Alt + L'], action: 'Studio Audiologs', icon: '🎵' },
+                      ];
+
+                      if (isMacPlatform) {
+                        // Let's also mention the Mac Command alternative in a helper paragraph or as extra keys
+                        shortcutsList[0].keys.push('⌘ Cmd + ⇧ Shift + 1');
+                      }
+
+                      return shortcutsList.map((row, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-zinc-950/40 border border-zinc-800/60 rounded-2xl hover:bg-zinc-950/80 hover:border-zinc-800 transition-colors">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-sm">{row.icon}</span>
+                            <span className="text-xs font-bold text-zinc-200">{row.action}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1 items-center justify-end max-w-[60%]">
+                            {row.keys.map((k, idx) => (
+                              <React.Fragment key={k}>
+                                {idx > 0 && <span className="text-[9px] text-zinc-650 font-bold uppercase mx-0.5">of</span>}
+                                <kbd className="px-2 py-1 bg-zinc-900 border border-zinc-700 text-zinc-300 rounded-lg text-[10px] font-mono font-bold tracking-tight shadow-sm shadow-black/40">
+                                  {k}
+                                </kbd>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+
+                  <div className="space-y-2.5 pt-2">
+                    <div className="text-[10px] uppercase font-black tracking-wider text-cyan-400 mb-1 ml-1 font-mono">Algemene Acties</div>
+                    {[
+                      { keys: ['?'], action: 'Toon / verberg snelkoppelingen' },
+                      { keys: ['Esc'], action: 'Sluit actieve popup vensters' },
+                    ].map((row, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 bg-zinc-950/40 border border-zinc-800/60 rounded-2xl">
+                        <span className="text-xs font-bold text-zinc-200">{row.action}</span>
+                        <kbd className="px-2.5 py-1 bg-zinc-900 border border-zinc-700 text-zinc-300 rounded-lg text-[10px] font-mono font-bold shadow-sm shadow-black/40">
+                          {row.keys[0]}
+                        </kbd>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-zinc-800/80 flex justify-end">
+                  <button
+                    onClick={() => setShowShortcutsModal(false)}
+                    className="px-6 py-2.5 bg-zinc-800 hover:bg-zinc-750 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all active:scale-95"
+                  >
+                    Sluiten
+                  </button>
                 </div>
               </motion.div>
             </motion.div>

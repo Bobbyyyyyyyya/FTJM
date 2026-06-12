@@ -1,6 +1,6 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -70,6 +70,32 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 }) => {
   const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null);
   const [editInput, setEditInput] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [showSearchBar, setShowSearchBar] = React.useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Clear search on active conversation changes
+  React.useEffect(() => {
+    setSearchQuery('');
+    setShowSearchBar(false);
+  }, [propActiveConversation?.id]);
+
+  // Handle focus when search bar is shown
+  React.useEffect(() => {
+    if (showSearchBar) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 80);
+    } else {
+      setSearchQuery('');
+    }
+  }, [showSearchBar]);
+
+  const filteredMessages = React.useMemo(() => {
+    if (!searchQuery.trim()) return messages;
+    const q = searchQuery.toLowerCase();
+    return messages.filter(m => m.text?.toLowerCase().includes(q));
+  }, [messages, searchQuery]);
 
   // Resolve the newest conversation state from the live list to ensure real-time photo/name updates are visible instantly
   const activeConversation = propActiveConversation 
@@ -94,7 +120,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
   return (
     <div 
-      className={`bg-app-card rounded-[2.5rem] border border-app-border shadow-2xl overflow-hidden h-[calc(100vh-14rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
+      className={`messages-view-container bg-app-card rounded-[2.5rem] border border-app-border shadow-2xl overflow-hidden h-[calc(100vh-14rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
       style={useCustomTheme ? { 
         backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
         borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
@@ -346,6 +372,22 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2 ml-auto">
+                  {activeConversation && (
+                    <button
+                      onClick={() => {
+                        setShowSearchBar(prev => !prev);
+                      }}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 text-app-muted ${
+                        showSearchBar 
+                          ? 'bg-app-ink/10 dark:bg-app-ink/20 text-app-ink' 
+                          : 'bg-app-accent hover:bg-app-accent/80'
+                      }`}
+                      title="Zoek in gesprek..."
+                    >
+                      {showSearchBar ? <X size={20} /> : <Search size={18} />}
+                    </button>
+                  )}
+
                   {activeConversation && activeConversation.is_group && onStartGroupCall && (
                     <button
                       onClick={() => {
@@ -398,12 +440,53 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
               </div>
             </header>
 
+            {/* Message Search Bar */}
+            <AnimatePresence>
+              {showSearchBar && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden bg-app-card border-b border-app-border"
+                >
+                  <div className="px-8 py-3 flex items-center gap-3">
+                    <div className="flex-1 flex items-center gap-3 bg bg-app-bg/55 border border-app-border rounded-xl px-4 py-2 hover:border-app-border/80 focus-within:border-app-ink/20 transition-all duration-300">
+                      <Search className="w-4 h-4 text-app-muted" />
+                      <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder="Zoek in dit gesprek..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="flex-1 bg-transparent border-none outline-none focus:ring-0 text-app-ink placeholder:text-app-muted/40 text-sm font-medium"
+                      />
+                      {searchQuery && (
+                        <button 
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="p-1 hover:bg-app-accent/80 rounded-lg transition-colors text-app-muted hover:text-app-ink"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {searchQuery && (
+                      <span className="text-[10px] font-bold text-app-muted uppercase font-mono bg-app-accent px-2.5 py-1.5 rounded-lg border border-app-border whitespace-nowrap animate-fadeIn">
+                        {filteredMessages.length} {filteredMessages.length === 1 ? 'resultaat' : 'resultaten'}
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Messages Pane */}
             <div className="flex-grow overflow-y-auto p-8 space-y-6 custom-scrollbar flex flex-col-reverse">
-              {messages.length > 0 ? (
-                messages.map((msg, i) => {
+              {filteredMessages.length > 0 ? (
+                filteredMessages.map((msg, i) => {
                   const isMe = msg.sender_id === user.uid;
-                  const prevMsg = messages[i+1]; // reversed
+                  const prevMsg = filteredMessages[i+1]; // reversed
                   const isSameday = prevMsg && new Date(msg.created_at).toDateString() === new Date(prevMsg.created_at).toDateString();
                   const showDate = !isSameday;
                   
@@ -493,7 +576,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                                 </div>
                               ) : (
                                 <>
-                                  <RichContent content={msg.text} />
+                                  <RichContent content={msg.text} searchQuery={searchQuery} />
                                   {msg.is_edited && (
                                     <span className={`text-[8px] font-black uppercase tracking-widest mt-1 block ${isMe ? 'opacity-50' : 'text-app-muted opacity-70'}`}>
                                       (Bewerkt)
@@ -541,8 +624,14 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     <MessageSquare className="w-12 h-12 text-app-muted/50" />
                   </div>
                   <div className="text-center">
-                    <h3 className="text-xl font-bold text-app-ink uppercase tracking-tight">Status</h3>
-                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-[0.2em] mt-2">Geen berichten gedetecteerd in dit cluster</p>
+                    <h3 className="text-xl font-bold text-app-ink uppercase tracking-tight">
+                      {searchQuery ? 'Geen resultaten' : 'Status'}
+                    </h3>
+                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-[0.2em] mt-2">
+                      {searchQuery 
+                        ? `Geen berichten gevonden die voldoen aan "${searchQuery}"`
+                        : 'Geen berichten gedetecteerd in dit cluster'}
+                    </p>
                   </div>
                 </div>
               )}

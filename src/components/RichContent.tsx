@@ -4,9 +4,41 @@ import { decryptGeneralChat } from '../utils/encryption';
 
 interface RichContentProps {
   content: string;
+  searchQuery?: string;
 }
 
-export const RichContent: React.FC<RichContentProps> = React.memo(({ content }) => {
+const highlightMatch = (text: string, query?: string) => {
+  if (!query || !query.trim()) return text;
+  
+  const escapeRegex = (str: string) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const safeQuery = escapeRegex(query.trim());
+  
+  try {
+    const regex = new RegExp(`(${safeQuery})`, 'gi');
+    const parts = text.split(regex);
+    
+    return (
+      <>
+        {parts.map((part, index) => 
+          part.toLowerCase() === query.trim().toLowerCase() ? (
+            <mark 
+              key={index} 
+              className="bg-yellow-400/35 dark:bg-yellow-400/25 text-inherit rounded-md px-1 py-0.5 font-bold border-b border-yellow-400/40"
+            >
+              {part}
+            </mark>
+          ) : (
+            part
+          )
+        )}
+      </>
+    );
+  } catch (e) {
+    return text;
+  }
+};
+
+export const RichContent: React.FC<RichContentProps> = React.memo(({ content, searchQuery }) => {
   // Attempt to decrypt if it looks like an encrypted general chat message
   const decryptedContent = decryptGeneralChat(content);
 
@@ -143,7 +175,7 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content }) 
             </span>
           );
         }
-        return part;
+        return <React.Fragment key={i}>{highlightMatch(part, searchQuery)}</React.Fragment>;
       })}</div>
       
       <div className="flex flex-col gap-4 mt-2">
