@@ -245,6 +245,7 @@ export default function App() {
   const [bioInput, setBioInput] = useState('');
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [photoURLInput, setPhotoURLInput] = useState('');
+  const [bannerURLInput, setBannerURLInput] = useState('');
   const [postInput, setPostInput] = useState('');
   const [threadTitleInput, setThreadTitleInput] = useState('');
   const [threadContentInput, setThreadContentInput] = useState('');
@@ -1278,6 +1279,7 @@ export default function App() {
               setDisplayNameInput(profileData.display_name || mappedUser.displayName || '');
               setPhotoURLInput(profileData.photo_url || mappedUser.photoURL || '');
               setBioInput(profileData.bio || '');
+              setBannerURLInput(profileData.banner_url || profileData.custom_theme?.banner_url || '');
 
               if (profileData.notification_settings) {
                 setNotificationSettings(cleanNotificationSettings(profileData.notification_settings));
@@ -1516,6 +1518,7 @@ export default function App() {
         setBioInput(data.bio || '');
         setDisplayNameInput(data.display_name || '');
         setPhotoURLInput(data.photo_url || '');
+        setBannerURLInput(data.banner_url || data.custom_theme?.banner_url || '');
         
         if (!isSavingThemeRef.current && !(view === 'settings' && settingsTab === 'theme')) {
           if (data.notification_settings) {
@@ -3279,6 +3282,7 @@ export default function App() {
       display_name: displayNameInput.trim() || user.displayName || 'Anoniem',
       photo_url: photoURLInput.trim() || user.photoURL || null,
       bio: bioInput.trim() || null,
+      banner_url: bannerURLInput.trim() || null,
       notification_settings: {
         enable_sounds: notificationSettings.enable_sounds,
         notify_new_posts: notificationSettings.notify_new_posts,
@@ -3287,7 +3291,10 @@ export default function App() {
         message_sound: notificationSettings.message_sound,
         post_sound: notificationSettings.post_sound
       },
-      custom_theme: customTheme,
+      custom_theme: {
+        ...customTheme,
+        banner_url: bannerURLInput.trim() || null
+      },
       use_custom_theme: useCustomTheme,
       custom_sounds: customSounds,
       updated_at: new Date().toISOString()
@@ -3470,14 +3477,23 @@ export default function App() {
 
   const handleOpenProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabaseClient
+      let result = await supabaseClient
         .from('profiles')
-        .select('id, display_name, original_name, email, photo_url, bio, role, created_at, updated_at')
+        .select('id, display_name, original_name, email, photo_url, bio, role, created_at, updated_at, banner_url, custom_theme')
         .eq('id', userId)
         .single();
+        
+      if (result.error) {
+        console.warn('Ophalen met banner_url mislukt, proberen zonder...', result.error);
+        result = await supabaseClient
+          .from('profiles')
+          .select('id, display_name, original_name, email, photo_url, bio, role, created_at, updated_at, custom_theme')
+          .eq('id', userId)
+          .single();
+      }
       
-      if (error) throw error;
-      if (data) setSelectedUser(data);
+      if (result.error) throw result.error;
+      if (result.data) setSelectedUser(result.data);
     } catch (err) {
       handleSupabaseError(err, 'profiel ophalen', user, isAdmin);
     }
@@ -3613,7 +3629,9 @@ export default function App() {
   };
 
   const moderateContent = async (content: string): Promise<{ allowed: boolean; reason?: string }> => {
-    const lowerContent = content.toLowerCase();
+    // Strip base64 data to avoid false positive matches on bad words inside random base64 bytes:
+    const cleanContent = content.replace(/data:[^;]+;base64,[^\s]+/g, '');
+    const lowerContent = cleanContent.toLowerCase();
     
     // Altijd toestaan als het woord 'davin' (of een variatie ervan) in het bericht of de afzendersnaam staat
     const senderDisplayName = ((profile?.display_name || user?.displayName || '') as string).toLowerCase();
@@ -3685,8 +3703,11 @@ export default function App() {
     isPostingRef.current = true;
     const content = postInput.trim();
     
-    if (content.length > MAX_CONTENT_LENGTH) {
-      toast.error(`Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+    const hasUpload = content.includes('data:image/') || content.includes('data:audio/');
+    const maxAllowed = hasUpload ? 512000 : MAX_CONTENT_LENGTH;
+    if (content.length > maxAllowed) {
+      toast.error(hasUpload ? "Bestand is te groot (maximaal ~350KB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      isPostingRef.current = false;
       return;
     }
 
@@ -4656,7 +4677,16 @@ export default function App() {
     if (!user || isWhitelisted !== true) return;
     
     const gameIdLabel = gameId === 'snake' ? 'snake' : gameId === 'flappy' ? 'flappy' : gameId === 'sysadmin' ? 'sysadmin' : 'hamster';
-    const playerName = profile?.display_name || user.displayName || 'Anoniem';
+    let playerName = (profile?.display_name || user.displayName || '').trim();
+    if (!playerName || playerName === 'Anoniem') {
+      if (user.displayName && user.displayName !== 'Anoniem') {
+        playerName = user.displayName;
+      } else if (user.email) {
+        playerName = user.email.split('@')[0];
+      } else {
+        playerName = 'Gebruiker';
+      }
+    }
     
     const messageText = `[ARCADE_SCORE_SHARE:${gameIdLabel}:${score}:${playerName}]`;
     
@@ -4728,14 +4758,15 @@ export default function App() {
     if (e) e.preventDefault();
     if (!user || !messageInput.trim() || !activeConversation || isWhitelisted !== true) return;
     
-    if (messageInput.trim().length > MAX_CONTENT_LENGTH) {
-      toast.error(`Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+    const text = messageInput.trim();
+    const hasUpload = text.includes('data:image/') || text.includes('data:audio/');
+    const maxAllowed = hasUpload ? 512000 : MAX_CONTENT_LENGTH;
+    if (text.length > maxAllowed) {
+      toast.error(hasUpload ? "Bestand is te groot (maximaal ~350KB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
       return;
     }
 
     if (!checkRateLimit()) return;
-    
-    const text = messageInput.trim();
 
     // Moderation check
     const moderation = await moderateContent(text);
@@ -5151,7 +5182,7 @@ export default function App() {
           >
             <div className="w-24 h-24 bg-transparent rounded-full flex items-center justify-center mx-auto mb-8 overflow-hidden">
               <img 
-                src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                 alt="FTJM Logo" 
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
@@ -5208,7 +5239,7 @@ export default function App() {
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('chat')}>
               <div className="w-8 h-8 bg-transparent rounded-lg flex items-center justify-center overflow-hidden">
                 <img 
-                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                   alt="FTJM Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
@@ -5599,7 +5630,7 @@ export default function App() {
             >
               <div className="w-24 h-24 bg-transparent rounded-[2rem] flex items-center justify-center mx-auto mb-8 overflow-hidden">
                 <img 
-                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                   alt="FTJM Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
@@ -5745,6 +5776,7 @@ export default function App() {
                       posts={filteredPosts}
                       isAdmin={isAdmin}
                       postInput={postInput}
+                      setPostInput={setPostInput}
                       handleCreatePost={handleCreatePost}
                       handleTyping={handleTyping}
                       cooldownRemaining={cooldownRemaining}
@@ -5859,6 +5891,8 @@ export default function App() {
                     setPhotoURLInput={setPhotoURLInput}
                     bioInput={bioInput}
                     setBioInput={setBioInput}
+                    bannerURLInput={bannerURLInput}
+                    setBannerURLInput={setBannerURLInput}
                     handleUpdateProfile={handleUpdateProfile}
                     handleUpdateNotifications={handleUpdateNotifications}
                     handleUpdateTheme={handleUpdateTheme}
@@ -5990,14 +6024,23 @@ export default function App() {
                 className="relative w-full max-w-md bg-app-card rounded-[2.5rem] shadow-2xl border border-app-border overflow-y-auto max-h-[90vh] custom-scrollbar"
               >
                 <div className="h-32 bg-app-ink relative overflow-hidden">
-                  <div className="absolute inset-0 opacity-10">
+                  {(selectedUser.banner_url || selectedUser.custom_theme?.banner_url) ? (
                     <img 
-                      src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                      src={selectedUser.banner_url || selectedUser.custom_theme?.banner_url} 
                       alt="" 
-                      className="w-64 h-64 -rotate-12 -translate-x-12 -translate-y-12"
+                      className="absolute inset-0 w-full h-full object-cover"
                       referrerPolicy="no-referrer"
                     />
-                  </div>
+                  ) : (
+                    <div className="absolute inset-0 opacity-10">
+                      <img 
+                        src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
+                        alt="" 
+                        className="w-64 h-64 -rotate-12 -translate-x-12 -translate-y-12"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  )}
                   <button 
                     onClick={() => setSelectedUser(null)}
                     className="absolute top-6 right-6 p-3 bg-app-bg/20 hover:bg-app-bg/30 rounded-2xl transition-all text-app-bg backdrop-blur-md shadow-lg border border-app-bg/10 active:scale-95 z-10"
@@ -6475,7 +6518,7 @@ export default function App() {
                 <div className="flex flex-col items-center mb-6">
                   <div className="w-12 h-12 bg-transparent rounded-2xl flex items-center justify-center mb-4 overflow-hidden">
                     <img 
-                      src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                      src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                       alt="FTJM Logo" 
                       className="w-full h-full object-contain"
                     />

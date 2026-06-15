@@ -45,7 +45,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         <div className="flex items-center gap-4 group cursor-pointer">
           <div className="relative w-12 h-12 bg-transparent rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.15)] group-hover:scale-105 group-hover:-rotate-3 transition-all duration-500 overflow-hidden">
             <img 
-              src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+              src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
               alt="FTJM Logo" 
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
@@ -228,7 +228,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             <motion.div whileHover={{ y: -5 }} className="lg:col-span-2 relative group p-10 lg:p-14 rounded-[2.5rem] bg-zinc-50 border border-zinc-200 overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-duration-700 pointer-events-none">
                 <img 
-                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                   alt="FTJM Logo" 
                   className="w-64 h-64 -rotate-12"
                   referrerPolicy="no-referrer"
@@ -237,7 +237,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
               <div className="relative z-10 w-full h-full flex flex-col justify-between">
                 <div className="w-16 h-16 bg-transparent rounded-2xl flex items-center justify-center mb-12 shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all overflow-hidden">
                   <img 
-                    src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                    src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                     alt="FTJM Logo" 
                     className="w-full h-full object-contain"
                     referrerPolicy="no-referrer"
@@ -336,7 +336,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
                  <div className="absolute inset-0 bg-[#004276] translate-y-full group-hover:translate-y-0 transition-transform duration-700 ease-out" />
                  <div className="w-32 h-32 mb-10 group-hover:scale-110 transition-transform duration-700 relative z-10 opacity-20 group-hover:opacity-50">
                     <img 
-                      src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                      src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                       alt="FTJM Logo" 
                       className="w-full h-full object-contain"
                       referrerPolicy="no-referrer"
@@ -562,7 +562,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-transparent rounded-xl flex items-center justify-center border border-white/20 overflow-hidden">
                 <img 
-                  src="https://www.image2url.com/r2/default/images/1779202268435-afe6a422-a108-44fa-a77a-b2a1fc4cb11f.png" 
+                  src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
                   alt="FTJM Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"

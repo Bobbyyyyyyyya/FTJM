@@ -124,10 +124,10 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
     );
   }
   
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const urlRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+)/g;
   const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
   
-  const combinedRegex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_]+)/g;
+  const combinedRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|@[a-zA-Z0-9_]+)/g;
   const parts = decryptedContent.split(combinedRegex);
 
   const getYoutubeId = (url: string) => {
@@ -137,6 +137,7 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
   };
 
   const isImage = (url: string) => {
+    if (url.startsWith('data:image/')) return true;
     const imageExtensions = /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)(\?.*)?$/i;
     const imageHosts = [
       'giphy.com/media',
@@ -146,16 +147,26 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
       'i.imgur.com',
       'images.pexels.com',
       'cdn.discordapp.com/attachments',
-      'media.discordapp.net/attachments'
+      'media.discordapp.net/attachments',
+      'cdn.imageurlgenerator.com'
     ];
     
     return url.match(imageExtensions) || imageHosts.some(host => url.includes(host));
+  };
+
+  const isAudio = (url: string) => {
+    if (url.startsWith('data:audio/')) return true;
+    const audioExtensions = /\.(mp3|wav|m4a|ogg|opus)(\?.*)?$/i;
+    return url.match(audioExtensions);
   };
 
   return (
     <div className="space-y-2 break-words">
       <div className="whitespace-pre-wrap">{parts.map((part, i) => {
         if (part.match(urlRegex)) {
+          if (part.startsWith('data:')) {
+            return null; // Don't render raw base64 data strings as text
+          }
           return (
             <a 
               key={i} 
@@ -204,6 +215,18 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
                   alt="Embedded content" 
                   className="w-full h-auto"
                   referrerPolicy="no-referrer"
+                />
+              </div>
+            );
+          }
+
+          if (isAudio(url)) {
+            return (
+              <div key={i} className="max-w-md rounded-xl p-2 bg-app-bg border border-app-border flex items-center justify-center">
+                <audio 
+                  src={url} 
+                  controls 
+                  className="w-full focus:outline-none h-10"
                 />
               </div>
             );

@@ -34,10 +34,18 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className="relative w-full max-w-md bg-app-card rounded-[3rem] shadow-2xl border border-app-border overflow-y-auto max-h-[90vh] custom-scrollbar"
           >
-            <div className="h-32 bg-gradient-to-br from-app-ink to-[#004276] relative">
+            <div className="h-32 relative overflow-hidden bg-gradient-to-br from-app-ink to-[#004276]">
+              {(user.banner_url || user.custom_theme?.banner_url) && (
+                <img 
+                  src={user.banner_url || user.custom_theme?.banner_url} 
+                  alt="" 
+                  className="absolute inset-0 w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              )}
               <button 
                 onClick={onClose}
-                className="absolute top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full backdrop-blur-md transition-all"
+                className="absolute top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full backdrop-blur-md transition-all z-10"
               >
                 <X className="w-5 h-5" />
               </button>

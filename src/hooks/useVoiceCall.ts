@@ -141,42 +141,26 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       return outboundChannelRef.current;
     }
 
-    if (outboundChannelPromiseRef.current) {
-      return outboundChannelPromiseRef.current;
-    }
-
     if (outboundChannelRef.current) {
       supabaseClient.removeChannel(outboundChannelRef.current);
       outboundChannelRef.current = null;
     }
 
+    console.log(`[Realtime] Creating outbound channel: ${topic}`);
     const channel = supabaseClient.channel(topic, {
       config: {
         broadcast: { self: false, ack: true }
       }
     });
-    outboundChannelPromiseRef.current = new Promise((resolve) => {
-      channel.subscribe((status: string) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`[Realtime] Outbound channel subscribed: ${topic}`);
-          outboundChannelRef.current = channel;
-          resolve(channel);
-        }
-      });
-      // Safety timeout
-      setTimeout(() => {
-        if (!outboundChannelRef.current) {
-          console.warn(`[Realtime] Outbound subscription timed out for ${topic}, proceeding with fallback`);
-          resolve(channel);
-        }
-      }, 2000);
+
+    outboundChannelRef.current = channel;
+
+    // Subscribe asynchronously in a non-blocking manner
+    channel.subscribe((status: string) => {
+      console.log(`[Realtime] Outbound channel ${topic} status: ${status}`);
     });
 
-    try {
-      return await outboundChannelPromiseRef.current;
-    } finally {
-      outboundChannelPromiseRef.current = null;
-    }
+    return channel;
   };
 
   const sendSignalingMessage = async (targetId: string, event: string, payload: any, retryCount = 0) => {
@@ -339,7 +323,11 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   useEffect(() => {
     if (!user) return;
 
-    const channel = supabaseClient.channel(`calls:${user.uid}`);
+    const channel = supabaseClient.channel(`calls:${user.uid}`, {
+      config: {
+        broadcast: { self: false, ack: true }
+      }
+    });
     
     channel.subscribe((status: string, err?: any) => {
       console.log(`[Realtime] Inbound channel status: ${status}`, err ? err : '');
@@ -508,6 +496,10 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
         remoteAudioRef.current.play().catch(() => {});
       }
 
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Bellen is niet ondersteund in deze browser of via een onbeveiligde verbinding r.o. HTTP.");
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -582,6 +574,10 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
             console.log('Audio element wait for unlock');
           });
         }
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Kan microfoon niet openen. WebRTC bellen is niet ondersteund.");
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ 

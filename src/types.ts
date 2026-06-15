@@ -64,6 +64,7 @@ export interface CustomTheme {
   agreed_terms_v2?: boolean;
   user_telemetry?: any;
   game_high_scores?: Record<string, number>;
+  banner_url?: string;
 }
 
 export interface UserProfile {
@@ -73,6 +74,7 @@ export interface UserProfile {
   email: string;
   photo_url?: string;
   bio?: string;
+  banner_url?: string;
   role?: 'user' | 'admin';
   notification_settings?: NotificationSettings;
   custom_theme?: CustomTheme;

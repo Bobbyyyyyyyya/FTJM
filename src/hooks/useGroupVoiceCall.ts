@@ -132,6 +132,10 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
       setActiveRoomId(roomId);
       setRoomName(name);
 
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Kan microfoon niet openen. WebRTC bellen is niet ondersteund.");
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -142,7 +146,11 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
       localStreamRef.current = stream;
 
       // Broadcast to global monitor first
-      const monitorChannel = supabaseClient.channel('group_calls_monitor');
+      const monitorChannel = supabaseClient.channel('group_calls_monitor', {
+        config: {
+          broadcast: { self: false, ack: true }
+        }
+      });
       await monitorChannel.subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
           await monitorChannel.send({
@@ -154,7 +162,11 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
         }
       });
 
-      const channel = supabaseClient.channel(`group_calls:${roomId}`);
+      const channel = supabaseClient.channel(`group_calls:${roomId}`, {
+        config: {
+          broadcast: { self: false, ack: true }
+        }
+      });
       channelRef.current = channel;
 
       channel.on('broadcast', { event: 'group_join' }, async ({ payload }) => {

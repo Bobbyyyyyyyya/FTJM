@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -73,6 +73,95 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showSearchBar, setShowSearchBar] = React.useState(false);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
+  const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_DIM = 800;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.7);
+            resolve(compressed);
+          } else {
+            resolve(event.target?.result as string);
+          }
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Bestand is te groot. Selecteer een bestand kleiner dan 8MB.");
+      return;
+    }
+
+    try {
+      if (file.type.startsWith('image/')) {
+        const compressed = await compressImage(file);
+        setSelectedFile(compressed);
+        setSelectedFileType('image');
+      } else if (file.type.startsWith('audio/')) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          setSelectedFile(evt.target?.result as string);
+          setSelectedFileType('audio');
+        };
+        reader.readAsDataURL(file);
+      } else {
+        alert("Ongeldig bestandstype. Selecteer een afbeelding of audiobestand.");
+      }
+    } catch (err) {
+      console.error("Error reading file:", err);
+    }
+  };
+
+  const onFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageInput.trim() && !selectedFile) {
+      return;
+    }
+
+    if (selectedFile) {
+      const finalInput = messageInput.trim() ? `${messageInput.trim()} ${selectedFile}` : selectedFile;
+      setMessageInput(finalInput);
+      
+      setTimeout(() => {
+        handleSendMessage(e);
+        setSelectedFile(null);
+        setSelectedFileType(null);
+      }, 50);
+    } else {
+      handleSendMessage(e);
+    }
+  };
 
   // Clear search on active conversation changes
   React.useEffect(() => {
@@ -639,7 +728,49 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
             {/* Input Bar */}
             <div className="p-8 bg-app-card/90 backdrop-blur-xl border-t border-app-border">
-              <form onSubmit={handleSendMessage} className="relative group">
+              {/* POLISHED FILE PREVIEW CARD */}
+              <AnimatePresence>
+                {selectedFile && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center justify-between gap-4 backdrop-blur-md"
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      {selectedFileType === 'image' ? (
+                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border bg-black flex-shrink-0">
+                          <img src={selectedFile} alt="Preview" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-500 flex-shrink-0">
+                          <Volume2 className="w-6 h-6 animate-pulse" />
+                        </div>
+                      )}
+                      <div className="overflow-hidden">
+                        <p className="text-xs font-black text-app-ink uppercase tracking-wider truncate">
+                          {selectedFileType === 'image' ? 'Geselecteerde Foto' : 'Geselecteerd Audiobestand'}
+                        </p>
+                        <p className="text-[10px] text-app-muted font-mono truncate mt-0.5">
+                          Klaar om te versturen ({Math.round(selectedFile.length / 1024)} KB)
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setSelectedFileType(null);
+                      }}
+                      className="w-8 h-8 rounded-full bg-app-card border border-app-border text-app-muted hover:text-app-ink hover:scale-105 active:scale-95 flex items-center justify-center transition-all shadow-sm"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <form onSubmit={onFormSubmit} className="relative group">
                 <input 
                   type="text"
                   value={messageInput}
@@ -648,7 +779,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     handleTyping(e, activeConversation.id);
                   }}
                   placeholder="Type je bericht..."
-                  className="w-full pl-5 sm:pl-8 pr-32 sm:pr-48 py-4 sm:py-5 bg-app-bg/50 border-2 border-app-border rounded-2xl sm:rounded-3xl focus:border-app-ink focus:ring-0 transition-all font-bold text-app-ink placeholder:text-app-muted/50 text-sm sm:text-base"
+                  className="w-full pl-5 sm:pl-8 pr-40 sm:pr-56 py-4 sm:py-5 bg-app-bg/50 border-2 border-app-border rounded-2xl sm:rounded-3xl focus:border-app-ink focus:ring-0 transition-all font-bold text-app-ink placeholder:text-app-muted/50 text-sm sm:text-base"
                   style={useCustomTheme ? { 
                     backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
                     borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
@@ -656,6 +787,21 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   } : {}}
                 />
                 <div className="absolute right-1 sm:right-2 top-1 sm:top-2 bottom-1 sm:bottom-2 flex items-center gap-0.5 sm:gap-1.5">
+                  <input 
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="image/*,audio/*"
+                    className="hidden"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent transition-all"
+                    title="Foto of audio uploaden"
+                  >
+                    <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
                   <button 
                     type="button"
                     onClick={handleImageUrl}
@@ -674,7 +820,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   </button>
                   <button 
                     type="submit"
-                    disabled={sending || !messageInput.trim()}
+                    disabled={sending || (!messageInput.trim() && !selectedFile)}
                     className="px-4 sm:px-6 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-2xl hover:opacity-90 disabled:opacity-30 transition-all shadow-lg active:scale-95 flex items-center justify-center min-w-[50px] sm:min-w-[80px]"
                   >
                     {sending ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-4 h-4 sm:w-5 sm:h-5" />}

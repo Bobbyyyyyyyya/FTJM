@@ -248,8 +248,8 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       engine.level = 1;
       engine.maze = JSON.parse(JSON.stringify(INITIAL_MAZE));
 
-      // 1% chance of a Golden Vodka appearing on the initial level
-      if (Math.random() < 0.01) {
+      // 10% chance of a Golden Vodka appearing on the initial level
+      if (Math.random() < 0.10) {
         const vodkaCells: { r: number, c: number }[] = [];
         for (let r = 0; r < ROWS; r++) {
           for (let c = 0; c < COLS; c++) {
@@ -743,8 +743,8 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         // Reset maze but preserve score/lives
         engine.maze = JSON.parse(JSON.stringify(INITIAL_MAZE));
 
-        // 1% chance of a Golden Vodka appearing on a level
-        const isGoldenVodkaLevel = Math.random() < 0.01;
+        // 10% chance of a Golden Vodka appearing on a level
+        const isGoldenVodkaLevel = Math.random() < 0.10;
         if (isGoldenVodkaLevel) {
           const vodkaCells: { r: number, c: number }[] = [];
           for (let r = 0; r < ROWS; r++) {

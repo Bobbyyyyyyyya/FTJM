@@ -23,6 +23,8 @@ interface SettingsViewProps {
   setPhotoURLInput: (input: string) => void;
   bioInput: string;
   setBioInput: (input: string) => void;
+  bannerURLInput: string;
+  setBannerURLInput: (input: string) => void;
   handleUpdateProfile: () => void;
   handleUpdateNotifications: () => void;
   handleUpdateTheme: () => void;
@@ -366,6 +368,44 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
   }
 };
 
+const compressImage = (file: File, maxWidth: number, maxHeight: number, quality: number = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
+
 export const SettingsView: React.FC<SettingsViewProps> = ({
   user,
   profile,
@@ -378,6 +418,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   setPhotoURLInput,
   bioInput,
   setBioInput,
+  bannerURLInput,
+  setBannerURLInput,
   handleUpdateProfile,
   handleUpdateNotifications,
   handleUpdateTheme,
@@ -493,22 +535,96 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
                         <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide ml-1">Profielfoto URL</label>
-                        <a 
-                          href="https://www.image2url.com/" 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="text-[10px] text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-1 ml-1 sm:ml-0"
-                        >
-                          <Link className="w-3 h-3" /> Foto uploaden (image2url.com)
-                        </a>
+                        <div className="flex flex-wrap items-center gap-1.5 ml-1 sm:ml-0 text-[10px]">
+                          <span className="text-app-muted font-bold uppercase tracking-wider flex items-center gap-1">
+                            <Link className="w-2.5 h-2.5" /> Of via:
+                          </span>
+                          <a 
+                            href="https://www.image2url.com/" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30 animate-pulse"
+                          >
+                            image2url.com
+                          </a>
+                          <a 
+                            href="https://www.imageurlgenerator.com/jpg-to-url" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                          >
+                            JPG
+                          </a>
+                          <a 
+                            href="https://www.imageurlgenerator.com/png-to-url" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                          >
+                            PNG
+                          </a>
+                          <a 
+                            href="https://www.imageurlgenerator.com/jpeg-to-url" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                          >
+                            JPEG
+                          </a>
+                          <a 
+                            href="https://www.imageurlgenerator.com/gif-to-url" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                          >
+                            GIF
+                          </a>
+                        </div>
                       </div>
-                      <input 
-                        type="text"
-                        value={photoURLInput}
-                        onChange={(e) => setPhotoURLInput(e.target.value)}
-                        placeholder="https://example.com/photo.jpg"
-                        className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink"
-                      />
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="relative flex-1">
+                          <input 
+                            type="text"
+                            value={photoURLInput}
+                            onChange={(e) => setPhotoURLInput(e.target.value)}
+                            placeholder="https://example.com/photo.jpg of geüploade foto..."
+                            className="w-full pl-4 pr-10 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink"
+                          />
+                          {photoURLInput && (
+                            <button
+                              type="button"
+                              onClick={() => setPhotoURLInput('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                        <label className="flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl cursor-pointer transition-all shadow-md text-xs sm:text-sm shrink-0 select-none">
+                          <Upload className="w-4 h-4" />
+                          <span>Direct Bestand Uploaden</span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              toast.promise(
+                                compressImage(file, 250, 250, 0.75).then((dataUrl) => {
+                                  setPhotoURLInput(dataUrl);
+                                  return "Profielfoto succesvol geladen!";
+                                }),
+                                {
+                                  loading: "Profielfoto verwerken & optimaliseren...",
+                                  success: (msg) => msg,
+                                  error: "Kon foto niet verwerken."
+                                }
+                              );
+                            }}
+                          />
+                        </label>
+                      </div>
                     </div>
                     <button 
                       onClick={handleResetToGoogle}
@@ -550,6 +666,138 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     placeholder="Vertel iets over jezelf..."
                     className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink min-h-[120px] resize-none"
                   />
+                </div>
+
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
+                    <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide ml-1">Profiel Banner URL</label>
+                    <div className="flex flex-wrap items-center gap-1.5 ml-1 sm:ml-0 text-[10px]">
+                      <span className="text-app-muted font-bold uppercase tracking-wider flex items-center gap-1">
+                        <Link className="w-2.5 h-2.5" /> Of via:
+                      </span>
+                      <a 
+                        href="https://www.image2url.com/" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30 animate-pulse"
+                      >
+                        image2url.com
+                      </a>
+                      <a 
+                        href="https://www.imageurlgenerator.com/jpg-to-url" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                      >
+                        JPG
+                      </a>
+                      <a 
+                        href="https://www.imageurlgenerator.com/png-to-url" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                      >
+                        PNG
+                      </a>
+                      <a 
+                        href="https://www.imageurlgenerator.com/jpeg-to-url" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                      >
+                        JPEG
+                      </a>
+                      <a 
+                        href="https://www.imageurlgenerator.com/gif-to-url" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                      >
+                        GIF
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                    <div className="relative flex-1">
+                      <input 
+                        type="text"
+                        value={bannerURLInput}
+                        onChange={(e) => setBannerURLInput(e.target.value)}
+                        placeholder="https://example.com/banner.jpg of geüploade banner..."
+                        className="w-full pl-4 pr-10 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink"
+                      />
+                      {bannerURLInput && (
+                        <button
+                          type="button"
+                          onClick={() => setBannerURLInput('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-red-500 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <label className="flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl cursor-pointer transition-all shadow-md text-xs sm:text-sm shrink-0 select-none">
+                      <Upload className="w-4 h-4" />
+                      <span>Direct Bestand Uploaden</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          toast.promise(
+                            compressImage(file, 800, 320, 0.70).then((dataUrl) => {
+                              setBannerURLInput(dataUrl);
+                              return "Profielbanner succesvol geladen!";
+                            }),
+                            {
+                              loading: "Profielbanner verwerken & optimaliseren...",
+                              success: (msg) => msg,
+                              error: "Kon banner niet verwerken."
+                            }
+                          );
+                        }}
+                      />
+                    </label>
+                  </div>
+                  
+                  {/* Banner Preview */}
+                  <div className="border border-app-border rounded-2xl overflow-hidden bg-app-bg p-2 space-y-2">
+                    <span className="block text-[9px] font-bold text-app-muted uppercase tracking-wider px-1">Voorvertoning van je banner</span>
+                    <div className="relative h-24 rounded-xl overflow-hidden bg-app-ink flex items-end">
+                      {bannerURLInput ? (
+                        <img 
+                          src={bannerURLInput} 
+                          alt="Banner Voorvertoning" 
+                          className="absolute inset-0 w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="absolute inset-0 bg-gradient-to-br from-app-ink to-[#004276] opacity-90" />
+                      )}
+                      
+                      {/* Avatar preview overlap */}
+                      <div className="relative ml-4 -mb-3 z-10 p-1 bg-app-card rounded-[1.2rem] shadow-md">
+                        <div className="w-12 h-12 rounded-[1rem] bg-app-accent flex items-center justify-center overflow-hidden">
+                          {(photoURLInput || profile?.photo_url || user.photoURL) ? (
+                            <img 
+                              src={photoURLInput || profile?.photo_url || user.photoURL || ''} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          ) : (
+                            <UserIcon className="w-6 h-6 text-app-muted" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="h-4" />
+                  </div>
                 </div>
 
                 <div className="pt-6 border-t border-app-border flex justify-end">
@@ -718,30 +966,95 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </h4>
                   
                   <div className="bg-app-accent/30 p-6 rounded-2xl border border-app-border space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <input 
-                        type="text"
-                        value={newSoundName}
-                        onChange={(e) => setNewSoundName(e.target.value)}
-                        placeholder="Naam geluid"
-                        className="px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink transition-all"
-                      />
-                      <div className="flex gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fadeIn">
+                      <div>
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-1.5 ml-1">Naam geluid</label>
                         <input 
                           type="text"
-                          value={newSoundUrl}
-                          onChange={(e) => setNewSoundUrl(e.target.value)}
-                          placeholder="Directe URL (mp3/wav)"
-                          className="flex-1 px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink transition-all"
+                          value={newSoundName}
+                          onChange={(e) => setNewSoundName(e.target.value)}
+                          placeholder="Bijv. Mijn Favoriete Chime"
+                          className="w-full px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink transition-all text-app-ink font-bold"
                         />
-                        <button 
-                          onClick={() => playSound(newSoundUrl, true)}
-                          disabled={!newSoundUrl.startsWith('http')}
-                          className="p-3 bg-app-ink text-app-bg rounded-xl hover:opacity-90 disabled:opacity-30 transition-all"
-                          title="Test URL"
-                        >
-                          <Play className="w-4 h-4" />
-                        </button>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-1.5 ml-1">Geluidsbestand URL / Upload</label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <div className="flex-1 flex gap-2">
+                            <div className="relative flex-1">
+                              <input 
+                                type="text"
+                                value={newSoundUrl}
+                                onChange={(e) => setNewSoundUrl(e.target.value)}
+                                placeholder="Directe URL of geüpload geluid..."
+                                className="w-full pl-4 pr-10 py-3 bg-app-card border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink transition-all text-app-ink"
+                              />
+                              {newSoundUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setNewSoundUrl('')}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-red-500 transition-colors"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (newSoundUrl) {
+                                  playSound(newSoundUrl, true);
+                                } else {
+                                  toast.error("Geen geluidsbron ingevoerd.");
+                                }
+                              }}
+                              disabled={!newSoundUrl}
+                              className="p-3 bg-app-ink text-app-bg rounded-xl hover:opacity-90 disabled:opacity-30 transition-all shadow-sm"
+                              title="Test geluid"
+                            >
+                              <Play className="w-4 h-4" />
+                            </button>
+                          </div>
+                          
+                          <label className="flex items-center justify-center gap-1.5 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl cursor-pointer transition-all shadow-md text-xs sm:text-sm shrink-0 select-none">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Kies Bestand</span>
+                            <input 
+                              type="file" 
+                              accept="audio/*" 
+                              className="hidden" 
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                if (file.size > 2.5 * 1024 * 1024) {
+                                  toast.error("Geluidsbestand is te groot (maximaal 2.5MB).");
+                                  return;
+                                }
+                                
+                                const reader = new FileReader();
+                                toast.promise(
+                                  new Promise<string>((resolve, reject) => {
+                                    reader.readAsDataURL(file);
+                                    reader.onload = () => resolve(reader.result as string);
+                                    reader.onerror = (err) => reject(err);
+                                  }).then((dataUrl) => {
+                                    setNewSoundUrl(dataUrl);
+                                    if (!newSoundName) {
+                                      const cleanName = file.name.replace(/\.[^/.]+$/, "");
+                                      setNewSoundName(cleanName);
+                                    }
+                                    return "Geluidsbestand succesvol geladen!";
+                                  }),
+                                  {
+                                    loading: "Audiobestand inladen...",
+                                    success: (msg) => msg,
+                                    error: "Geluidsbestand kon niet worden geladen."
+                                  }
+                                );
+                              }}
+                            />
+                          </label>
+                        </div>
                       </div>
                     </div>
                     <button 
