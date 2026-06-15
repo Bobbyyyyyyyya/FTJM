@@ -15,7 +15,7 @@ interface MessagesViewProps {
   messages: DirectMessage[];
   messageInput: string;
   setMessageInput: (input: string) => void;
-  handleSendMessage: (e: React.FormEvent) => void;
+  handleSendMessage: (e?: React.FormEvent, customContent?: string) => void;
   handleTyping: (e: React.ChangeEvent<HTMLInputElement>, channel: string) => void;
   handleEmojiButtonClick: (e: React.MouseEvent, type: 'message') => void;
   handleImageUrl: () => void;
@@ -151,13 +151,9 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
     if (selectedFile) {
       const finalInput = messageInput.trim() ? `${messageInput.trim()} ${selectedFile}` : selectedFile;
-      setMessageInput(finalInput);
-      
-      setTimeout(() => {
-        handleSendMessage(e);
-        setSelectedFile(null);
-        setSelectedFileType(null);
-      }, 50);
+      handleSendMessage(e, finalInput);
+      setSelectedFile(null);
+      setSelectedFileType(null);
     } else {
       handleSendMessage(e);
     }

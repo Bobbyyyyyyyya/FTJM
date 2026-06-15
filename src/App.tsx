@@ -3686,10 +3686,11 @@ export default function App() {
 
   const MAX_CONTENT_LENGTH = 2000;
 
-  const handleCreatePost = async (e: React.FormEvent) => {
+  const handleCreatePost = async (e: React.FormEvent, customContent?: string) => {
     e.preventDefault();
-    console.log('handleCreatePost triggered', { user: !!user, postInput: !!postInput.trim(), isWhitelisted });
-    if (!user || !postInput.trim() || isWhitelisted !== true) {
+    const rawContent = (customContent !== undefined ? customContent : postInput).trim();
+    console.log('handleCreatePost triggered', { user: !!user, hasContent: !!rawContent, isWhitelisted });
+    if (!user || !rawContent || isWhitelisted !== true) {
       if (isWhitelisted === null) {
         toast.error('Wacht even, we controleren je toegang...');
       } else if (isWhitelisted === false) {
@@ -3701,7 +3702,7 @@ export default function App() {
     if (!checkRateLimit()) return;
     
     isPostingRef.current = true;
-    const content = postInput.trim();
+    const content = rawContent;
     
     const hasUpload = content.includes('data:image/') || content.includes('data:audio/');
     const maxAllowed = hasUpload ? 512000 : MAX_CONTENT_LENGTH;
@@ -4754,11 +4755,12 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent, customContent?: string) => {
     if (e) e.preventDefault();
-    if (!user || !messageInput.trim() || !activeConversation || isWhitelisted !== true) return;
+    const rawText = (customContent !== undefined ? customContent : messageInput).trim();
+    if (!user || !rawText || !activeConversation || isWhitelisted !== true) return;
     
-    const text = messageInput.trim();
+    const text = rawText;
     const hasUpload = text.includes('data:image/') || text.includes('data:audio/');
     const maxAllowed = hasUpload ? 512000 : MAX_CONTENT_LENGTH;
     if (text.length > maxAllowed) {

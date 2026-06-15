@@ -10,7 +10,7 @@ interface ChatViewProps {
   isAdmin: boolean;
   postInput: string;
   setPostInput?: (input: string) => void;
-  handleCreatePost: (e: React.FormEvent) => void;
+  handleCreatePost: (e: React.FormEvent, customContent?: string) => void;
   handleTyping: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, channel: string) => void;
   cooldownRemaining: number;
   sending: boolean;
@@ -142,15 +142,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
       return;
     }
 
-    if (selectedFile && setPostInput) {
+    if (selectedFile) {
       const finalInput = postInput.trim() ? `${postInput.trim()} ${selectedFile}` : selectedFile;
-      setPostInput(finalInput);
-      
-      setTimeout(() => {
-        handleCreatePost(e);
-        setSelectedFile(null);
-        setSelectedFileType(null);
-      }, 50);
+      handleCreatePost(e, finalInput);
+      setSelectedFile(null);
+      setSelectedFileType(null);
     } else {
       handleCreatePost(e);
     }
