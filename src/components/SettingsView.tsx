@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import { rateLimiter } from '../utils/rateLimiter';
 import { secureLocalStorage } from '../utils/encryption';
@@ -9,7 +9,7 @@ import { UserProfile, CustomTheme, NotificationSettings, User } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS } from '../constants';
 import { formatDate, convertEmoticons, maskEmail } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
-import { SecurityCheckView } from './SecurityCheckView';
+import { supabase } from '../utils/supabase';
 
 interface SettingsViewProps {
   user: User;
@@ -463,6 +463,124 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [adminUserSearch, setAdminUserSearch] = React.useState('');
   const [adminWhitelistSearch, setAdminWhitelistSearch] = React.useState('');
 
+  const [passkeys, setPasskeys] = React.useState<any[]>(() => {
+    try {
+      const raw = localStorage.getItem('ftjm_device_passkeys');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [passwordConfirm, setPasswordConfirm] = React.useState('');
+  const [showPasswordPrompt, setShowPasswordPrompt] = React.useState(false);
+  const [registeringPasskey, setRegisteringPasskey] = React.useState(false);
+
+  const handleAddPasskey = async () => {
+    if (!passwordConfirm.trim()) {
+      toast.error("Voer je wachtwoord in ter verduidelijking.");
+      return;
+    }
+
+    setRegisteringPasskey(true);
+    try {
+      // 1. Double check password using Supabase silent login
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: user.email!,
+        password: passwordConfirm,
+      });
+
+      if (error) {
+        toast.error("Wachtwoord verificatie mislukt: " + (error.message || "Onjuist wachtwoord"));
+        setRegisteringPasskey(false);
+        return;
+      }
+
+      // 2. Browser WebAuthn registration
+      if (!window.PublicKeyCredential) {
+        throw new Error("WebAuthn wordt niet ondersteund in deze browser.");
+      }
+
+      const rpId = window.location.hostname;
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const userIdBytes = crypto.getRandomValues(new Uint8Array(16));
+
+      const creationOptions: CredentialCreationOptions = {
+        publicKey: {
+          challenge: challenge,
+          rp: {
+            name: "FTJM Enterprise",
+            id: rpId === "localhost" || rpId.includes("127.0.0.1") ? undefined : rpId,
+          },
+          user: {
+            id: userIdBytes,
+            name: user.email!,
+            displayName: profile?.display_name || user.email!,
+          },
+          pubKeyCredParams: [
+            { alg: -7, type: "public-key" }, // ES256
+            { alg: -257, type: "public-key" } // RS256
+          ],
+          timeout: 60000,
+          attestation: "none",
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+            residentKey: "required",
+            requireResidentKey: true
+          }
+        }
+      };
+
+      const credential = await navigator.credentials.create(creationOptions) as any;
+      if (!credential) {
+        throw new Error("WebAuthn registratie is geannuleerd.");
+      }
+
+      // 3. Encrypt password and store
+      const credentialId = credential.id;
+      const secretKey = credentialId + "_secure_passkey";
+      const encryptedPayload = CryptoJS.AES.encrypt(
+        JSON.stringify({ email: user.email, password: passwordConfirm }),
+        secretKey
+      ).toString();
+
+      const newPasskey = {
+        credentialId: credentialId,
+        email: user.email!,
+        userName: profile?.display_name || user.email!,
+        payload: encryptedPayload,
+        createdAt: new Date().toISOString()
+      };
+
+      // Get current lists, find and filter out any existing passkey for this email, and append the new one
+      const rawKeys = localStorage.getItem('ftjm_device_passkeys');
+      const existingList = rawKeys ? JSON.parse(rawKeys) : [];
+      const filteredList = existingList.filter((pk: any) => pk.email.toLowerCase() !== user.email!.toLowerCase());
+      const updatedList = [...filteredList, newPasskey];
+
+      localStorage.setItem('ftjm_device_passkeys', JSON.stringify(updatedList));
+      setPasskeys(updatedList);
+      
+      toast.success("Passkey succesvol geregistreerd op dit apparaat!");
+      setPasswordConfirm('');
+      setShowPasswordPrompt(false);
+    } catch (err: any) {
+      console.error("Passkey error:", err);
+      toast.error(err.message || "Er is een fout opgetreden bij het registreren van de passkey.");
+    } finally {
+      setRegisteringPasskey(false);
+    }
+  };
+
+  const handleRemovePasskeyForEmail = (emailToRemove: string) => {
+    const rawKeys = localStorage.getItem('ftjm_device_passkeys');
+    const existingList = rawKeys ? JSON.parse(rawKeys) : [];
+    const updatedList = existingList.filter((pk: any) => pk.email.toLowerCase() !== emailToRemove.toLowerCase());
+    localStorage.setItem('ftjm_device_passkeys', JSON.stringify(updatedList));
+    setPasskeys(updatedList);
+    toast.success("Passkey is verwijderd van dit apparaat.");
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
       {/* Settings Sidebar */}
@@ -473,7 +591,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           { id: 'theme', icon: Palette, label: 'Thema' },
           { id: 'app', icon: Layout, label: 'App' },
           { id: 'audiologs', icon: Activity, label: 'Audio Logs' },
-          { id: 'security', icon: ShieldCheck, label: 'Veiligheid Check' },
+          { id: 'security', icon: Fingerprint, label: 'Beveiliging' },
           ...(isAdmin ? [{ id: 'admin', icon: Shield, label: 'Beheer' }] : [])
         ].map(tab => (
           <button
@@ -1570,7 +1688,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           {settingsTab === 'security' && (
             <motion.div
-              key="security-settings"
+              key="passkey-settings"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -1578,15 +1696,136 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             >
               <div className="flex items-center gap-4 border-b border-app-border pb-6">
                 <div className="w-16 h-16 bg-app-accent rounded-2xl flex items-center justify-center">
-                  <ShieldCheck className="w-8 h-8 text-app-ink" />
+                  <Fingerprint className="w-8 h-8 text-cyan-500" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Veiligheidscontrole</h3>
-                  <p className="text-app-muted text-sm font-medium">Controleer encryptie-latencies en beveiligingsstatus.</p>
+                  <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Beveiliging</h3>
+                  <p className="text-app-muted text-sm font-medium">Beheer biometrisch inloggen met TouchID, FaceID of Windows Hello via Passkeys.</p>
                 </div>
               </div>
-              <div>
-                <SecurityCheckView />
+
+              <div className="space-y-6">
+                {!window.PublicKeyCredential ? (
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-2xl text-xs flex items-center gap-3">
+                    <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
+                    <div>
+                      <p className="font-bold">Passkeys worden niet ondersteund</p>
+                      <p className="text-[11px] text-amber-300/80 mt-0.5">Je huidige browser of netwerkomgeving (zoals een cross-origin iframe) ondersteunt de WebAuthn API niet. Open de applicatie in een nieuw fysiek tabblad via HTTPS om passkeys te registreren.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {passkeys.some(p => p.email.toLowerCase() === user.email?.toLowerCase()) ? (
+                      (() => {
+                        const userPasskey = passkeys.find(p => p.email.toLowerCase() === user.email?.toLowerCase());
+                        return (
+                          <div className="border border-emerald-500/20 bg-emerald-500/5 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-start gap-4">
+                              <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center shrink-0">
+                                <ShieldCheck className="w-6 h-6 text-emerald-400" />
+                              </div>
+                              <div className="space-y-1">
+                                <h4 className="font-bold text-app-ink text-sm flex items-center gap-1.5">
+                                  Passkey is Actief
+                                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Dit apparaat</span>
+                                </h4>
+                                <p className="text-xs text-app-muted">Gekoppeld aan e-mailadres: <span className="font-mono text-app-ink font-semibold">{user.email}</span></p>
+                                <p className="text-[11px] text-app-muted">Geregistreerd op: {userPasskey?.createdAt ? new Date(userPasskey.createdAt).toLocaleString('nl-NL') : 'Onbekende datum'}</p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleRemovePasskeyForEmail(user.email!)}
+                              className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 text-rose-300 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Passkey Verwijderen
+                            </button>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="border border-app-border bg-app-accent/20 rounded-2xl p-6 space-y-4">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 bg-app-accent rounded-xl flex items-center justify-center shrink-0">
+                            <Fingerprint className="w-6 h-6 text-app-ink" />
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="font-bold text-app-ink text-sm">Geen passkey geactiveerd</h4>
+                            <p className="text-xs text-app-muted leading-relaxed">
+                              Je hebt momenteel geen passkey geconfigureerd op dit apparaat. Door een passkey te koppelen kun je de volgende keer direct en veilig inloggen met je biometrische gegevens (vingerafdruk of gezichtsscan) zonder handmatig je wachtwoord in te voeren.
+                            </p>
+                          </div>
+                        </div>
+
+                        {!showPasswordPrompt ? (
+                          <button
+                            onClick={() => {
+                              setShowPasswordPrompt(true);
+                              setPasswordConfirm('');
+                            }}
+                            className="px-5 py-3 bg-app-ink text-app-bg hover:bg-app-ink/90 font-bold rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Passkey registreren op dit apparaat
+                          </button>
+                        ) : (
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="border-t border-app-border pt-4 mt-2 space-y-4"
+                          >
+                            <div className="bg-app-accent/40 rounded-xl p-4 text-xs text-app-muted leading-relaxed space-y-1.5 border border-app-border">
+                              <p className="font-bold text-app-ink flex items-center gap-2">
+                                <Key className="w-4 h-4 text-cyan-500" /> Wachtwoord-verificatie vereist
+                              </p>
+                              <p>Om je accountgegevens veilig en versleuteld lokaal op te slaan, voer je ter controle je huidige account-wachtwoord in.</p>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-3 items-end">
+                              <div className="flex-1 w-full space-y-1.5">
+                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-wider">
+                                  Voer je huidige wachtwoord in
+                                </label>
+                                <input
+                                  type="password"
+                                  placeholder="••••••••••••"
+                                  value={passwordConfirm}
+                                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                                  className="w-full px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm text-app-ink focus:outline-none focus:border-cyan-400 transition-all font-mono"
+                                />
+                              </div>
+                              <div className="flex gap-2 shrink-0 w-full sm:w-auto">
+                                <button
+                                  onClick={() => setShowPasswordPrompt(false)}
+                                  className="flex-1 sm:flex-none px-4 py-3 bg-app-accent hover:bg-app-border text-app-ink font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                                >
+                                  Annuleren
+                                </button>
+                                <button
+                                  disabled={registeringPasskey}
+                                  onClick={handleAddPasskey}
+                                  className="flex-1 sm:flex-none px-5 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                                >
+                                  {registeringPasskey ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 animate-spin animate-infinite" />
+                                      Registreren...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Fingerprint className="w-4 h-4" />
+                                      Scan biometrie & activeer
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </motion.div>
           )}

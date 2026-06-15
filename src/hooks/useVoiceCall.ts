@@ -332,7 +332,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     channel.subscribe((status: string, err?: any) => {
       console.log(`[Realtime] Inbound channel status: ${status}`, err ? err : '');
       if (status === 'CHANNEL_ERROR') {
-        console.error('[Realtime] WebSocket connection failed. Signaling will fallback to REST (slower).');
+        console.info('[Realtime] WebSocket connection failed. Signaling will fallback to REST (slower).');
       }
     });
 

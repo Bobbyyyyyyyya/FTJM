@@ -87,6 +87,7 @@ import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, log
 
 import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
 import { rateLimiter } from './utils/rateLimiter';
+import CryptoJS from 'crypto-js';
 
 // Human Verification Challenge for Anti-DDoS bypass
 function HumanVerificationChallenge() {
@@ -742,6 +743,94 @@ export default function App() {
   const [authAgreeTerms, setAuthAgreeTerms] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [devicePasskeys, setDevicePasskeys] = useState<any[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ftjm_device_passkeys');
+      if (raw) {
+        setDevicePasskeys(JSON.parse(raw));
+      } else {
+        setDevicePasskeys([]);
+      }
+    } catch (e) {
+      console.error('Error loading dev passkeys:', e);
+    }
+  }, [isAuthModalOpen]);
+
+  const handlePasskeyLogin = async () => {
+    setAuthError(null);
+    
+    // Check if browser supports WebAuthn
+    if (!window.PublicKeyCredential) {
+      setAuthError("Passkeys (WebAuthn) worden niet ondersteund in deze browser of context.");
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem('ftjm_device_passkeys');
+      const passkeysList = raw ? JSON.parse(raw) : [];
+      
+      if (passkeysList.length === 0) {
+        toast.error("Er is nog geen passkey geregistreerd op dit apparaat. Log eerst normaal in en registreer een passkey via je instellingen!");
+        return;
+      }
+
+      setAuthLoading(true);
+      
+      // Request WebAuthn credential assertion
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: challenge,
+          timeout: 60000,
+          userVerification: "required"
+        }
+      }) as PublicKeyCredential | null;
+
+      if (!assertion) {
+        throw new Error("Authenticatie geannuleerd.");
+      }
+
+      // Find passkey record with this credential ID
+      const matchingRecord = passkeysList.find((pk: any) => pk.credentialId === assertion.id);
+      
+      if (!matchingRecord) {
+        throw new Error("Deze passkey is niet herkend op dit apparaat.");
+      }
+
+      // Decrypt credentials
+      const secretKey = assertion.id + "_secure_passkey";
+      const decryptedBytes = CryptoJS.AES.decrypt(matchingRecord.payload, secretKey);
+      const decryptedText = decryptedBytes.toString(CryptoJS.enc.Utf8);
+      
+      if (!decryptedText) {
+        throw new Error("Kan de opgeslagen accountgegevens niet ontsleutelen met de passkey.");
+      }
+
+      const { email, password } = JSON.parse(decryptedText);
+
+      // Log in with Supabase
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success(`Succesvol ingelogd als ${matchingRecord.userName || email}!`);
+      setIsAuthModalOpen(false);
+      setAuthEmail('');
+      setAuthPassword('');
+    } catch (err: any) {
+      console.error("Passkey login error:", err);
+      setAuthError(err.message || "Passkey authenticatie mislukt.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
   const voiceCall = useVoiceCall(user, profile, supabaseClient);
   const [groupVoiceCallActiveRooms, setGroupVoiceCallActiveRooms] = useState<Set<string>>(new Set());
 
@@ -6630,13 +6719,56 @@ export default function App() {
                         setAuthDisplayName('');
                       }
                     } else {
+                      // Check if a passkey is active for this email on this device
+                      const rawKeys = localStorage.getItem('ftjm_device_passkeys');
+                      const passkeyList = rawKeys ? JSON.parse(rawKeys) : [];
+                      const hasDevicePasskey = passkeyList.some((pk: any) => pk.email.toLowerCase() === email.toLowerCase());
+
                       const { data, error } = await supabaseClient.auth.signInWithPassword({
                         email,
                         password
                       });
 
                       if (error) throw error;
-                      toast.success('Succesvol ingelogd!');
+
+                      if (hasDevicePasskey) {
+                        toast.info("Wachtwoord geverifieerd. Scan en verifieer nu je passkey...");
+                        try {
+                          if (!window.PublicKeyCredential) {
+                            throw new Error("WebAuthn (Passkeys) wordt niet ondersteund in deze browser of context.");
+                          }
+
+                          const challenge = crypto.getRandomValues(new Uint8Array(32));
+                          const assertion = await navigator.credentials.get({
+                            publicKey: {
+                              challenge: challenge,
+                              timeout: 60000,
+                              userVerification: "required"
+                            }
+                          }) as PublicKeyCredential | null;
+
+                          if (!assertion) {
+                            throw new Error("Passkey verificatie geannuleerd.");
+                          }
+
+                          const matchingRecord = passkeyList.find(
+                            (pk: any) => pk.credentialId === assertion.id && pk.email.toLowerCase() === email.toLowerCase()
+                          );
+
+                          if (!matchingRecord) {
+                            throw new Error("Deze passkey hoort niet bij dit account.");
+                          }
+
+                          toast.success('Succesvol ingelogd met wachtwoord en passkey!');
+                        } catch (passkeyErr: any) {
+                          // Sign out immediately to preserve security
+                          await supabaseClient.auth.signOut();
+                          throw new Error(passkeyErr.message || "Passkey beveiligingscontrole mislukt. Toegang geweigerd.");
+                        }
+                      } else {
+                        toast.success('Succesvol ingelogd!');
+                      }
+
                       setIsAuthModalOpen(false);
                       // Reset form fields
                       setAuthEmail('');
@@ -6733,6 +6865,18 @@ export default function App() {
                       'Inloggen'
                     )}
                   </button>
+
+                  {!isRegisterMode && (
+                    <button
+                      type="button"
+                      onClick={handlePasskeyLogin}
+                      disabled={authLoading}
+                      className="w-full py-4 bg-[#0a385c] hover:bg-cyan-950 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-300 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
+                    >
+                      <Fingerprint className="w-5 h-5 text-cyan-400 animate-pulse" />
+                      Inloggen met Passkey
+                    </button>
+                  )}
                 </form>
 
                 <div className="mt-6 text-center">
