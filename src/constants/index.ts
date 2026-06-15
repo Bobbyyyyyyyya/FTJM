@@ -1,5 +1,12 @@
 export const NEWS_ITEMS = [
   {
+    id: 10,
+    title: "FTJM Extreem-Beveiligde Core Update v2.3.0 🧬",
+    content: "Biometrische Veiligheid & Privacy! We introduceren de v2.3.0 update. In deze versie lanceren we hardware-beveiligde Passkeys (WebAuthn). Hiermee kun je vliegensvlug inloggen met je vingerafdruk, FaceID of Windows Hello op je eigen apparaat. Ter extra bescherming verplichten we de passkey-scan direct na het handmatig invoeren van je wachtwoord zodra er een sleutel is gekoppeld aan je account op dit apparaat. Daarnaast hebben we de ouderwetse Veiligheidscontrole verwijderd en de Passkeys verhuist naar de nieuwe tab Beveiliging!",
+    date: "2026-06-15",
+    category: "Beveiliging"
+  },
+  {
     id: 9,
     title: "FTJM Militair-Beveiligde Core Update v2.2.0 ⚡",
     content: "Absolute Hack-Bestendigheid! Met trots presenteren we v2.2.0. We hebben ons complete netwerk voorzien van hardware MAC-verificatie fingerprinting, gelaagde Anti-DDoS-shields met geavanceerde rate limiters op database transacties, brute-force inbraakdetectie met IP/account lockouts, en militair-grade AES-256 / HMAC-SHA256 opslagsignering. Onnodige introducties zijn volledig weggesneden om de site direct en flitsend te laden. Jouw data is onkraakbaar en optimaal afgeschermd tegen scrapers en bots!",

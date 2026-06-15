@@ -330,14 +330,14 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v2.2') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.3') !== 'true';
   });
   const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v2.2') === 'true';
+    return localStorage.getItem('has_seen_news_v2.3') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v2.2') === 'true';
+    return localStorage.getItem('has_seen_menu_v2.3') === 'true';
   });
   const cleanNotificationSettings = (settings: any): NotificationSettings => {
     const defaultSettings = {
@@ -5371,7 +5371,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v2.2', 'true');
+                      localStorage.setItem('has_seen_menu_v2.3', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -5422,7 +5422,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v2.2', 'true');
+                              localStorage.setItem('has_seen_news_v2.3', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -6491,10 +6491,10 @@ export default function App() {
                       </div>
                       <div>
                         <h2 className="text-2xl font-black text-white tracking-tighter uppercase leading-none">
-                          V2.2 Update
+                          V2.3 Update
                         </h2>
                         <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1">
-                          MILITAIR GRADE BEVEILIGING & SNELHEID
+                          BIOMETRISCHE PASSKEYS & MILITAIR GRADE BEVEILIGING
                         </p>
                       </div>
                     </div>
@@ -6504,21 +6504,21 @@ export default function App() {
                   <div className="space-y-3 py-1">
                     <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <LockIcon className="w-5 h-5 text-cyan-400 shrink-0" />
+                        <Fingerprint className="w-5 h-5 text-cyan-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Geavanceerd Anti-DDoS-scherm</h4>
+                          <h4 className="font-extrabold text-sm text-white">Biometrische Passkeys (WebAuthn)</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Geïntegreerde slimme database en endpoint rate-limiters schermen ons netwerk af tegen bot-aanvallen en kwaadwillige scraping.
+                            Beheer biometrisch inloggen met TouchID, FaceID of Windows Hello. Veilig en flitsend inloggen op ondersteunde hardware.
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Fingerprint className="w-5 h-5 text-amber-400 shrink-0" />
+                        <LockIcon className="w-5 h-5 text-amber-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Hardware MAC Fingerprinting</h4>
+                          <h4 className="font-extrabold text-sm text-white">Wachtwoord + Passkey Verplichting</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Unieke persistent hardwarevingerafdrukken registreren elk apparaat, wat brute-force inbraken en multi-account spamming onmogelijk maakt.
+                            Zodra je een passkey registreert, wordt deze extra beveiligingsstap direct geactiveerd bij handmatige wachtwoordinlog op dat apparaat.
                           </p>
                         </div>
                       </div>
@@ -6528,7 +6528,7 @@ export default function App() {
                         <div>
                           <h4 className="font-extrabold text-sm text-white">Directe Extreme Snelheid</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Alle trage introductievideo's en laadlussen zijn definitief verwijderd. Schermen en media openen nu direct en flitsend snel.
+                            Nutteloze introductievideo's en laadlussen zijn overal definitief verwijderd. Schermen, tools en media laden direct en flitsend snel.
                           </p>
                         </div>
                       </div>
@@ -6551,7 +6551,7 @@ export default function App() {
                     <button
                       onClick={() => {
                         setShowWhatsNew(false);
-                        localStorage.setItem('has_seen_whats_new_v2.2', 'true');
+                        localStorage.setItem('has_seen_whats_new_v2.3', 'true');
                       }}
                       className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
                     >
@@ -6924,7 +6924,7 @@ export default function App() {
                     Voorwaarden & Privacy Update
                   </h2>
                   <p className="text-xs text-zinc-400 uppercase tracking-widest font-mono">
-                    FTJM Enterprise Platform v2.5
+                    FTJM Enterprise Platform v2.3
                   </p>
                 </div>
 
