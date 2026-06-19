@@ -65,26 +65,26 @@ export const NEWS_ITEMS = [
 ];
 
 export const SOUND_OPTIONS = [
-  { name: 'Ping (Default)', url: 'https://image2url.com/r2/default/audio/1775756671546-6f36bf87-4347-477b-a2da-1af03009fdcf.mp3' },
-  { name: 'Notification', url: 'https://image2url.com/r2/default/audio/1775755636867-f3aa78d1-03e7-48c2-b75a-a5f990f517e9.mp3' },
-  { name: 'Chime', url: 'https://image2url.com/r2/default/audio/1775756302748-a840da24-e9d3-47a0-9e14-2a582fc0e093.mp3' },
-  { name: 'Alert', url: 'https://image2url.com/r2/default/audio/1775754319337-0525bbd3-8adb-4c26-ae70-842ba5769e7f.wav' },
-  { name: 'Pop', url: 'https://image2url.com/r2/default/audio/1775755973661-157bd979-8f6e-4d86-9e32-74761db166d9.mp3' },
-  { name: 'Success', url: 'https://assets.mixkit.co/active_storage/sfx/2366/2366-preview.mp3' },
-  { name: 'Bling', url: 'https://assets.mixkit.co/active_storage/sfx/2372/2372-preview.mp3' },
-  { name: 'Standaard (Old)', url: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3' },
-  { name: 'Melding (Old)', url: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3' },
+  { name: 'Ping (Default)', url: '/audio/sounds/ping.mp3' },
+  { name: 'Notification', url: '/audio/sounds/notification.mp3' },
+  { name: 'Chime', url: '/audio/sounds/chime.mp3' },
+  { name: 'Alert', url: '/audio/sounds/alert.wav' },
+  { name: 'Pop', url: '/audio/sounds/pop.mp3' },
+  { name: 'Success', url: '/audio/sounds/success.mp3' },
+  { name: 'Bling', url: '/audio/sounds/bling.mp3' },
+  { name: 'Standaard (Old)', url: '/audio/sounds/default_old.mp3' },
+  { name: 'Melding (Old)', url: '/audio/sounds/notification_old.mp3' },
 ];
 
 export const RINGTONE_OPTIONS = [
-  { name: 'Standaard Ringtone (Classic)', url: 'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3' },
-  { name: 'Nieuwe Ringtone 1', url: 'https://www.image2url.com/r2/default/audio/1779892149416-1b7cd84d-217e-48d2-8263-4867b8800b27.mp3' },
-  { name: 'Nieuwe Ringtone 2', url: 'https://www.image2url.com/r2/default/audio/1779892243173-6df7f26d-7f4e-4060-ba80-c0ed72a81f99.mp3' },
-  { name: 'Retro Nokiatune', url: 'https://assets.mixkit.co/active_storage/sfx/1353/1353-preview.mp3' },
-  { name: 'Digitale Telefoon Ring', url: 'https://assets.mixkit.co/active_storage/sfx/1230/1230-preview.mp3' },
-  { name: 'Synthesizer Groove', url: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3' },
-  { name: 'Zen Chime Loop', url: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3' },
-  { name: 'Futuristische Sirene', url: 'https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3' },
+  { name: 'Standaard Ringtone (Classic)', url: '/audio/ringtones/classic.mp3' },
+  { name: 'Nieuwe Ringtone 1', url: '/audio/ringtones/ringtone1.mp3' },
+  { name: 'Nieuwe Ringtone 2', url: '/audio/ringtones/ringtone2.mp3' },
+  { name: 'Retro Nokiatune', url: '/audio/ringtones/nokia.mp3' },
+  { name: 'Digitale Telefoon Ring', url: '/audio/ringtones/digital.mp3' },
+  { name: 'Synthesizer Groove', url: '/audio/ringtones/synthesizer.mp3' },
+  { name: 'Zen Chime Loop', url: '/audio/ringtones/zen.mp3' },
+  { name: 'Futuristische Sirene', url: '/audio/ringtones/siren.mp3' },
 ];
 
 export const PATTERNS = [

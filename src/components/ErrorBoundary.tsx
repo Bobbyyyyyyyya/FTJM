@@ -57,7 +57,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             <div className="flex items-center justify-center gap-3 mb-4">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
                 <img 
-                  src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
+                  src="/logo.png" 
                   alt="FTJM Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"

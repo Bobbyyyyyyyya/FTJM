@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ftjm-v3.0';
+const CACHE_NAME = 'ftjm-v3.2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -6,14 +6,23 @@ const ASSETS_TO_CACHE = [
   '/favicon.png',
   '/favicon.ico',
   '/icon-192.png',
-  '/icon-512.png'
+  '/icon-512.png',
+  '/assets/app-secure.js',
+  '/assets/index.css'
 ];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      // Use Promise.all with individually caught promises so a single 404/failure won't block the entire SW installation
+      return Promise.all(
+        ASSETS_TO_CACHE.map((asset) => {
+          return cache.add(asset).catch((err) => {
+            console.warn(`[SW] Failed to cache asset: ${asset}`, err);
+          });
+        })
+      );
     })
   );
 });
@@ -41,9 +50,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Strictly avoid intercepting non-GET requests (Cache API only allows GET method)
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
   // Only intercept same-origin requests (exclude Supabase, external APIs, etc. to prevent fetch blocking)
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Do NOT intercept audio/video media files as Service Workers require complex range headers for media player compatibility
+  if (url.pathname.includes('/audio/') || 
+      url.pathname.endsWith('.mp3') || 
+      url.pathname.endsWith('.wav') || 
+      url.pathname.endsWith('.ogg') || 
+      url.pathname.endsWith('.m4a') ||
+      url.pathname.endsWith('.webm') ||
+      event.request.destination === 'audio' ||
+      event.request.destination === 'video') {
     return;
   }
 
@@ -55,30 +81,28 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache first for assets, but stale-while-revalidate for JS/CSS
+  // Safe and clean implementation of stale-while-revalidate without calling event.waitUntil asynchronously
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, networkResponse.clone());
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        const fetchPromise = fetch(event.request)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          })
+          .catch((err) => {
+            // If network fails and we have a cached version, fallback to it
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+            throw err;
           });
-        }
-        return networkResponse;
+
+        // Immediately return cached page asset, letting network fetch update the cache in the background
+        return cachedResponse || fetchPromise;
       });
-
-      if (cachedResponse) {
-        // Return cached immediately, let network update run in the background
-        try {
-          event.waitUntil(fetchPromise);
-        } catch (e) {
-          // Quiet fallback
-        }
-        return cachedResponse;
-      }
-
-      // If not in cache, return fetchPromise directly so the browser handles standard responses and native failures correctly
-      return fetchPromise;
     })
   );
 });

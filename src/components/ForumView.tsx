@@ -33,6 +33,7 @@ interface ForumViewProps {
   useCustomTheme: boolean;
   customTheme: any;
   profiles?: UserProfile[];
+  userProfile?: UserProfile | null;
 }
 
 export const ForumView: React.FC<ForumViewProps> = ({
@@ -62,7 +63,8 @@ export const ForumView: React.FC<ForumViewProps> = ({
   nicknames,
   useCustomTheme,
   customTheme,
-  profiles
+  profiles,
+  userProfile
 }) => {
   return (
     <div className="space-y-8">
@@ -104,7 +106,11 @@ export const ForumView: React.FC<ForumViewProps> = ({
               <div className="p-6 sm:p-8 border-b border-app-border bg-app-accent/5" style={useCustomTheme && customTheme.chat_opacity === 100 ? { backgroundColor: 'transparent', borderColor: 'transparent' } : {}}>
                 <div className="flex items-center gap-3 mb-4">
                   {(() => {
-                    const threadAuthorProfile = activeThread ? profiles?.find(p => p.id === activeThread.author_id) : null;
+                    const threadAuthorProfile = activeThread
+                      ? ((userProfile && activeThread.author_id === userProfile.id)
+                        ? userProfile
+                        : profiles?.find(p => p.id === activeThread.author_id))
+                      : null;
                     const threadAuthorName = threadAuthorProfile?.display_name || activeThread?.author_name || 'Anoniem';
                     const threadAuthorPhoto = threadAuthorProfile?.photo_url || activeThread?.author_photo;
                     return (
@@ -215,7 +221,9 @@ export const ForumView: React.FC<ForumViewProps> = ({
                   </div>
                 ) : (
                   threadComments.map(comment => {
-                    const commentAuthor = profiles?.find(p => p.id === comment.author_id);
+                    const commentAuthor = (userProfile && comment.author_id === userProfile.id)
+                      ? userProfile
+                      : profiles?.find(p => p.id === comment.author_id);
                     const commentAuthorName = commentAuthor?.display_name || comment.author_name || 'Anoniem';
                     const commentAuthorPhoto = commentAuthor?.photo_url || comment.author_photo;
 
@@ -238,7 +246,9 @@ export const ForumView: React.FC<ForumViewProps> = ({
                                   {(() => {
                                     const parent = threadComments.find(c => c.id === comment.parent_id);
                                     if (!parent) return null;
-                                    const parentAuthor = profiles?.find(p => p.id === parent.author_id);
+                                    const parentAuthor = (userProfile && parent.author_id === userProfile.id)
+                                      ? userProfile
+                                      : profiles?.find(p => p.id === parent.author_id);
                                     const parentAuthorName = parentAuthor?.display_name || parent.author_name || 'Anoniem';
                                     return (
                                       <>
@@ -386,7 +396,9 @@ export const ForumView: React.FC<ForumViewProps> = ({
                   <div className="space-y-3 flex-1">
                     <div className="flex items-center gap-2 text-xs text-app-muted">
                       {(() => {
-                        const threadAuthor = profiles?.find(p => p.id === thread.author_id);
+                        const threadAuthor = (userProfile && thread.author_id === userProfile.id)
+                          ? userProfile
+                          : profiles?.find(p => p.id === thread.author_id);
                         const threadAuthorName = threadAuthor?.display_name || thread.author_name || 'Anoniem';
                         return (
                           <span className="font-bold text-app-ink">{nicknames[thread.author_id] || threadAuthorName}</span>

@@ -26,6 +26,7 @@ interface PostItemProps {
   useCustomTheme?: boolean;
   customTheme?: any;
   profiles?: UserProfile[];
+  userProfile?: UserProfile | null;
 }
 
 export const PostItem: React.FC<PostItemProps> = ({
@@ -48,9 +49,12 @@ export const PostItem: React.FC<PostItemProps> = ({
   allPosts,
   useCustomTheme,
   customTheme,
-  profiles
+  profiles,
+  userProfile
 }) => {
-  const authorProfile = profiles?.find(p => p.id === post.author_id);
+  const authorProfile = (userProfile && post.author_id === userProfile.id)
+    ? userProfile
+    : profiles?.find(p => p.id === post.author_id);
   const displayName = authorProfile?.display_name || post.author_name || 'Anoniem';
   const photoUrl = authorProfile?.photo_url || post.author_photo;
 
@@ -99,7 +103,9 @@ export const PostItem: React.FC<PostItemProps> = ({
                 {(() => {
                   const parent = allPosts.find(p => p.id === post.parent_id);
                   if (!parent) return null;
-                  const parentProfile = profiles?.find(p => p.id === parent.author_id);
+                  const parentProfile = (userProfile && parent.author_id === userProfile.id)
+                    ? userProfile
+                    : profiles?.find(p => p.id === parent.author_id);
                   const parentDisplayName = parentProfile?.display_name || parent.author_name || 'Anoniem';
                   return (
                     <>

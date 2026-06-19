@@ -347,7 +347,7 @@ export default function App() {
       notify_mentions: true,
       message_sound: SOUND_OPTIONS[0].url,
       post_sound: SOUND_OPTIONS[1].url,
-      ringtone_url: 'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3'
+      ringtone_url: '/audio/ringtones/classic.mp3'
     };
 
     if (!settings) return defaultSettings;
@@ -2077,7 +2077,7 @@ export default function App() {
       if (diffSecs <= 300 && diffSecs > 240 && !playedMaintenanceTriggersRef.current.has('5m')) {
         playedMaintenanceTriggersRef.current.add('5m');
         playSound(
-          'https://www.image2url.com/r2/default/audio/1781271903929-83f9346b-b078-42d0-b5c0-fda9beeab9af.m4a',
+          '/audio/maintenance/maintenance_5m.m4a',
           true,
           user?.uid,
           profile?.display_name || user?.displayName || 'Anoniem'
@@ -2086,7 +2086,7 @@ export default function App() {
       } else if (diffSecs <= 240 && diffSecs > 180 && !playedMaintenanceTriggersRef.current.has('4m')) {
         playedMaintenanceTriggersRef.current.add('4m');
         playSound(
-          'https://www.image2url.com/r2/default/audio/1781272139776-42f7b69d-b732-4e34-bf93-225487e9e0d0.m4a',
+          '/audio/maintenance/maintenance_4m.m4a',
           true,
           user?.uid,
           profile?.display_name || user?.displayName || 'Anoniem'
@@ -2095,7 +2095,7 @@ export default function App() {
       } else if (diffSecs <= 180 && diffSecs > 120 && !playedMaintenanceTriggersRef.current.has('3m')) {
         playedMaintenanceTriggersRef.current.add('3m');
         playSound(
-          'https://www.image2url.com/r2/default/audio/1781272207070-d21eced7-6568-46f2-ace7-9b81f20ae234.m4a',
+          '/audio/maintenance/maintenance_3m.m4a',
           true,
           user?.uid,
           profile?.display_name || user?.displayName || 'Anoniem'
@@ -2104,7 +2104,7 @@ export default function App() {
       } else if (diffSecs <= 120 && diffSecs > 60 && !playedMaintenanceTriggersRef.current.has('2m')) {
         playedMaintenanceTriggersRef.current.add('2m');
         playSound(
-          'https://www.image2url.com/r2/default/audio/1781272257523-22f80b01-edd0-411f-9f43-b2164518db71.m4a',
+          '/audio/maintenance/maintenance_2m.m4a',
           true,
           user?.uid,
           profile?.display_name || user?.displayName || 'Anoniem'
@@ -2113,7 +2113,7 @@ export default function App() {
       } else if (diffSecs <= 60 && diffSecs > 0 && !playedMaintenanceTriggersRef.current.has('1m')) {
         playedMaintenanceTriggersRef.current.add('1m');
         playSound(
-          'https://www.image2url.com/r2/default/audio/1781272318128-306ce73b-c458-4980-8433-b2c0ef0ff36c.m4a',
+          '/audio/maintenance/maintenance_1m.m4a',
           true,
           user?.uid,
           profile?.display_name || user?.displayName || 'Anoniem'
@@ -3462,27 +3462,23 @@ export default function App() {
 
   const handleAddCustomSound = async () => {
     if (!newSoundName || !newSoundUrl || !user || !supabaseClient) {
-      toast.error('Vul zowel een naam als een URL in');
+      toast.error('Vul zowel een naam als een geluidsbron/bestand in');
       return;
     }
 
-    if (!newSoundUrl.startsWith('http')) {
-      toast.error('Ongeldige URL. Moet beginnen met http of https');
-      return;
-    }
-
-    // Basic URL validation
-    const isDirectAudio = /\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?.*)?$/i.test(newSoundUrl);
+    const isDataUrl = newSoundUrl.startsWith('data:');
+    // Basic URL validation - informative only, non-blocking
+    const isDirectAudio = isDataUrl || /\.(mp3|wav|ogg|m4a|aac|flac|webm)(\?.*)?$/i.test(newSoundUrl);
     const isYouTube = /(?:youtube\.com|youtu\.be)/i.test(newSoundUrl);
 
-    if (!isDirectAudio && !isYouTube) {
-      toast.warning('De URL lijkt geen direct audiobestand of YouTube-link te zijn. Het geluid werkt mogelijk niet.');
+    if (!isDirectAudio && !isYouTube && !newSoundUrl.startsWith('/')) {
+      toast.warning('De opgegeven bron lijkt geen bekend audioformaat te zijn. Het geluid werkt mogelijk niet.');
     }
 
     setUploadingSound(true);
     try {
-      // Skip direct audio testing for YouTube links as they use iframe
-      if (!isYouTube) {
+      // Skip direct audio testing for YouTube links or Data URLs
+      if (!isYouTube && !isDataUrl) {
         // Test if the sound actually works before adding
         const testAudio = new Audio(newSoundUrl);
         testAudio.preload = 'auto';
@@ -4720,7 +4716,7 @@ export default function App() {
     }
   };
 
-  const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => {
+  const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest', score: number) => {
     if (!user || isWhitelisted !== true) return;
     
     const currentTheme = profile?.custom_theme || {};
@@ -4763,10 +4759,10 @@ export default function App() {
     }
   };
 
-  const handleShareHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number, targetType: 'general' | 'dm', conversationId?: string) => {
+  const handleShareHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest', score: number, targetType: 'general' | 'dm', conversationId?: string) => {
     if (!user || isWhitelisted !== true) return;
     
-    const gameIdLabel = gameId === 'snake' ? 'snake' : gameId === 'flappy' ? 'flappy' : gameId === 'sysadmin' ? 'sysadmin' : 'hamster';
+    const gameIdLabel = gameId;
     let playerName = (profile?.display_name || user.displayName || '').trim();
     if (!playerName || playerName === 'Anoniem') {
       if (user.displayName && user.displayName !== 'Anoniem') {
@@ -5273,7 +5269,7 @@ export default function App() {
           >
             <div className="w-24 h-24 bg-transparent rounded-full flex items-center justify-center mx-auto mb-8 overflow-hidden">
               <img 
-                src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
+                src="/logo.png" 
                 alt="FTJM Logo" 
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
@@ -5330,7 +5326,7 @@ export default function App() {
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('chat')}>
               <div className="w-8 h-8 bg-transparent rounded-lg flex items-center justify-center overflow-hidden">
                 <img 
-                  src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
+                  src="/logo.png" 
                   alt="FTJM Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
@@ -5721,7 +5717,7 @@ export default function App() {
             >
               <div className="w-24 h-24 bg-transparent rounded-[2rem] flex items-center justify-center mx-auto mb-8 overflow-hidden">
                 <img 
-                  src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
+                  src="/logo.png" 
                   alt="FTJM Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
@@ -5892,6 +5888,7 @@ export default function App() {
                       handleImageUrl={handleImageUrl}
                       nicknames={nicknames}
                       profiles={users}
+                      userProfile={profile}
                     />
                   </div>
                 </div>
@@ -5926,6 +5923,7 @@ export default function App() {
                   useCustomTheme={useCustomTheme}
                   customTheme={customTheme}
                   profiles={users}
+                  userProfile={profile}
                 />
               )}
 
@@ -6125,7 +6123,7 @@ export default function App() {
                   ) : (
                     <div className="absolute inset-0 opacity-10">
                       <img 
-                        src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
+                        src="/logo.png" 
                         alt="" 
                         className="w-64 h-64 -rotate-12 -translate-x-12 -translate-y-12"
                         referrerPolicy="no-referrer"
@@ -6609,7 +6607,7 @@ export default function App() {
                 <div className="flex flex-col items-center mb-6">
                   <div className="w-12 h-12 bg-transparent rounded-2xl flex items-center justify-center mb-4 overflow-hidden">
                     <img 
-                      src="https://cdn.imageurlgenerator.com/uploads/67bbbf04-379d-4bb7-9321-3f970a076c08.png" 
+                      src="/logo.png" 
                       alt="FTJM Logo" 
                       className="w-full h-full object-contain"
                     />

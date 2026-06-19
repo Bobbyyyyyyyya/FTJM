@@ -40,7 +40,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const endCallSoundRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const defaultRingtone = 'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3';
+    const defaultRingtone = '/audio/ringtones/classic.mp3';
     const ringtoneUrl = profile?.notification_settings?.ringtone_url || defaultRingtone;
     
     if (incomingSoundRef.current) {
@@ -50,10 +50,10 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     incomingSoundRef.current = new Audio(ringtoneUrl);
     incomingSoundRef.current.loop = true;
     
-    dialingSoundRef.current = new Audio('https://www.image2url.com/r2/default/audio/1778251393856-e7883015-89e0-4fdd-b691-55e72fa929c6.mp3');
+    dialingSoundRef.current = new Audio('/audio/calls/dialing.mp3');
     dialingSoundRef.current.loop = true;
 
-    endCallSoundRef.current = new Audio('https://www.image2url.com/r2/default/audio/1778154897391-0eb0695d-b4bc-41be-bf5d-a09441cc3af6.mp3');
+    endCallSoundRef.current = new Audio('/audio/calls/end_call.mp3');
     
     return () => {
       [incomingSoundRef, dialingSoundRef, endCallSoundRef].forEach(ref => {

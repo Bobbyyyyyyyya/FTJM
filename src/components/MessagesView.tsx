@@ -477,7 +477,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     <button
                       onClick={() => {
                         if (playSound) {
-                          playSound('https://www.image2url.com/r2/default/audio/1778155099351-512c1936-e820-4e67-8af0-a035a92a54ea.mp3', true, user.uid, user.displayName || 'Anoniem');
+                          playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
                         }
                         onStartGroupCall(activeConversation.id, activeConversation.name || 'Groepsgesprek');
                       }}
@@ -499,7 +499,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                           const otherAvatar = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) || undefined : undefined;
                           
                           if (playSound && !isActivePeer) {
-                            playSound('https://www.image2url.com/r2/default/audio/1778155099351-512c1936-e820-4e67-8af0-a035a92a54ea.mp3', true, user.uid, user.displayName || 'Anoniem');
+                            playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
                           }
                           
                           if (otherUid) {

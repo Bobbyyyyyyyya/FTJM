@@ -74,6 +74,12 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
             color: 'border-yellow-500 bg-yellow-950/25 text-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.15)] hover:shadow-[0_0_25px_rgba(234,179,8,0.3)]',
             accent: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
           };
+        case 'conquest':
+          return {
+            name: 'Wereld Heerschappij (Conquest) ⚔️',
+            color: 'border-blue-500 bg-blue-950/25 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)] hover:shadow-[0_0_25px_rgba(59,130,246,0.3)]',
+            accent: 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+          };
         default:
           return {
             name: 'FTJM Arcade Game 🕹️',

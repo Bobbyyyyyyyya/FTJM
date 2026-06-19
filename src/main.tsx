@@ -14,17 +14,27 @@ if (typeof window !== 'undefined') {
   window.localStorage.clear = () => originalClear();
 }
 
-// Strict production shield: fully silence console outputs to prevent code and path leaks
+// Strict production shield: silence standard logs only
 if (import.meta.env.PROD) {
   const noop = () => {};
   window.console.log = noop;
-  window.console.warn = noop;
-  window.console.info = noop;
   window.console.debug = noop;
-  window.console.error = noop;
 }
 
 if ('serviceWorker' in navigator) {
+  // Clear legacy caches once to fix corrupt audio streams and ensure clean offline states
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    const PURGE_KEY = 'cache_purged_v3.2';
+    if (!localStorage.getItem(PURGE_KEY)) {
+      caches.keys().then((names) => {
+        return Promise.all(names.map(name => caches.delete(name)));
+      }).then(() => {
+        localStorage.setItem(PURGE_KEY, 'true');
+        console.log('[Cache] Legacy caches purged due to audio upgrade');
+      }).catch((err) => console.warn('Cache purge failed:', err));
+    }
+  }
+
   const registerServiceWorker = () => {
     navigator.serviceWorker.register('/sw.js').then(registration => {
       console.log('SW registered: ', registration);

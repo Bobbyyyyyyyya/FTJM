@@ -34,6 +34,7 @@ interface ChatViewProps {
   handleImageUrl: () => void;
   nicknames: Record<string, string>;
   profiles?: UserProfile[];
+  userProfile?: UserProfile | null;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -65,7 +66,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   handleEmojiButtonClick,
   handleImageUrl,
   nicknames,
-  profiles
+  profiles,
+  userProfile
 }) => {
   const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | null>(null);
@@ -351,6 +353,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               useCustomTheme={useCustomTheme}
               customTheme={customTheme}
               profiles={profiles}
+              userProfile={userProfile}
             />
           ))
         )}
