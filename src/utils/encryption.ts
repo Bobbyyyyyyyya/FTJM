@@ -33,7 +33,10 @@ export const encryptGeneralChat = (text: string): string => {
  */
 export const decryptGeneralChat = (cipherText: string): string => {
   try {
-    if (!cipherText || typeof cipherText !== 'string' || !cipherText.startsWith('gc:')) {
+    if (!cipherText || typeof cipherText !== 'string') {
+      return typeof cipherText === 'string' ? cipherText : '';
+    }
+    if (!cipherText.startsWith('gc:')) {
       return cipherText;
     }
     
@@ -47,7 +50,7 @@ export const decryptGeneralChat = (cipherText: string): string => {
     
     return originalText;
   } catch (error) {
-    return cipherText;
+    return typeof cipherText === 'string' ? cipherText : '';
   }
 };
 

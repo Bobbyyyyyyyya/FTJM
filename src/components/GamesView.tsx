@@ -109,7 +109,9 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, display_name, photo_url, custom_theme');
+          .select('id, display_name, photo_url, custom_theme')
+          .order('id')
+          .limit(10000);
           
         if (error) throw error;
         
@@ -647,6 +649,10 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(isPaused);
 
+  // Direction locks to prevent immediate 180-degree self-collisions (classic "random death" snake bug)
+  const lastExecutedDirRef = useRef<[number, number]>([0, -1]);
+  const hasMovedThisTickRef = useRef(false);
+
   // Synchronise snake high scores to cloud on Game Over
   useEffect(() => {
     if (gameOver) {
@@ -682,10 +688,25 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
     setSnake([[10, 10], [10, 11], [10, 12]]);
     setFood([5, 5]);
     setDir([0, -1]);
+    lastExecutedDirRef.current = [0, -1];
+    hasMovedThisTickRef.current = false;
     setScore(0);
     setGameOver(false);
     setIsPaused(false);
     setIsPlaying(true);
+  };
+
+  const changeDirection = (newDir: [number, number]) => {
+    if (!isPlaying || gameOver || isPausedRef.current) return;
+    if (hasMovedThisTickRef.current) return;
+
+    const lastDir = lastExecutedDirRef.current;
+    
+    // Prevent 180-degree reverse onto itself
+    if (newDir[0] === -lastDir[0] && newDir[1] === -lastDir[1]) return;
+
+    setDir(newDir);
+    hasMovedThisTickRef.current = true;
   };
 
   useEffect(() => {
@@ -698,33 +719,37 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
         }
       }
       if (!isPlaying || gameOver || isPausedRef.current) return;
-      e.preventDefault();
+      
       switch (e.key) {
         case 'ArrowUp':
         case 'w':
         case 'W':
-          if (dir[1] !== 1) setDir([0, -1]);
+          e.preventDefault();
+          changeDirection([0, -1]);
           break;
         case 'ArrowDown':
         case 's':
         case 'S':
-          if (dir[1] !== -1) setDir([0, 1]);
+          e.preventDefault();
+          changeDirection([0, 1]);
           break;
         case 'ArrowLeft':
         case 'a':
         case 'A':
-          if (dir[0] !== 1) setDir([-1, 0]);
+          e.preventDefault();
+          changeDirection([-1, 0]);
           break;
         case 'ArrowRight':
         case 'd':
         case 'D':
-          if (dir[0] !== -1) setDir([1, 0]);
+          e.preventDefault();
+          changeDirection([1, 0]);
           break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, gameOver, dir]);
+  }, [isPlaying, gameOver]);
 
   // Game tick logic loop
   useEffect(() => {
@@ -732,6 +757,10 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
 
     const tick = setInterval(() => {
       if (isPausedRef.current) return;
+      
+      // Let direction change again on the new upcoming game tick
+      hasMovedThisTickRef.current = false;
+
       setSnake(prevSnake => {
         const head = prevSnake[0];
         const nextHead: [number, number] = [head[0] + dir[0], head[1] + dir[1]];
@@ -744,8 +773,9 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
           return prevSnake;
         }
 
-        // Self collision
-        if (prevSnake.some(segment => segment[0] === nextHead[0] && segment[1] === nextHead[1])) {
+        // Self collision (exclude the tail segment since it will move away in this same game tick)
+        const bodyToCheck = prevSnake.slice(0, prevSnake.length - 1);
+        if (bodyToCheck.some(segment => segment[0] === nextHead[0] && segment[1] === nextHead[1])) {
           playRetroSound('die');
           setGameOver(true);
           setIsPlaying(false);
@@ -753,6 +783,9 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
         }
 
         const newSnake = [nextHead, ...prevSnake];
+
+        // Record direction actually executed
+        lastExecutedDirRef.current = dir;
 
         // Eat food check
         if (nextHead[0] === food[0] && nextHead[1] === food[1]) {
@@ -893,7 +926,7 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
       {/* Screen Controls for Mobile/No Keyboard */}
       <div className="mt-6 flex flex-col items-center gap-2 w-full max-w-[200px]">
         <button
-          onClick={() => { if (dir[1] !== 1) setDir([0, -1]); playRetroSound('click'); }}
+          onClick={() => { changeDirection([0, -1]); playRetroSound('click'); }}
           className="p-3 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl active:scale-90 transition-all font-bold"
           aria-label="Omhoog"
         >
@@ -901,14 +934,14 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
         </button>
         <div className="flex gap-8">
           <button
-            onClick={() => { if (dir[0] !== 1) setDir([-1, 0]); playRetroSound('click'); }}
+            onClick={() => { changeDirection([-1, 0]); playRetroSound('click'); }}
             className="p-3 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl active:scale-90 transition-all font-bold"
             aria-label="Links"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <button
-            onClick={() => { if (dir[0] !== -1) setDir([1, 0]); playRetroSound('click'); }}
+            onClick={() => { changeDirection([1, 0]); playRetroSound('click'); }}
             className="p-3 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl active:scale-90 transition-all font-bold"
             aria-label="Rechts"
           >
@@ -916,7 +949,7 @@ function SnakeGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShare
           </button>
         </div>
         <button
-          onClick={() => { if (dir[1] !== -1) setDir([0, 1]); playRetroSound('click'); }}
+          onClick={() => { changeDirection([0, 1]); playRetroSound('click'); }}
           className="p-3 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl active:scale-90 transition-all font-bold"
           aria-label="Omlaag"
         >

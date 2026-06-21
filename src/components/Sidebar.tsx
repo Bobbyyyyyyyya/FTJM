@@ -2,6 +2,7 @@ import React from 'react';
 import { User as UserIcon, ShieldCheck } from 'lucide-react';
 import { UserProfile, CustomTheme, User } from '../types';
 import { formatDate } from '../utils/helpers';
+import { t } from '../utils/translations';
 
 interface SidebarProps {
   user: User;
@@ -42,29 +43,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
         </div>
-        <h2 className="text-2xl font-bold text-app-ink">{profile?.display_name || user.displayName || 'Anoniem'}</h2>
+        <h2 className="text-2xl font-bold text-app-ink">{profile?.display_name || user.displayName || t('Anoniem')}</h2>
         <p className="text-app-muted text-sm mt-1">{user.email}</p>
         
         <div className="mt-8 w-full pt-8 border-t border-app-border space-y-4">
           <div className="flex justify-between text-sm">
-            <span className="text-app-muted">Lid sinds</span>
+            <span className="text-app-muted">{t("Lid sinds")}</span>
             <span className="text-app-ink font-medium">
               {profile ? formatDate(profile.created_at) : '...'}
             </span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-app-muted">Status</span>
+            <span className="text-app-muted">{t("Status")}</span>
             <span className="flex items-center gap-1.5 text-emerald-600 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Online
+              {t("Online")}
             </span>
           </div>
           {isAdmin && (
             <div className="flex justify-between text-sm">
-              <span className="text-app-muted">Rol</span>
+              <span className="text-app-muted">{t("Rol")}</span>
               <span className="flex items-center gap-1.5 text-app-ink font-bold">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Admin
+                {t("Admin")}
               </span>
             </div>
           )}

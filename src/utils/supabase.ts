@@ -42,7 +42,8 @@ export const createSupabaseClient = (uid: string | null = null) => {
       autoRefreshToken: true,
       detectSessionInUrl: true,
       storage: secureSupabaseStorage,
-    },
+      lockSessionType: 'none',
+    } as any,
     global: {
       fetch: (url, options) => {
         const urlStr = String(url);

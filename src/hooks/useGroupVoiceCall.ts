@@ -8,6 +8,7 @@ export interface GroupParticipant {
   name: string;
   photo_url?: string;
   isMuted: boolean;
+  isVideoMuted?: boolean;
   stream: MediaStream | null;
 }
 
@@ -15,6 +16,9 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
   const [callState, setCallState] = useState<GroupCallState>('idle');
   const [participants, setParticipants] = useState<Record<string, GroupParticipant>>({});
   const [isMuted, setIsMuted] = useState(false);
+  const [isVideoCall, setIsVideoCall] = useState(false);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState<string>('');
 
@@ -35,7 +39,10 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
 
   const cleanup = () => {
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        track.enabled = false;
+      });
       localStreamRef.current = null;
     }
     
@@ -49,8 +56,11 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
 
     setCallState('idle');
     setParticipants({});
+    setLocalStream(null);
     setActiveRoomId(null);
     setIsMuted(false);
+    setIsVideoCall(false);
+    setIsVideoMuted(false);
   };
 
   const sendSignalingMessage = async (roomId: string, event: string, payload: any) => {
@@ -125,15 +135,17 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
     return pc;
   };
 
-  const joinGroupCall = async (roomId: string, name: string) => {
+  const joinGroupCall = async (roomId: string, name: string, isVideo = false) => {
     try {
       cleanup();
       setCallState('joining');
       setActiveRoomId(roomId);
       setRoomName(name);
+      setIsVideoCall(isVideo);
+      setIsVideoMuted(false);
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Kan microfoon niet openen. WebRTC bellen is niet ondersteund.");
+        throw new Error("Kan microfoon of camera niet openen. WebRTC bellen is niet ondersteund.");
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -141,9 +153,15 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
-        } 
+        },
+        video: isVideo ? {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: "user"
+        } : false
       });
       localStreamRef.current = stream;
+      setLocalStream(stream);
 
       // Broadcast to global monitor first
       const monitorChannel = supabaseClient.channel('group_calls_monitor', {
@@ -180,6 +198,7 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
             name: payload.name,
             photo_url: payload.photo_url,
             isMuted: payload.isMuted,
+            isVideoMuted: payload.isVideoMuted,
             stream: null
           }
         }));
@@ -194,7 +213,8 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
           offer,
           name: profile?.display_name || user.displayName,
           photo_url: profile?.photo_url || user.photoURL,
-          isMuted: isMuted
+          isMuted: isMuted,
+          isVideoMuted: isVideoMuted
         });
       })
       .on('broadcast', { event: 'group_call_offer' }, async ({ payload }) => {
@@ -207,6 +227,7 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
             name: payload.name,
             photo_url: payload.photo_url,
             isMuted: payload.isMuted,
+            isVideoMuted: payload.isVideoMuted,
             stream: null
           }
         }));
@@ -279,6 +300,18 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
           };
         });
       })
+      .on('broadcast', { event: 'group_video_status' }, ({ payload }) => {
+        setParticipants(prev => {
+          if (!prev[payload.senderId]) return prev;
+          return {
+            ...prev,
+            [payload.senderId]: {
+              ...prev[payload.senderId],
+              isVideoMuted: payload.isVideoMuted
+            }
+          };
+        });
+      })
       .on('broadcast', { event: 'group_leave' }, ({ payload }) => {
         if (peerConnectionsRef.current[payload.senderId]) {
           peerConnectionsRef.current[payload.senderId].close();
@@ -298,7 +331,8 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
             roomId: roomId,
             name: profile?.display_name || user.displayName,
             photo_url: profile?.photo_url || user.photoURL,
-            isMuted: false
+            isMuted: isMuted,
+            isVideoMuted: isVideoMuted
           });
         }
       });
@@ -330,13 +364,31 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
     }
   };
 
+  const toggleGroupVideo = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      const tracks = localStreamRef.current.getVideoTracks();
+      const newMuted = tracks.length > 0 ? !tracks[0].enabled : true;
+      setIsVideoMuted(newMuted);
+      if (activeRoomId) {
+        sendSignalingMessage(activeRoomId, 'group_video_status', { isVideoMuted: newMuted });
+      }
+    }
+  };
+
   return {
     groupCallState: callState,
     groupParticipants: participants,
     isGroupMuted: isMuted,
+    isVideoCall,
+    isVideoMuted,
+    localStream,
     joinGroupCall,
     leaveGroupCall,
     toggleGroupMute,
+    toggleGroupVideo,
     activeRoomId,
     roomName
   };

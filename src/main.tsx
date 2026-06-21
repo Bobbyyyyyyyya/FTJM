@@ -36,13 +36,30 @@ if ('serviceWorker' in navigator) {
   }
 
   const registerServiceWorker = () => {
-    navigator.serviceWorker.register('/sw.js').then(registration => {
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(registration => {
       console.log('SW registered: ', registration);
       
-      // Check for updates periodically
-      setInterval(() => {
-        registration.update();
-      }, 1000 * 60 * 60); // Every hour
+      // If there is a waiting Service Worker already, notify users immediately on page load
+      if (registration.waiting) {
+        console.log('[SW] Found waiting worker on load. Dispatching update available.');
+        window.dispatchEvent(new CustomEvent('sw-update-available'));
+      }
+
+      // Check for updates periodically (every 10 minutes)
+      const updateInterval = setInterval(() => {
+        registration.update().catch(err => console.warn('Interval SW update failed:', err));
+      }, 1000 * 60 * 10);
+
+      // Check for updates when the user switches tabs, comes back, or unlocks screen
+      const checkUpdate = () => {
+        if (document.visibilityState === 'visible') {
+          console.log('[SW] Tab visible/focused, querying for updates...');
+          registration.update().catch(err => console.warn('SW update check failed:', err));
+        }
+      };
+
+      document.addEventListener('visibilitychange', checkUpdate);
+      window.addEventListener('focus', checkUpdate);
 
       registration.onupdatefound = () => {
         const installingWorker = registration.installing;
@@ -51,8 +68,11 @@ if ('serviceWorker' in navigator) {
         installingWorker.onstatechange = () => {
           if (installingWorker.state === 'installed') {
             if (navigator.serviceWorker.controller) {
+              console.log('[SW] New version detected and ready. Dispatched update layout custom event.');
               // New content is available, show toast
               window.dispatchEvent(new CustomEvent('sw-update-available'));
+            } else {
+              console.log('[SW] App successfully cached for offline use.');
             }
           }
         };
@@ -61,6 +81,20 @@ if ('serviceWorker' in navigator) {
       console.log('SW registration failed: ', registrationError);
     });
   };
+
+  // Safe controller change auto-reload fallback (only triggers if there was already an active controller)
+  let refreshing = false;
+  const hasExistingController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return;
+    if (!hasExistingController) {
+      console.log('[SW] First-time controller activation. No reload needed.');
+      return;
+    }
+    refreshing = true;
+    console.log('[SW] Controller changed. Refreshing page to load new assets...');
+    window.location.reload();
+  });
 
   if (document.readyState === 'complete') {
     registerServiceWorker();

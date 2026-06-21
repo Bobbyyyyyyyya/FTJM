@@ -1,6 +1,7 @@
 import React from 'react';
 import { User as UserIcon, ShieldCheck, LogOut } from 'lucide-react';
 import { UserProfile, CustomTheme, User } from '../types';
+import { t } from '../utils/translations';
 
 interface HeaderProps {
   user: User;
@@ -61,10 +62,10 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div className="hidden sm:block">
               <p className="text-sm font-bold text-app-ink truncate max-w-[120px]">
-                {profile?.display_name || user.displayName || 'Gebruiker'}
+                {profile?.display_name || user.displayName || t('Gebruiker')}
               </p>
               <p className="text-[10px] font-medium text-app-muted uppercase tracking-wider">
-                {isAdmin ? 'Administrator' : 'Lid'}
+                {isAdmin ? t('Administrator') : t('Lid')}
               </p>
             </div>
           </div>
@@ -72,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button 
             onClick={handleLogout}
             className="p-2.5 sm:p-3 text-app-muted hover:text-red-500 hover:bg-red-50 rounded-xl sm:rounded-2xl transition-all active:scale-95"
-            title="Uitloggen"
+            title={t("Uitloggen")}
           >
             <LogOut className="w-5 h-5" />
           </button>

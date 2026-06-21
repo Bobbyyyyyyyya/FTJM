@@ -11,6 +11,7 @@ export interface CallData {
   targetName?: string;
   targetAvatar?: string;
   room?: string;
+  isVideo?: boolean;
 }
 
 export type CallLayout = 'compact' | 'large';
@@ -19,6 +20,11 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const [callState, setCallState] = useState<CallState>('idle');
   const [activeCall, setActiveCall] = useState<CallData | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [isRemoteVideoMuted, setIsRemoteVideoMuted] = useState(false);
+  const [isVideoCall, setIsVideoCall] = useState(false);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [layout, setLayout] = useState<CallLayout>('large');
   const [isInitiator, setIsInitiator] = useState(false);
   const [callCooldownUntil, setCallCooldownUntil] = useState<number | null>(null);
@@ -73,6 +79,13 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       });
       localStreamRef.current = null;
     }
+    remoteStreamRef.current = null;
+    setLocalStream(null);
+    setRemoteStream(null);
+    setIsVideoCall(false);
+    setIsVideoMuted(false);
+    setIsRemoteVideoMuted(false);
+
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -260,6 +273,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       }
       
       remoteStreamRef.current = stream;
+      setRemoteStream(stream);
       
       if (remoteAudioRef.current) {
         const audioElement = remoteAudioRef.current;
@@ -364,11 +378,13 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       }
 
       pendingCandidatesRef.current = [];
+      setIsVideoCall(!!payload.isVideo);
       setActiveCall({
         callerId: payload.callerId,
         callerName: payload.callerName,
         callerAvatar: payload.callerAvatar,
-        targetId: user.uid
+        targetId: user.uid,
+        isVideo: !!payload.isVideo
       });
       setCallState('ringing');
       setLayout('large'); // Always start incoming calls in large layout
@@ -471,6 +487,11 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       toast.info('Gesprek beëindigd');
       cleanupCall();
     })
+    .on('broadcast', { event: 'video_status' }, ({ payload }) => {
+      if (payload.senderId === user.uid) return;
+      console.log('Received remote video_status:', payload);
+      setIsRemoteVideoMuted(!!payload.isVideoMuted);
+    })
     .subscribe();
 
     channelRef.current = channel;
@@ -480,7 +501,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     };
   }, [user, supabaseClient]);
 
-  const initiateCall = async (targetId: string, targetName: string, targetAvatar?: string) => {
+  const initiateCall = async (targetId: string, targetName: string, targetAvatar?: string, isVideo = false) => {
     try {
       const now = Date.now();
       if (callCooldownUntil && now < callCooldownUntil) {
@@ -489,7 +510,9 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
         return;
       }
 
-      console.log('Initiating call to:', targetId);
+      console.log('Initiating call to:', targetId, 'isVideo:', isVideo);
+      setIsVideoCall(isVideo);
+      setIsVideoMuted(false);
 
       // Safari Autoplay Fix: Unlock audio element early
       if (remoteAudioRef.current) {
@@ -505,15 +528,17 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
-        } 
+        },
+        video: isVideo ? {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: "user"
+        } : false
       });
       
       console.log('Local stream captured. Tracks:', stream.getTracks().length);
-      stream.getAudioTracks().forEach(track => {
-        console.log('Local audio track:', track.label, 'Enabled:', track.enabled, 'ReadyState:', track.readyState);
-      });
-
       localStreamRef.current = stream;
+      setLocalStream(stream);
       
       setCallState('calling');
       callStartTimeRef.current = Date.now();
@@ -528,7 +553,8 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
         callerAvatar: profile?.photo_url || user?.photoURL,
         targetId,
         targetName,
-        targetAvatar
+        targetAvatar,
+        isVideo
       });
       setLayout('compact'); // Start outgoing calls in compact layout by default
       setIsInitiator(true);
@@ -542,11 +568,12 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
         callerId: user.uid,
         callerName: (profile?.display_name || user?.displayName || 'Anoniem').trim(),
         callerAvatar: profile?.photo_url || user?.photoURL,
-        offer
+        offer,
+        isVideo
       });
     } catch (err) {
       console.error("Error initiating call:", err);
-      toast.error("Kan microfoon niet openen. Controleer permissies.");
+      toast.error("Kan camera of microfoon niet openen. Controleer permissies.");
       cleanupCall();
     }
   };
@@ -561,7 +588,10 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     }
 
     try {
-      console.log('Accepting call from:', activeCall.callerId);
+      console.log('Accepting call from:', activeCall.callerId, 'isVideo:', activeCall.isVideo);
+      const isVideo = !!activeCall.isVideo;
+      setIsVideoCall(isVideo);
+      setIsVideoMuted(false);
       
       // Safari Autoplay Fix: Play the audio element during user interaction to unlock it
       if (remoteAudioRef.current) {
@@ -585,15 +615,17 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
-        } 
+        },
+        video: isVideo ? {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: "user"
+        } : false
       });
       
       console.log('Local stream captured on receiver side. Tracks:', stream.getTracks().length);
-      stream.getAudioTracks().forEach(track => {
-        console.log('Local audio track (receiver):', track.label, 'Enabled:', track.enabled, 'ReadyState:', track.readyState);
-      });
-
       localStreamRef.current = stream;
+      setLocalStream(stream);
       
       const pc = setupPeerConnection(activeCall.callerId, false);
       const offer = (window as any)._pendingCallOffer;
@@ -631,7 +663,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       }
     } catch (err) {
       console.error("Error accepting call:", err);
-      toast.error("Kan microfoon niet openen. Controleer permissies.");
+      toast.error("Kan camera of microfoon niet openen. Controleer permissies.");
       rejectCall();
     }
   };
@@ -663,16 +695,37 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     }
   };
 
+  const toggleVideo = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      const newMuted = !isVideoMuted;
+      setIsVideoMuted(newMuted);
+      
+      const targetId = activeCallRef.current?.callerId === user.uid ? activeCallRef.current?.targetId : activeCallRef.current?.callerId;
+      if (targetId) {
+        sendSignalingMessage(targetId, 'video_status', { isVideoMuted: newMuted });
+      }
+    }
+  };
+
   return {
     callState,
     activeCall,
     isMuted,
+    isVideoMuted,
+    isRemoteVideoMuted,
+    isVideoCall,
+    localStream,
+    remoteStream,
     remoteAudioRef,
     initiateCall,
     acceptCall,
     rejectCall,
     endCall,
     toggleMute,
+    toggleVideo,
     layout,
     setLayout,
     isInitiator,

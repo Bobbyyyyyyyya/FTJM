@@ -1,0 +1,282 @@
+export type Language = 'nl' | 'en';
+
+export const TRANSLATIONS: Record<Language, Record<string, string>> = {
+  nl: {},
+  en: {
+    // Navigation / Header / Sidebar
+    "Hoksen Forum": "Hoksen Forum",
+    "Algemene Chat": "General Chat",
+    "Forum": "Forum",
+    "Berichten/Inbox": "Messages/Inbox",
+    "Nieuws": "News",
+    "Instellingen": "Settings",
+    "Arcade": "Arcade",
+    "Audio Logs": "Audio Logs",
+    "Lid sinds": "Member since",
+    "Status": "Status",
+    "Rol": "Role",
+    "Admin": "Admin",
+    "Administrator": "Administrator",
+    "Lid": "Member",
+    "Online": "Online",
+    "Gebruiker": "User",
+    "Anoniem": "Anonymous",
+    "Uitloggen": "Log Out",
+    "Beheer je account en app voorkeuren": "Manage your account and app preferences",
+    "Voorbeeldweergave gedetecteerd": "Preview detected",
+
+    // Navigation and menu labels
+    "Navigatie": "Navigation",
+    "Community Forum": "Community Forum",
+    "Laatste Nieuws": "Latest News",
+    "🕹️ Arcade (Geheim!)": "🕹️ Arcade (Secret!)",
+
+    // General Words / Common UI
+    "Laden...": "Loading...",
+    "Opslaan": "Save",
+    "Annuleren": "Cancel",
+    "Verwijderen": "Delete",
+    "Sluiten": "Close",
+    "Succes": "Success",
+    "Fout": "Error",
+    "Waarschuwing": "Warning",
+    "Informatie": "Information",
+    "Type een bericht...": "Type a message...",
+    "Zoeken...": "Search...",
+    "Bezig met opslaan...": "Saving...",
+    "Instellingen Opslaan": "Save Settings",
+    "Instellingen opgeslagen": "Settings saved",
+    "Weergave gewijzigd naar: ": "View changed to: ",
+
+    // Settings Tabs
+    "Profiel": "Profile",
+    "Meldingen": "Notifications",
+    "Notificaties": "Notifications",
+    "Custom Thema": "Custom Theme",
+    "App Instellingen": "App Settings",
+    "Beveiliging": "Security",
+    "Passkeys": "Passkeys",
+    "Admin opties": "Admin Options",
+    "Profiel Instellingen": "Profile Settings",
+
+    // Settings Profile Tab
+    "Weergavenaam": "Display Name",
+    "Je weergavenaam": "Your display name",
+    "Profielfoto URL (Optioneel)": "Profile Picture URL (Optional)",
+    "Plaats hier een link naar je profielfoto": "Place a link to your profile picture here",
+    "Profielfoto Uploaden": "Upload Profile Picture",
+    "Banner Afbeelding URL (Optioneel)": "Banner Image URL (Optional)",
+    "Plaats hier een link naar je banner": "Place a link to your banner image here",
+    "Banner Uploaden": "Upload Banner",
+    "Over Mij / Bio": "About Me / Bio",
+    "Schrijf hier iets over jezelf...": "Write something about yourself here...",
+    "Herstel naar Google Gegevens": "Restore to Google Data",
+    "Wachtwoord Wijzigen": "Change Password",
+    "Nieuw Wachtwoord": "New Password",
+    "Herhaal Nieuw Wachtwoord": "Repeat New Password",
+    "Wachtwoord Opslaan": "Save Password",
+    "Je profielgegevens zijn bijgewerkt.": "Your profile information has been updated.",
+    "Profielfoto hersteld naar Google gegevens": "Profile photo restored to Google data",
+
+    // Settings Notifications Tab
+    "Geluidsinstellingen": "Sound Settings",
+    "Beheer je geluiden en meldingen": "Manage your sounds and notifications",
+    "Geluiden Inschakelen": "Enable Sounds",
+    "Nieuwe berichten geluid": "New messages sound",
+    "Nieuwe posts geluid": "New posts sound",
+    "Ringtone bij spraakoproep": "Ringtone on speech call",
+    "Meldingen voor nieuwe forum posts": "Notifications for new forum posts",
+    "Meldingen voor nieuwe chatberichten": "Notifications for new chat messages",
+    "Meldingen ontvangen bij @vermeldingen": "Notifications on @mentions",
+    "Aangepaste Geluiden": "Custom Sounds",
+    "Upload of voeg je eigen MP3-links toe voor unieke meldingen.": "Upload or add your own MP3 links for unique notifications.",
+    "Geluidsnaam": "Sound Name",
+    "Geluidsbestand URL": "Sound File URL",
+    "Meldingstype": "Notification Type",
+    "Geluid Toevoegen": "Add Sound",
+
+    // Settings Theme Tab
+    "Thema Instellingen": "Theme Settings",
+    "Pas de look & feel van het platform aan naar jouw eigen smaak.": "Customize the look & feel of the platform to your own taste.",
+    "Aangepast Thema Gebruiken": "Use Custom Theme",
+    "Achtergrond / Wallpaper": "Background / Wallpaper",
+    "Kies een rustgevende achtergrondafbeelding voor je platform.": "Choose a soothing background image for your platform.",
+    "Achtergrondafbeelding URL": "Background image URL",
+    "Direct Image URL (png/jpg/webp)": "Direct Image URL (png/jpg/webp)",
+    "Geselecteerde Afbeelding": "Selected Image",
+    "Verwijder Achtergrond": "Remove Background",
+    "Patroon Overlay": "Pattern Overlay",
+    "Kies een patroon dat over de achtergrond heen wordt gelegd.": "Choose a pattern overlay for the background.",
+    "Glaseffect (Glassmorphism)": "Glass Effect (Glassmorphism)",
+    "Maak kaarten en headers semi-transparant met een blur effect.": "Make cards and headers semi-transparent with a blur effect.",
+    "Achtergrond Vervaging (Blur)": "Background Blur",
+    "Kaart Transparantie (Glass opacity)": "Card Transparency (Glass opacity)",
+    "Chat Transparantie": "Chat Transparency",
+    "Profielkaart Transparantie": "Profile Card Transparency",
+    "Ronding van hoeken (Border radius)": "Corner Roundness (Border Radius)",
+    "Kleurinstellingen": "Color Settings",
+    "Pas de kleuren van je thema aan.": "Customize your theme colors.",
+    "Primair": "Primary",
+    "Secundair": "Secondary",
+    "Accent": "Accent",
+    "Tekst": "Text",
+    "Kaart Achtergrond": "Card Background",
+    "Zijbalk Achtergrond": "Sidebar Background",
+    "Header Achtergrond": "Header Background",
+    "Body Achtergrond": "Body Background",
+    "Lettertype / Font": "Font Family",
+    "Kies een lettertype die je fijn vindt lezen.": "Choose a font family you like to read.",
+    "Thema Resetten naar Standaard": "Reset Theme to Default",
+
+    // Settings App Tab
+    "Beheer hoe de app op je apparaat werkt.": "Manage how the app works on your device.",
+    "Desktop App Installeren": "Install Desktop App",
+    "Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.": "Install FTJM as a standalone app on your computer or ChromeOS device for a faster experience and direct desktop access.",
+    "Belangrijk: Zorg ervoor dat pop-ups zijn toegestaan in je browser voor een optimale werking van de app en verificaties.": "Important: Ensure pop-ups are allowed in your browser for optimal app performance and verifications.",
+    "De browser blokkeert PWA app-installatie binnen een iframe (deze ontwikkelomgeving). Klik rechtsboven op \"Open in nieuw tabblad\" en navigeer daar naar Instellingen om de app live op je PC/telefoon te downloaden!": "The browser blocks PWA app installation inside an iframe (this development environment). Click \"Open in new tab\" at the top right and go to Settings there to download the app live on your PC/phone!",
+    "Nu Installeren": "Install Now",
+    "De app is al geïnstalleerd of je browser ondersteunt dit momenteel niet.": "The app is already installed or your browser currently does not support this.",
+    "Handmatige installatie / Chromebook gids": "Manual Installation / Chromebook Guide",
+    "Open de webapp in een nieuw tabblad.": "Open the web app in a new tab.",
+    "Zoek rechts in de adresbalk naar het installatie-icoontje (een PC-scherm met een pijltje naar beneden of de '+' knop).": "Look to the right of the address bar for the installation icon (a PC monitor with an arrow down or the '+' button).",
+    "Klik hierop en selecteer 'Installeren'.": "Click it and select 'Install'.",
+    "Als het icoon er niet staat: Klik rechtsboven op de drie puntjes, kies 'Opslaan en delen' -> 'App installeren'.": "If the icon isn't there: Click the three dots at the top right, choose 'Save and share' -> 'Install app'.",
+    "Open deze site in de Safari browser.": "Open this site in the Safari browser.",
+    "Tik onderin op de Deel-knop (vierkant met pijl omhoog).": "Tap the Share button at the bottom (square with upward arrow).",
+    "Scroll naar beneden en kies 'Zet op beginscherm' (Add to Home Screen).": "Scroll down and choose 'Add to Home Screen'.",
+    "Tik rechtsboven op de drie puntjes menu-knop.": "Tap the three-dot menu button at the top right.",
+    "Tik op 'App installeren' of 'Toevoegen aan startscherm'.": "Tap 'Install app' or 'Add to Home screen'.",
+    "App Info": "App Info",
+    "Versie": "Version",
+    "Platform": "Platform",
+    "Controleer op updates": "Check for updates",
+    "Als er een update is, verschijnt er zo een melding.": "If an update is available, a notification will appear shortly.",
+    "Taal / Language": "Language / Taal",
+    "Taal": "Language",
+    "Kies de weergavetaal van de applicatie.": "Choose the display language of the application.",
+    "Nederlands (Standaard)": "Dutch (Default)",
+    "Engels (English)": "English",
+
+    // Settings Security Tab
+    "Hardware-beveiligde Passkeys": "Hardware-backed Passkeys",
+    "Beheer biometrisch inloggen met TouchID, FaceID of Windows Hello via Passkeys.": "Manage biometric login with TouchID, FaceID or Windows Hello via Passkeys.",
+    "Je apparaat of browser ondersteunt geen Passkeys (WebAuthn).": "Your device or browser does not support Passkeys (WebAuthn).",
+    "Voeg een Passkey toe aan je account": "Add a Passkey to your account",
+    "Voor extra veiligheid scan je via TouchID/FaceID om in te loggen zonder typen of onthouden van wachtwoorden.": "For extra security, scan via TouchID/FaceID to log in without typing or remembering passwords.",
+    "Passkey vernoemen": "Name Passkey",
+    "Bijv: MacBook Air, iPhone 15, Windows PC": "E.g. MacBook Air, iPhone 15, Windows PC",
+    "Sleutel Toevoegen": "Add Key",
+    "Koppel Sleutel": "Link Key",
+    "Gekoppelde Beveiligingssleutels": "Linked Security Keys",
+    "Hieronder zie je de apparaten of sleutels die momenteel gekoppeld zijn aan je account.": "Below are the devices or keys currently linked to your account.",
+    "Naam": "Name",
+    "Gekoppeld op": "Linked on",
+    "Acties": "Actions",
+
+    // Chat View
+    "Algemene Chatroom": "General Chatroom",
+    "Dit is de algemene chatroom. Iedereen kan hier meelezen en typen.": "This is the general chatroom. Everyone can read and type here.",
+    "Typ een bericht...": "Type a message...",
+    "Versturen": "Send",
+    "Snelkoppelingen": "Shortcuts",
+    "Online Leden": "Online Members",
+    "Typen...": "Typing...",
+    "Actieve Spraakoproep": "Active Speech Call",
+    "Deelnemen": "Join",
+    "Deelnemer": "Participant",
+    "Deelnemers": "Participants",
+    "Er is momenteel een actieve groepsoproep in deze chat!": "An active group call is currently taking place in this chat Room!",
+    "Bellen": "Call",
+    "Geselecteerde Foto": "Selected Photo",
+    "Geselecteerd Audiobestand": "Selected Audio File",
+
+    // Forum View
+    "Community Forum & Discussies": "Community Forum & Discussions",
+    "Plaats vragen, praat over projecten of deel je gedachten.": "Post questions, talk about projects or share your thoughts.",
+    "Zoek op forum...": "Search forum...",
+    "Nieuwe Post": "New Post",
+    "Alle Categorieën": "All Categories",
+    "Algemeen": "General",
+    "Vragen": "Questions",
+    "Projecten": "Projects",
+    "Mededelingen": "Announcements",
+    "Ideeën": "Ideas",
+    "Meest Populair": "Most Popular",
+    "Meest Recent": "Most Recent",
+    "Gesloten": "Closed",
+    "Reacties": "Replies",
+    "Bekeken": "Views",
+    "Reageren": "Reply",
+    "Geen forum-posts gevonden": "No forum posts found",
+    "Maak een nieuwe forum post": "Create a new forum post",
+    "Titel": "Title",
+    "Onderwerp van de post": "Subject of the post",
+    "Categorie": "Category",
+    "Inhoud": "Content",
+    "Wat wil je delen met de community?": "What do you want to share with the community?",
+    "Plaatsen": "Post",
+    "Bezig met plaatsen...": "Posting...",
+    "Reactie Plaatsen": "Post Reply",
+    "Schrijf een reactie...": "Write a reply...",
+    "Delen": "Share",
+
+    // Messages View
+    "Privéberichten": "Private Messages",
+    "Beheer je directe conversaties en start nieuwe privéchats.": "Manage your direct conversations and start new private chats.",
+    "Nieuw Privébericht": "New Private Message",
+    "Inbox": "Inbox",
+    "Gesprekken": "Conversations",
+    "Geen gesprekken gevonden": "No conversations found",
+    "Klik op 'Nieuw Privébericht' om een conversatie te starten.": "Click 'New Private Message' to start a conversation.",
+    "Gebruiker Zoeken": "Search User",
+    "Zoek op naam of e-mail...": "Search by name or email...",
+    "Start Gesprek": "Start Conversation",
+    "Bericht typen...": "Type a message...",
+    "U bent geblokkeerd of deze gebruiker is niet beschikbaar.": "You are blocked or this user is not available.",
+
+    // Landing / Guest / Auth
+    "Welkom bij Hoksen Forum": "Welcome to Hoksen Forum",
+    "Het ultieme platform voor community-interactie, forumdiscussies en directe chats.": "The ultimate platform for community interaction, forum discussions and direct chats.",
+    "Registreren": "Register",
+    "Inloggen": "Log In",
+    "E-mailadres": "Email Address",
+    "Wachtwoord": "Password",
+    "Onthoud mij": "Remember me",
+    "Nog geen account?": "No account yet?",
+    "Heb je al een account?": "Already have an account?",
+    "Wachtwoord vergeten?": "Forgot password?",
+    "Inloggen met Google": "Log in with Google",
+    "Account aanmaken": "Create Account",
+
+    // Notifications toast & popups
+    "Herlaad de pagina": "Reload the page",
+    "Verversen": "Refresh",
+  }
+};
+
+let currentLang: Language = (localStorage.getItem('app_language') as Language) || 'nl';
+
+export function getLanguage(): Language {
+  return currentLang;
+}
+
+export function setLanguage(lang: Language) {
+  currentLang = lang;
+  localStorage.setItem('app_language', lang);
+  // Dispatch custom event to notify components that language changed
+  window.dispatchEvent(new CustomEvent('app-language-changed', { detail: lang }));
+}
+
+/**
+ * Hook-like pure function that returns the translated text if the active language is 'en'.
+ * Falls back to the Dutch key itself if no translation mapping exists.
+ */
+export function t(key: string): string {
+  if (currentLang === 'en') {
+    const term = TRANSLATIONS.en[key];
+    if (term !== undefined) {
+      return term;
+    }
+  }
+  return key;
+}

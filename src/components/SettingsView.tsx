@@ -10,6 +10,7 @@ import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS } from '../constants';
 import { formatDate, convertEmoticons, maskEmail } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
 import { supabase } from '../utils/supabase';
+import { Language, t } from '../utils/translations';
 
 interface SettingsViewProps {
   user: User;
@@ -55,6 +56,7 @@ interface SettingsViewProps {
   fetchAdminData: () => Promise<void>;
   users: UserProfile[];
   handleBlockUser: (userId: string, isBlocked: boolean) => void;
+  handleLockUserField: (userId: string, field: 'name' | 'bio', isLocked: boolean) => void;
   saving: boolean;
   uploadingSound: boolean;
   showInstallButton: boolean;
@@ -63,6 +65,8 @@ interface SettingsViewProps {
   maintenanceTimeLeft?: number | null;
   handleScheduleMaintenance?: (target: number | Date) => void;
   handleCancelMaintenance?: () => void;
+  language: Language;
+  onChangeLanguage: (lang: Language) => void;
 }
 
 const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: any }> = {
@@ -450,6 +454,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   fetchAdminData,
   users,
   handleBlockUser,
+  handleLockUserField,
   saving,
   uploadingSound,
   showInstallButton,
@@ -457,11 +462,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   scheduledMaintenance,
   maintenanceTimeLeft,
   handleScheduleMaintenance,
-  handleCancelMaintenance
+  handleCancelMaintenance,
+  language,
+  onChangeLanguage
 }) => {
   const [adminSubTab, setAdminSubTab] = React.useState<'overview' | 'users' | 'security'>('overview');
   const [adminUserSearch, setAdminUserSearch] = React.useState('');
   const [adminWhitelistSearch, setAdminWhitelistSearch] = React.useState('');
+
+  const isNameLocked = !!(profile?.name_locked_until && new Date(profile.name_locked_until) > new Date());
+  const isBioLocked = !!(profile?.bio_locked_until && new Date(profile.bio_locked_until) > new Date());
 
   const [passkeys, setPasskeys] = React.useState<any[]>(() => {
     try {
@@ -588,11 +598,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {[
           { id: 'profile', icon: UserCog, label: 'Profiel' },
           { id: 'notifications', icon: Bell, label: 'Notificaties' },
-          { id: 'theme', icon: Palette, label: 'Thema' },
-          { id: 'app', icon: Layout, label: 'App' },
+          { id: 'theme', icon: Palette, label: 'Custom Thema' },
+          { id: 'app', icon: Layout, label: 'App Instellingen' },
           { id: 'audiologs', icon: Activity, label: 'Audio Logs' },
           { id: 'security', icon: Fingerprint, label: 'Beveiliging' },
-          ...(isAdmin ? [{ id: 'admin', icon: Shield, label: 'Beheer' }] : [])
+          ...(isAdmin ? [{ id: 'admin', icon: Shield, label: 'Admin opties' }] : [])
         ].map(tab => (
           <button
             key={tab.id}
@@ -604,7 +614,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             }`}
           >
             <tab.icon className="w-5 h-5" />
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>
@@ -658,44 +668,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <Link className="w-2.5 h-2.5" /> Of via:
                           </span>
                           <a 
-                            href="https://www.image2url.com/" 
+                            href="https://imgbb.com/" 
                             target="_blank" 
                             rel="noopener noreferrer" 
                             className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30 animate-pulse"
                           >
-                            image2url.com
+                            imgbb.com
                           </a>
                           <a 
-                            href="https://www.imageurlgenerator.com/jpg-to-url" 
+                            href="https://postimages.org/" 
                             target="_blank" 
                             rel="noopener noreferrer" 
                             className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
                           >
-                            JPG
+                            postimages.org
                           </a>
                           <a 
-                            href="https://www.imageurlgenerator.com/png-to-url" 
+                            href="https://imgur.com/upload" 
                             target="_blank" 
                             rel="noopener noreferrer" 
                             className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
                           >
-                            PNG
-                          </a>
-                          <a 
-                            href="https://www.imageurlgenerator.com/jpeg-to-url" 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
-                          >
-                            JPEG
-                          </a>
-                          <a 
-                            href="https://www.imageurlgenerator.com/gif-to-url" 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
-                          >
-                            GIF
+                            imgur.com
                           </a>
                         </div>
                       </div>
@@ -753,16 +747,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </button>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Weergavenaam</label>
+                    <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1 flex items-center gap-1.5">
+                      Weergavenaam
+                      {isNameLocked && (
+                        <span className="text-[9px] text-red-500 font-extrabold normal-case bg-red-500/10 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                          <LockIcon className="w-2.5 h-2.5 inline" /> Vergrendeld door admin
+                        </span>
+                      )}
+                    </label>
                     <input 
                       type="text"
                       value={displayNameInput}
                       onChange={(e) => setDisplayNameInput(e.target.value)}
                       placeholder="Je naam"
-                      className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink font-bold"
+                      disabled={isNameLocked}
+                      className={`w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink font-bold ${
+                        isNameLocked ? 'opacity-60 bg-app-accent/30 cursor-not-allowed' : ''
+                      }`}
                     />
                   </div>
                   <div>
@@ -777,12 +780,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Bio / Status</label>
+                  <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1 flex items-center gap-1.5">
+                    Bio / Status
+                    {isBioLocked && (
+                      <span className="text-[9px] text-red-500 font-extrabold normal-case bg-red-500/10 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        <LockIcon className="w-2.5 h-2.5 inline" /> Vergrendeld door admin
+                      </span>
+                    )}
+                  </label>
                   <textarea 
                     value={bioInput}
                     onChange={(e) => setBioInput(convertEmoticons(e.target.value))}
                     placeholder="Vertel iets over jezelf..."
-                    className="w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink min-h-[120px] resize-none"
+                    disabled={isBioLocked}
+                    className={`w-full px-4 py-4 bg-app-bg border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink min-h-[120px] resize-none ${
+                      isBioLocked ? 'opacity-60 bg-app-accent/30 cursor-not-allowed' : ''
+                    }`}
                   />
                 </div>
 
@@ -794,44 +807,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <Link className="w-2.5 h-2.5" /> Of via:
                       </span>
                       <a 
-                        href="https://www.image2url.com/" 
+                        href="https://imgbb.com/" 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30 animate-pulse"
                       >
-                        image2url.com
+                        imgbb.com
                       </a>
                       <a 
-                        href="https://www.imageurlgenerator.com/jpg-to-url" 
+                        href="https://postimages.org/" 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
                       >
-                        JPG
+                        postimages.org
                       </a>
                       <a 
-                        href="https://www.imageurlgenerator.com/png-to-url" 
+                        href="https://imgur.com/upload" 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
                       >
-                        PNG
-                      </a>
-                      <a 
-                        href="https://www.imageurlgenerator.com/jpeg-to-url" 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
-                      >
-                        JPEG
-                      </a>
-                      <a 
-                        href="https://www.imageurlgenerator.com/gif-to-url" 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
-                      >
-                        GIF
+                        imgur.com
                       </a>
                     </div>
                   </div>
@@ -1597,22 +1594,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Layout className="w-8 h-8 text-app-ink" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">App Instellingen</h3>
-                  <p className="text-app-muted text-sm font-medium">Beheer hoe de app op je apparaat werkt.</p>
+                  <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">{t("App Instellingen")}</h3>
+                  <p className="text-app-muted text-sm font-medium">{t("Beheer hoe de app op je apparaat werkt.")}</p>
                 </div>
               </div>
 
               <div className="space-y-6">
+                {/* Language Selection Card */}
                 <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
-                  <h4 className="font-bold text-app-ink mb-2">Desktop App Installeren</h4>
+                  <h4 className="font-bold text-app-ink mb-2">{t("Taal / Language")}</h4>
                   <p className="text-sm text-app-muted mb-4">
-                    Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.
+                    {t("Kies de weergavetaal van de applicatie.")}
+                  </p>
+                  
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <button 
+                      onClick={() => onChangeLanguage('nl')}
+                      type="button"
+                      className={`flex-1 py-3 px-4 rounded-xl font-bold border transition-all flex items-center justify-center gap-2 ${
+                        language === 'nl'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md'
+                          : 'bg-app-accent/40 text-app-muted border-app-border hover:bg-app-accent/60 hover:text-app-ink'
+                      }`}
+                    >
+                      <span className="text-lg">🇳🇱</span>
+                      {t("Nederlands (Standaard)")}
+                    </button>
+                    <button 
+                      onClick={() => onChangeLanguage('en')}
+                      type="button"
+                      className={`flex-1 py-3 px-4 rounded-xl font-bold border transition-all flex items-center justify-center gap-2 ${
+                        language === 'en'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md'
+                          : 'bg-app-accent/40 text-app-muted border-app-border hover:bg-app-accent/60 hover:text-app-ink'
+                      }`}
+                    >
+                      <span className="text-lg">🇬🇧</span>
+                      {t("Engels (English)")}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
+                  <h4 className="font-bold text-app-ink mb-2">{t("Desktop App Installeren")}</h4>
+                  <p className="text-sm text-app-muted mb-4 font-medium">
+                    {t("Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.")}
                   </p>
                   
                   <div className="mb-6 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
                     <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                     <p className="text-[10px] font-bold text-amber-700 uppercase tracking-tight">
-                      Belangrijk: Zorg ervoor dat pop-ups zijn toegestaan in je browser voor een optimale werking van de app en verificaties.
+                      {t("Belangrijk: Zorg ervoor dat pop-ups zijn toegestaan in je browser voor een optimale werking van de app en verificaties.")}
                     </p>
                   </div>
                   
@@ -1623,10 +1655,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="p-4 bg-blue-500/10 text-blue-700 rounded-2xl border border-blue-500/20 flex flex-col gap-2">
                           <div className="flex items-center gap-3">
                             <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                            <p className="text-xs font-bold font-primary">Voorbeeldweergave gedetecteerd</p>
+                            <p className="text-xs font-bold font-primary">{t("Voorbeeldweergave gedetecteerd")}</p>
                           </div>
                           <p className="text-[11px] text-blue-800 font-medium font-primary leading-normal">
-                            De browser blokkeert PWA app-installatie binnen een iframe (deze ontwikkelomgeving). Klik rechtsboven op <strong>"Open in nieuw tabblad"</strong> en navigeer daar naar Instellingen om de app live op je PC/telefoon te downloaden!
+                            {t("De browser blokkeert PWA app-installatie binnen een iframe (deze ontwikkelomgeving). Klik rechtsboven op \"Open in nieuw tabblad\" en navigeer daar naar Instellingen om de app live op je PC/telefoon te downloaden!")}
                           </p>
                         </div>
                       );
@@ -1635,20 +1667,64 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       return (
                         <button 
                           onClick={handleInstallClick}
-                          className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2"
+                          className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2 mb-6"
                         >
-                          <Plus className="w-5 h-5" />
-                          Nu Installeren
+                          <Plus className="w-5 h-5 animate-bounce" />
+                          {t("Nu Installeren")}
                         </button>
                       );
                     }
-                    return (
-                      <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100 flex items-center gap-3">
-                        <ShieldCheck className="w-5 h-5" />
-                        <p className="text-xs font-bold">De app is al geïnstalleerd of je browser ondersteunt dit momenteel niet.</p>
-                      </div>
-                    );
+                    return null;
                   })()}
+
+                  {/* Manual Installation Guide */}
+                  <div className="mt-4 border-t border-app-border/60 pt-4">
+                    <h5 className="text-xs font-bold text-app-ink uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Monitor className="w-4 h-4 text-app-muted" />
+                      {t("Handmatige installatie / Chromebook gids")}
+                    </h5>
+                    
+                    <div className="space-y-3">
+                      {/* Chromebook / Chrome Step */}
+                      <div className="p-3 bg-app-card rounded-xl border border-app-border text-xs">
+                        <p className="font-bold text-app-ink flex items-center gap-1.5 mb-1">
+                          <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                          Google Chrome & Chromebook (ChromeOS)
+                        </p>
+                        <ul className="list-decimal list-inside space-y-1 text-app-muted font-medium ml-1">
+                          <li>{t("Open de webapp in een nieuw tabblad.")}</li>
+                          <li>{t("Zoek rechts in de adresbalk naar het installatie-icoontje (een PC-scherm met een pijltje naar beneden of de '+' knop).")}</li>
+                          <li>{t("Klik hierop en selecteer 'Installeren'.")}</li>
+                          <li>{t("Als het icoon er niet staat: Klik rechtsboven op de drie puntjes, kies 'Opslaan en delen' -> 'App installeren'.")}</li>
+                        </ul>
+                      </div>
+
+                      {/* iPhone & iPad */}
+                      <div className="p-3 bg-app-card rounded-xl border border-app-border text-xs">
+                        <p className="font-bold text-app-ink flex items-center gap-1.5 mb-1">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                          iPhone & iPad (Safari)
+                        </p>
+                        <ul className="list-decimal list-inside space-y-1 text-app-muted font-medium ml-1">
+                          <li>{t("Open deze site in de Safari browser.")}</li>
+                          <li>{t("Tik onderin op de Deel-knop (vierkant met pijl omhoog).")}</li>
+                          <li>{t("Scroll naar beneden en kies 'Zet op beginscherm' (Add to Home Screen).")}</li>
+                        </ul>
+                      </div>
+
+                      {/* Android */}
+                      <div className="p-3 bg-app-card rounded-xl border border-app-border text-xs">
+                        <p className="font-bold text-app-ink flex items-center gap-1.5 mb-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          Android (Google Chrome)
+                        </p>
+                        <ul className="list-decimal list-inside space-y-1 text-app-muted font-medium ml-1">
+                          <li>{t("Tik rechtsboven op de drie puntjes menu-knop.")}</li>
+                          <li>{t("Tik op 'App installeren' of 'Toevoegen aan startscherm'.")}</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="p-6 bg-app-accent/10 rounded-3xl border border-app-border border-dashed">
@@ -2287,30 +2363,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     <p className="text-[10px] font-bold text-app-muted truncate">{u.email}</p>
                                   </div>
                                 </div>
+                                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                  <button
+                                    onClick={() => handleBlockUser(u.id, !u.is_blocked)}
+                                    disabled={saving}
+                                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-all w-full sm:w-auto ${
+                                      saving ? 'opacity-50 cursor-not-allowed' : ''
+                                    } ${
+                                      u.is_blocked 
+                                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100' 
+                                        : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+                                    }`}
+                                  >
+                                    {saving ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : u.is_blocked ? (
+                                      <>
+                                        <Check className="w-3 h-3" /> Deblokkeren
+                                      </>
+                                    ) : (
+                                      <>
+                                        <UserMinus className="w-3 h-3" /> Blokkeren
+                                      </>
+                                    )}
+                                  </button>
 
-                                <button
-                                  onClick={() => handleBlockUser(u.id, !u.is_blocked)}
-                                  disabled={saving}
-                                  className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-all w-full sm:w-auto ${
-                                    saving ? 'opacity-50 cursor-not-allowed' : ''
-                                  } ${
-                                    u.is_blocked 
-                                      ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100' 
-                                      : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
-                                  }`}
-                                >
-                                  {saving ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : u.is_blocked ? (
-                                    <>
-                                      <Check className="w-3 h-3" /> Deblokkeren
-                                    </>
-                                  ) : (
-                                    <>
-                                      <UserMinus className="w-3 h-3" /> Blokkeren
-                                    </>
-                                  )}
-                                </button>
+                                  <button
+                                    onClick={() => {
+                                      const isLocked = u.name_locked_until && new Date(u.name_locked_until) > new Date();
+                                      handleLockUserField(u.id, 'name', !isLocked);
+                                    }}
+                                    disabled={saving}
+                                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-all w-full sm:w-auto ${
+                                      saving ? 'opacity-50 cursor-not-allowed' : ''
+                                    } ${
+                                      u.name_locked_until && new Date(u.name_locked_until) > new Date()
+                                        ? 'bg-amber-500/15 text-amber-600 border border-amber-500/30 hover:bg-amber-500/25 font-black'
+                                        : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200 font-bold'
+                                    }`}
+                                    title="Vergrendel of ontgrendel de naam van deze gebruiker"
+                                  >
+                                    <LockIcon className="w-2.5 h-2.5" />
+                                    {u.name_locked_until && new Date(u.name_locked_until) > new Date() ? 'Naam Ontgrendelen' : 'Naam Vergrendelen'}
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      const isLocked = u.bio_locked_until && new Date(u.bio_locked_until) > new Date();
+                                      handleLockUserField(u.id, 'bio', !isLocked);
+                                    }}
+                                    disabled={saving}
+                                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-all w-full sm:w-auto ${
+                                      saving ? 'opacity-50 cursor-not-allowed' : ''
+                                    } ${
+                                      u.bio_locked_until && new Date(u.bio_locked_until) > new Date()
+                                        ? 'bg-amber-500/15 text-amber-600 border border-amber-500/30 hover:bg-amber-500/25 font-black'
+                                        : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200 font-bold'
+                                    }`}
+                                    title="Vergrendel of ontgrendel de bio van deze gebruiker"
+                                  >
+                                    <LockIcon className="w-2.5 h-2.5" />
+                                    {u.bio_locked_until && new Date(u.bio_locked_until) > new Date() ? 'Bio Ontgrendelen' : 'Bio Vergrendelen'}
+                                  </button>
+                                </div>
                               </div>
 
                               {tel ? (

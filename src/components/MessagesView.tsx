@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip, Video } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -28,7 +28,8 @@ interface MessagesViewProps {
   useCustomTheme: boolean;
   customTheme: CustomTheme;
   onStartCall?: (targetId: string, targetName: string, targetAvatar?: string) => void;
-  onStartGroupCall?: (roomId: string, roomName: string) => void;
+  onStartVideoCall?: (targetId: string, targetName: string, targetAvatar?: string) => void;
+  onStartGroupCall?: (roomId: string, roomName: string, isVideo?: boolean) => void;
   onEndCall?: () => void;
   activeCallUserId?: string;
   groupVoiceCallActiveRooms?: Set<string>;
@@ -60,6 +61,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   useCustomTheme,
   customTheme,
   onStartCall,
+  onStartVideoCall,
   onStartGroupCall,
   onEndCall,
   activeCallUserId,
@@ -474,51 +476,97 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   )}
 
                   {activeConversation && activeConversation.is_group && onStartGroupCall && (
-                    <button
-                      onClick={() => {
-                        if (playSound) {
-                          playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
-                        }
-                        onStartGroupCall(activeConversation.id, activeConversation.name || 'Groepsgesprek');
-                      }}
-                      className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-all shadow-lg active:scale-95 shadow-emerald-500/20"
-                      title="Start Groepscall"
-                    >
-                      <Phone size={18} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          if (playSound) {
+                            playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
+                          }
+                          onStartGroupCall(activeConversation.id, activeConversation.name || 'Groepsgesprek', false);
+                        }}
+                        className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-all shadow-lg active:scale-95 shadow-emerald-500/20"
+                        title="Start groepsbellen"
+                      >
+                        <Phone size={18} />
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (playSound) {
+                            playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
+                          }
+                          onStartGroupCall(activeConversation.id, activeConversation.name || 'Groepsgesprek', true);
+                        }}
+                        className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-all shadow-lg active:scale-95 shadow-emerald-600/10"
+                        title="Start video-groepsbellen"
+                      >
+                        <Video size={18} />
+                      </button>
+                    </div>
                   )}
 
-                  {activeConversation && !activeConversation.is_group && onStartCall && (() => {
+                   {activeConversation && !activeConversation.is_group && onStartCall && (() => {
                     const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
                     const isActivePeer = activeCallUserId && otherUid === activeCallUserId;
                     
                     return (
-                      <button
-                        onClick={() => {
-                          const otherName = otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
-                          const otherAvatar = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) || undefined : undefined;
-                          
-                          if (playSound && !isActivePeer) {
-                            playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
-                          }
-                          
-                          if (otherUid) {
-                            if (isActivePeer && onEndCall) {
-                              onEndCall();
-                            } else {
-                              onStartCall(otherUid, otherName, otherAvatar);
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const otherName = otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
+                            const otherAvatar = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) || undefined : undefined;
+                            
+                            if (playSound && !isActivePeer) {
+                              playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
                             }
-                          }
-                        }}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
-                          isActivePeer 
-                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
-                            : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
-                        }`}
-                        title={isActivePeer ? "Ophangen" : "Start spraakoproep"}
-                      >
-                        {isActivePeer ? <PhoneOff size={18} /> : <Phone size={18} />}
-                      </button>
+                            
+                            if (otherUid) {
+                              if (isActivePeer && onEndCall) {
+                                onEndCall();
+                              } else {
+                                onStartCall(otherUid, otherName, otherAvatar);
+                              }
+                            }
+                          }}
+                          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
+                            isActivePeer 
+                              ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
+                              : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                          }`}
+                          title={isActivePeer ? "Ophangen" : "Start spraakoproep"}
+                        >
+                          {isActivePeer ? <PhoneOff size={18} /> : <Phone size={18} />}
+                        </button>
+
+                        {onStartVideoCall && (
+                          <button
+                            onClick={() => {
+                              const otherName = otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
+                              const otherAvatar = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) || undefined : undefined;
+                              
+                              if (playSound && !isActivePeer) {
+                                playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
+                              }
+                              
+                              if (otherUid) {
+                                if (isActivePeer && onEndCall) {
+                                  onEndCall();
+                                } else {
+                                  onStartVideoCall(otherUid, otherName, otherAvatar);
+                                }
+                              }
+                            }}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
+                              isActivePeer 
+                                ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10'
+                            }`}
+                            title={isActivePeer ? "Ophangen" : "Start video-bellen"}
+                          >
+                            {isActivePeer ? <PhoneOff size={18} /> : <Video size={18} />}
+                          </button>
+                        )}
+                      </div>
                     );
                   })()}
                 </div>

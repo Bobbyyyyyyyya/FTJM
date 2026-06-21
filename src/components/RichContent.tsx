@@ -40,9 +40,11 @@ const highlightMatch = (text: string, query?: string) => {
 
 export const RichContent: React.FC<RichContentProps> = React.memo(({ content, searchQuery }) => {
   // Attempt to decrypt if it looks like an encrypted general chat message
-  const decryptedContent = decryptGeneralChat(content);
+  const safeContent = (content && typeof content === 'string') ? content : '';
+  const decryptedContent = decryptGeneralChat(safeContent) || '';
+  const safeDecryptedContent: string = (decryptedContent && typeof decryptedContent === 'string') ? decryptedContent : '';
 
-  const shareMatch = decryptedContent.match(/\[ARCADE_SCORE_SHARE:(\w+):(\d+):([^\]]+)\]/);
+  const shareMatch = safeDecryptedContent ? safeDecryptedContent.match(/\[ARCADE_SCORE_SHARE:(\w+):(\d+):([^\]]+)\]/) : null;
   if (shareMatch) {
     const gameId = shareMatch[1];
     const score = parseInt(shareMatch[2], 10);
@@ -134,15 +136,17 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
   const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
   
   const combinedRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|@[a-zA-Z0-9_]+)/g;
-  const parts = decryptedContent.split(combinedRegex);
+  const parts = safeDecryptedContent.split(combinedRegex);
 
   const getYoutubeId = (url: string) => {
+    if (!url || typeof url !== 'string') return null;
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
   };
 
   const isImage = (url: string) => {
+    if (!url || typeof url !== 'string') return false;
     if (url.startsWith('data:image/')) return true;
     const imageExtensions = /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)(\?.*)?$/i;
     const imageHosts = [
@@ -154,21 +158,31 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
       'images.pexels.com',
       'cdn.discordapp.com/attachments',
       'media.discordapp.net/attachments',
-      'cdn.imageurlgenerator.com'
+      'cdn.imageurlgenerator.com',
+      'i.ibb.co',
+      'ibb.co',
+      'postimg.cc',
+      'postimages.org',
+      'imgur.com',
+      'i.imgur.com'
     ];
     
-    return url.match(imageExtensions) || imageHosts.some(host => url.includes(host));
+    const matched = url.match(imageExtensions);
+    return matched || imageHosts.some(host => url.includes(host)) ? true : false;
   };
 
   const isAudio = (url: string) => {
+    if (!url || typeof url !== 'string') return false;
     if (url.startsWith('data:audio/')) return true;
     const audioExtensions = /\.(mp3|wav|m4a|ogg|opus)(\?.*)?$/i;
-    return url.match(audioExtensions);
+    const matched = url.match(audioExtensions);
+    return matched ? true : false;
   };
 
   return (
     <div className="space-y-2 break-words">
       <div className="whitespace-pre-wrap">{parts.map((part, i) => {
+        if (!part || typeof part !== 'string') return null;
         if (part.match(urlRegex)) {
           if (part.startsWith('data:')) {
             return null; // Don't render raw base64 data strings as text
@@ -196,7 +210,8 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
       })}</div>
       
       <div className="flex flex-col gap-4 mt-2">
-        {decryptedContent.match(urlRegex)?.map((url, i) => {
+        {safeDecryptedContent.match(urlRegex)?.map((url, i) => {
+          if (!url || typeof url !== 'string') return null;
           const youtubeId = getYoutubeId(url);
           if (youtubeId) {
             return (

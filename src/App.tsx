@@ -80,6 +80,7 @@ import { useVoiceCall } from './hooks/useVoiceCall';
 import { VoiceCallUI } from './components/VoiceCallUI';
 import { useGroupVoiceCall } from './hooks/useGroupVoiceCall';
 import { GroupVoiceCallUI } from './components/GroupVoiceCallUI';
+import { t, Language, getLanguage, setLanguage } from './utils/translations';
 
 // Constants & Helpers
 import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
@@ -174,6 +175,7 @@ const normalizeEmail = (rawEmail: string): string => {
 };
 
 export default function App() {
+  const [language, setLanguageState] = useState<Language>(() => getLanguage());
   const [ddosLock, setDdosLock] = useState(() => rateLimiter.getIsLockedStatus());
 
   useEffect(() => {
@@ -424,7 +426,23 @@ export default function App() {
         duration: Infinity,
         action: {
           label: 'Verversen',
-          onClick: () => window.location.reload()
+          onClick: () => {
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistration().then((reg) => {
+                if (reg && reg.waiting) {
+                  reg.waiting.postMessage('SKIP_WAITING');
+                }
+                // Short buffer to allow service worker to process message and activate
+                setTimeout(() => {
+                  window.location.reload();
+                }, 100);
+              }).catch(() => {
+                window.location.reload();
+              });
+            } else {
+              window.location.reload();
+            }
+          }
         }
       });
     };
@@ -1312,7 +1330,7 @@ export default function App() {
               // 2. Profile Fetch
               newClient
                 .from('profiles')
-                .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes, is_blocked')
+                .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes, is_blocked, name_locked_until, bio_locked_until')
                 .eq('id', currentUser.id)
                 .maybeSingle(),
               
@@ -1502,12 +1520,12 @@ export default function App() {
               chat: 'Algemene Chat',
               forum: 'Forum',
               messages: 'Berichten/Inbox',
-              news: 'Nieuws',
+              news: 'Laatste Nieuws',
               settings: 'Instellingen',
               arcade: 'Arcade',
               audiologs: 'Audio Logs'
             };
-            toast.success(`Weergave gewijzigd naar: ${labels[selectedView]}`);
+            toast.success(`${t("Weergave gewijzigd naar: ")}${t(labels[selectedView])}`);
             return;
           }
         }
@@ -1559,12 +1577,12 @@ export default function App() {
                 chat: 'Algemene Chat',
                 forum: 'Forum',
                 messages: 'Berichten/Inbox',
-                news: 'Nieuws',
+                news: 'Laatste Nieuws',
                 settings: 'Instellingen',
                 arcade: 'Arcade',
                 audiologs: 'Audio Logs'
               };
-              toast.success(`Weergave gewijzigd naar: ${labels[targetView]}`);
+              toast.success(`${t("Weergave gewijzigd naar: ")}${t(labels[targetView])}`);
               return;
             }
           }
@@ -1827,19 +1845,19 @@ export default function App() {
             try {
               const res = await supabaseClient
                 .from('profiles')
-                .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme')
+                .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme, name_locked_until, bio_locked_until')
                 .limit(200);
               if (!res.error && res.data) return res;
               console.warn('Ophalen met admin_notes mislukt, proberen zonder...', res.error);
               return await supabaseClient
                 .from('profiles')
-                .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme')
+                .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme, name_locked_until, bio_locked_until')
                 .limit(200);
             } catch (e) {
               console.warn('Mislukt met custom_theme, proberen basisvelden...', e);
               return await supabaseClient
                 .from('profiles')
-                .select('id, display_name, photo_url, email, created_at, is_blocked')
+                .select('id, display_name, photo_url, email, created_at, is_blocked, name_locked_until, bio_locked_until')
                 .limit(200);
             }
           };
@@ -1903,19 +1921,19 @@ export default function App() {
         try {
           const res = await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme')
+            .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme, name_locked_until, bio_locked_until')
             .limit(200);
           if (!res.error && res.data) return res;
           console.warn('Ophalen met admin_notes mislukt, proberen zonder...', res.error);
           return await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme')
+            .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme, name_locked_until, bio_locked_until')
             .limit(200);
         } catch (e) {
           console.warn('Mislukt met custom_theme, proberen basisvelden...', e);
           return await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, email, created_at, is_blocked')
+            .select('id, display_name, photo_url, email, created_at, is_blocked, name_locked_until, bio_locked_until')
             .limit(200);
         }
       };
@@ -3366,6 +3384,24 @@ export default function App() {
     setSaving(true);
     setError(null);
 
+    const isNameLocked = profile?.name_locked_until && new Date(profile.name_locked_until) > new Date();
+    const isBioLocked = profile?.bio_locked_until && new Date(profile.bio_locked_until) > new Date();
+
+    const targetDisplayName = displayNameInput.trim() || user.displayName || 'Anoniem';
+    if (isNameLocked && targetDisplayName !== profile?.display_name) {
+      toast.error('Je weergavenaam is vergrendeld door een administrator!');
+      setSaving(false);
+      return;
+    }
+
+    const targetBio = bioInput.trim() || null;
+    const oldBio = profile?.bio || null;
+    if (isBioLocked && targetBio !== oldBio) {
+      toast.error('Je bio / status is vergrendeld door een administrator!');
+      setSaving(false);
+      return;
+    }
+
     const updatedData: any = {
       id: user.uid,
       display_name: displayNameInput.trim() || user.displayName || 'Anoniem',
@@ -3564,7 +3600,7 @@ export default function App() {
     try {
       let result = await supabaseClient
         .from('profiles')
-        .select('id, display_name, original_name, email, photo_url, bio, role, created_at, updated_at, banner_url, custom_theme')
+        .select('id, display_name, original_name, email, photo_url, bio, role, created_at, updated_at, banner_url, custom_theme, name_locked_until, bio_locked_until, is_blocked')
         .eq('id', userId)
         .single();
         
@@ -3572,7 +3608,7 @@ export default function App() {
         console.warn('Ophalen met banner_url mislukt, proberen zonder...', result.error);
         result = await supabaseClient
           .from('profiles')
-          .select('id, display_name, original_name, email, photo_url, bio, role, created_at, updated_at, custom_theme')
+          .select('id, display_name, original_name, email, photo_url, bio, role, created_at, updated_at, custom_theme, name_locked_until, bio_locked_until, is_blocked')
           .eq('id', userId)
           .single();
       }
@@ -4404,7 +4440,11 @@ export default function App() {
       return;
     }
 
-    const userToBlock = users.find(u => u.id === userId);
+    let userToBlock = users.find(u => u.id === userId);
+    if (!userToBlock && selectedUser && selectedUser.id === userId) {
+      userToBlock = selectedUser;
+    }
+
     if (!userToBlock) {
       console.error('[Admin] User not found for blocking:', userId);
       toast.error('Gebruiker niet gevonden.');
@@ -4494,6 +4534,68 @@ export default function App() {
     } finally {
       setSaving(false);
       console.log('[Admin] FINISHED block flow');
+    }
+  };
+
+  const handleLockUserField = async (userId: string, field: 'name' | 'bio', isLocked: boolean) => {
+    if (!isAdmin) {
+      console.warn('[Admin] handleLockUserField called by non-admin');
+      return;
+    }
+
+    let userToLock = users.find(u => u.id === userId);
+    if (!userToLock && selectedUser && selectedUser.id === userId) {
+      userToLock = selectedUser;
+    }
+
+    if (!userToLock) {
+      toast.error('Gebruiker niet gevonden.');
+      return;
+    }
+
+    setSaving(true);
+    const lockValue = isLocked ? '9999-12-31T23:59:59.000Z' : null;
+    const updatePayload = field === 'name' 
+      ? { name_locked_until: lockValue, updated_at: new Date().toISOString() } 
+      : { bio_locked_until: lockValue, updated_at: new Date().toISOString() };
+
+    try {
+      const { error } = await supabaseClient
+        .from('profiles')
+        .update(updatePayload)
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      // Update local state immediately for responsiveness
+      setUsers(prev => {
+        return prev.map(u => u.id === userId 
+          ? { 
+              ...u, 
+              [field === 'name' ? 'name_locked_until' : 'bio_locked_until']: lockValue 
+            } 
+          : u
+        );
+      });
+
+      toast.success(
+        isLocked 
+          ? `${field === 'name' ? 'Naam' : 'Bio'} van ${userToLock.display_name} is vergrendeld`
+          : `${field === 'name' ? 'Naam' : 'Bio'} van ${userToLock.display_name} is ontgrendeld`
+      );
+
+      logAudioEvent(
+        'system', 
+        'success', 
+        `Admin heeft de ${field === 'name' ? 'naam' : 'bio'} van ${userToLock.display_name} ${isLocked ? 'vergrendeld' : 'ontgrendeld'}`, 
+        user?.uid, 
+        profile?.display_name
+      );
+    } catch (err) {
+      console.error('[Admin] Error locking user field:', err);
+      handleSupabaseError(err, 'profielveld vergrendelen/ontgrendelen', user, true);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -5350,14 +5452,14 @@ export default function App() {
                   className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'chat' ? 'bg-app-card text-app-ink shadow-sm' : 'text-app-muted hover:text-app-ink'}`}
                 >
                   <MessageSquare className="w-4 h-4" />
-                  Chat
+                  {t("Chat")}
                 </button>
                 <button 
                   onClick={() => setView('messages')}
                   className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'messages' ? 'bg-app-card text-app-ink shadow-sm' : 'text-app-muted hover:text-app-ink'}`}
                 >
                   <Mail className="w-4 h-4" />
-                  Berichten
+                  {t("Berichten")}
                 </button>
               </div>
 
@@ -5373,7 +5475,7 @@ export default function App() {
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
                 >
                   <Settings className={`w-4 h-4 ${showNavDropdown ? 'rotate-90' : ''} transition-transform`} />
-                  Menu
+                  {t("Menu")}
                   <ChevronLeft className={`w-4 h-4 -rotate-90 transition-transform ${showNavDropdown ? 'rotate-90' : ''}`} />
                   {!hasSeenMenu && (
                     <motion.div 
@@ -5403,14 +5505,14 @@ export default function App() {
                         className="absolute right-0 mt-2 w-56 bg-app-card border border-app-border rounded-2xl shadow-2xl z-[120] overflow-hidden p-2"
                       >
                         <div className="px-3 py-2 mb-1">
-                          <p className="text-[10px] font-bold text-app-muted uppercase tracking-wide">Navigatie</p>
+                          <p className="text-[10px] font-bold text-app-muted uppercase tracking-wide">{t("Navigatie")}</p>
                         </div>
                         <button 
                           onClick={() => { setView('forum'); setShowNavDropdown(false); }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'forum' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
                           <Layout className="w-4 h-4" />
-                          Community Forum
+                          {t("Community Forum")}
                         </button>
                         <button 
                           onClick={() => { 
@@ -5424,7 +5526,7 @@ export default function App() {
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
                           <Newspaper className="w-4 h-4" />
-                          Laatste Nieuws
+                          {t("Laatste Nieuws")}
                           {!hasSeenNews && (
                             <motion.div 
                               animate={{ opacity: [1, 0, 1] }}
@@ -5441,7 +5543,7 @@ export default function App() {
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'settings' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
                           <Settings className="w-4 h-4" />
-                          Instellingen
+                          {t("Instellingen")}
                         </button>
                         <div className="h-px bg-app-border my-2 mx-2" />
                         <button 
@@ -5449,7 +5551,7 @@ export default function App() {
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'arcade' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
                           <Gamepad2 className="w-4 h-4 text-cyan-500 animate-[pulse_2s_infinite]" />
-                          🕹️ Arcade (Geheim!)
+                          {t("🕹️ Arcade (Geheim!)")}
                         </button>
                         <div className="h-px bg-app-border my-2 mx-2" />
                         <button 
@@ -5457,7 +5559,7 @@ export default function App() {
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'audiologs' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
                           <Volume2 className="w-4 h-4" />
-                          Audio Logs
+                          {t("Audio Logs")}
                         </button>
                       </motion.div>
                     </>
@@ -5951,7 +6053,8 @@ export default function App() {
                   useCustomTheme={useCustomTheme}
                   customTheme={customTheme}
                   onStartCall={voiceCall.initiateCall}
-                  onStartGroupCall={groupVoiceCall.joinGroupCall}
+                  onStartVideoCall={(targetId, targetName, targetAvatar) => voiceCall.initiateCall(targetId, targetName, targetAvatar, true)}
+                  onStartGroupCall={(roomId, roomName, isVideo) => groupVoiceCall.joinGroupCall(roomId, roomName, isVideo)}
                   groupVoiceCallActiveRooms={groupVoiceCallActiveRooms}
                   onEndCall={voiceCall.endCall}
                   activeCallUserId={activeCallUserId}
@@ -5964,8 +6067,8 @@ export default function App() {
               {view === 'settings' && (
                 <div className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
                   <div className="mb-8 font-primary">
-                      <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">Instellingen</h2>
-                    <p className="text-app-muted font-medium text-sm">Beheer je account en app voorkeuren</p>
+                      <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">{t("Instellingen")}</h2>
+                    <p className="text-app-muted font-medium text-sm">{t("Beheer je account en app voorkeuren")}</p>
                   </div>
                   
                   <SettingsView 
@@ -6012,6 +6115,7 @@ export default function App() {
                     fetchAdminData={fetchAdminData}
                     users={users}
                     handleBlockUser={handleBlockUser}
+                    handleLockUserField={handleLockUserField}
                     saving={saving}
                     uploadingSound={uploadingSound}
                     showInstallButton={deferredPrompt !== null}
@@ -6020,14 +6124,20 @@ export default function App() {
                     maintenanceTimeLeft={maintenanceTimeLeft}
                     handleScheduleMaintenance={handleScheduleMaintenance}
                     handleCancelMaintenance={handleCancelMaintenance}
+                    language={language}
+                    onChangeLanguage={(lang) => {
+                      setLanguageState(lang);
+                      setLanguage(lang);
+                      toast.success(lang === 'en' ? 'Language changed to English' : 'Taal gewijzigd naar Nederlands');
+                    }}
                   />
                 </div>
               )}
               {view === 'audiologs' && (
                 <div className="max-w-6xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)]">
                   <div className="mb-8">
-                    <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">Audio Logs</h2>
-                    <p className="text-app-muted font-medium text-sm">Overzicht van alle geluidsgebeurtenissen</p>
+                    <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">{t("Audio Logs")}</h2>
+                    <p className="text-app-muted font-medium text-sm">{t("Overzicht van alle geluidsgebeurtenissen")}</p>
                   </div>
                   <div className="bg-app-card rounded-[2rem] border border-app-border p-6 shadow-sm h-full overflow-hidden flex flex-col">
                     <AudioLogsView />
@@ -6047,8 +6157,8 @@ export default function App() {
               {view === 'news' && (
                 <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
                   <div className="mb-8">
-                    <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">Laatste Nieuws</h2>
-                    <p className="text-app-muted font-medium text-sm">Blijf op de hoogte van de laatste ontwikkelingen</p>
+                    <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">{t("Laatste Nieuws")}</h2>
+                    <p className="text-app-muted font-medium text-sm">{t("Blijf op de hoogte van de laatste ontwikkelingen")}</p>
                   </div>
                   
                   <div className="space-y-6">
@@ -6249,6 +6359,94 @@ export default function App() {
                       </div>
                     )}
 
+                    {/* ADMIN ACTION PANEL IN PROFILE POPUP */}
+                    {isAdmin && user && user.uid !== selectedUser.id && (
+                      <div className="p-6 bg-amber-500/10 border border-amber-500/25 rounded-3xl space-y-4">
+                        <label className="block text-[10px] font-extrabold text-amber-600 uppercase tracking-widest flex items-center gap-1.5 border-b border-amber-500/20 pb-2">
+                          <LockIcon className="w-3 h-3 text-amber-500 inline" /> Beheerder Acties
+                        </label>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-center text-xs font-bold leading-normal">
+                          <button
+                            onClick={async () => {
+                              await handleBlockUser(selectedUser.id, !selectedUser.is_blocked);
+                              setSelectedUser(prev => prev ? { ...prev, is_blocked: !prev.is_blocked } : null);
+                            }}
+                            disabled={saving}
+                            className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-all w-full select-none ${
+                              saving ? 'opacity-50 cursor-not-allowed' : ''
+                            } ${
+                              selectedUser.is_blocked 
+                                ? 'bg-emerald-500 text-white hover:bg-emerald-605 shadow-md active:scale-95' 
+                                : 'bg-red-500 text-white hover:bg-red-610 shadow-md active:scale-95'
+                            }`}
+                          >
+                            {saving ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : selectedUser.is_blocked ? (
+                              <>Deblokkeren</>
+                            ) : (
+                              <>Blokkeren</>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              const isLocked = !!(selectedUser.name_locked_until && new Date(selectedUser.name_locked_until) > new Date());
+                              await handleLockUserField(selectedUser.id, 'name', !isLocked);
+                              setSelectedUser(prev => prev ? { 
+                                ...prev, 
+                                name_locked_until: !isLocked ? '9999-12-31T23:59:59.000Z' : null 
+                              } : null);
+                            }}
+                            disabled={saving}
+                            className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-all w-full select-none ${
+                              saving ? 'opacity-50 cursor-not-allowed' : ''
+                            } ${
+                              selectedUser.name_locked_until && new Date(selectedUser.name_locked_until) > new Date()
+                                ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-md active:scale-95'
+                                : 'bg-app-accent border border-app-border text-app-ink hover:bg-app-accent/70 active:scale-95'
+                            }`}
+                          >
+                            {saving ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : selectedUser.name_locked_until && new Date(selectedUser.name_locked_until) > new Date() ? (
+                              <>Naam Ontgrendelen</>
+                            ) : (
+                              <>Naam Vergrendelen</>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              const isLocked = !!(selectedUser.bio_locked_until && new Date(selectedUser.bio_locked_until) > new Date());
+                              await handleLockUserField(selectedUser.id, 'bio', !isLocked);
+                              setSelectedUser(prev => prev ? { 
+                                ...prev, 
+                                bio_locked_until: !isLocked ? '9999-12-31T23:59:59.000Z' : null 
+                              } : null);
+                            }}
+                            disabled={saving}
+                            className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-all w-full sm:col-span-2 select-none ${
+                              saving ? 'opacity-50 cursor-not-allowed' : ''
+                            } ${
+                              selectedUser.bio_locked_until && new Date(selectedUser.bio_locked_until) > new Date()
+                                ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-md active:scale-95'
+                                : 'bg-app-accent border border-app-border text-app-ink hover:bg-app-accent/70 active:scale-95'
+                            }`}
+                          >
+                            {saving ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : selectedUser.bio_locked_until && new Date(selectedUser.bio_locked_until) > new Date() ? (
+                              <>Bio Ontgrendelen</>
+                            ) : (
+                              <>Bio Vergrendelen</>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex gap-3">
                       {user.uid !== selectedUser.id && (
                         <>
@@ -6424,8 +6622,12 @@ export default function App() {
           state={groupVoiceCall.groupCallState}
           participants={groupVoiceCall.groupParticipants}
           isMuted={groupVoiceCall.isGroupMuted}
+          isVideoCall={groupVoiceCall.isVideoCall}
+          isVideoMuted={groupVoiceCall.isVideoMuted}
+          localStream={groupVoiceCall.localStream}
           leaveCall={groupVoiceCall.leaveGroupCall}
           toggleMute={groupVoiceCall.toggleGroupMute}
+          toggleVideo={groupVoiceCall.toggleGroupVideo}
           roomName={groupVoiceCall.roomName}
           user={user}
         />

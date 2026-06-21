@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ftjm-v3.2';
+const CACHE_NAME = 'ftjm-v3.4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -15,12 +15,27 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // Use Promise.all with individually caught promises so a single 404/failure won't block the entire SW installation
+      // Use Promise.all with custom request to bypass browser disk cache using cache: 'reload'
       return Promise.all(
         ASSETS_TO_CACHE.map((asset) => {
-          return cache.add(asset).catch((err) => {
-            console.warn(`[SW] Failed to cache asset: ${asset}`, err);
-          });
+          // Bypassing browser disk/HTTP cache ensures we fetch the absolute freshest files from network during updates
+          const request = new Request(asset, { cache: 'reload' });
+          return fetch(request)
+            .then((response) => {
+              if (response.ok) {
+                return cache.put(asset, response).catch((putErr) => {
+                  console.warn(`[SW] Cache.put failed during installation for "${asset}":`, putErr);
+                });
+              }
+              throw new Error(`Response status ${response.status}`);
+            })
+            .catch((err) => {
+              console.warn(`[SW] Failed to fetch and cache asset with reload bypass: ${asset}`, err);
+              // Fallback to regular cache add in case browser is incompatible with Request/cache settings
+              return cache.add(asset).catch((fallbackErr) => {
+                console.error(`[SW] Regular cache fallback also failed for: ${asset}`, fallbackErr);
+              });
+            });
         })
       );
     })
@@ -76,19 +91,43 @@ self.addEventListener('fetch', (event) => {
   // Network first for HTML/navigate requests to ensure updates are detected
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
+      fetch(event.request).catch(() => {
+        try {
+          if (typeof caches !== 'undefined' && caches && typeof caches.match === 'function') {
+            return caches.match(event.request);
+          }
+        } catch (e) {
+          console.error('[SW] caches.match failed during navigation checkout:', e);
+        }
+        return new Response('Offline availability not cached.', { status: 503, statusText: 'Service Unavailable' });
+      })
     );
+    return;
+  }
+
+  // Failsafe in case 'caches' is blocked or undefined in iframe sandboxes
+  if (typeof caches === 'undefined' || !caches || typeof caches.open !== 'function') {
+    event.respondWith(fetch(event.request));
     return;
   }
 
   // Safe and clean implementation of stale-while-revalidate without calling event.waitUntil asynchronously
   event.respondWith(
     caches.open(CACHE_NAME).then((cache) => {
+      if (!cache || typeof cache.match !== 'function') {
+        return fetch(event.request);
+      }
       return cache.match(event.request).then((cachedResponse) => {
         const fetchPromise = fetch(event.request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
-              cache.put(event.request, networkResponse.clone());
+              try {
+                cache.put(event.request, networkResponse.clone()).catch((putErr) => {
+                  console.warn(`[SW] Async cache.put rejected for "${event.request.url}":`, putErr);
+                });
+              } catch (e) {
+                console.warn(`[SW] Error during async cache.put for "${event.request.url}":`, e);
+              }
             }
             return networkResponse;
           })
@@ -105,4 +144,10 @@ self.addEventListener('fetch', (event) => {
       });
     })
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
