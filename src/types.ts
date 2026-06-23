@@ -91,6 +91,22 @@ export interface UserProfile {
   updated_at: string;
 }
 
+export interface AdminWarning {
+  id: string;
+  reason: string;
+  details: string;
+  admin_name: string;
+  date: string;
+  read: boolean;
+}
+
+export interface AdminNotesData {
+  telemetry: any[];
+  warnings: AdminWarning[];
+  banned_until: string | null;
+  ban_reason: string | null;
+}
+
 export interface Post {
   id: string;
   author_id: string;

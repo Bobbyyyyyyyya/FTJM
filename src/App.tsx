@@ -84,7 +84,7 @@ import { t, Language, getLanguage, setLanguage } from './utils/translations';
 
 // Constants & Helpers
 import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
-import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor } from './utils/helpers';
+import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes } from './utils/helpers';
 
 import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
 import { rateLimiter } from './utils/rateLimiter';
@@ -1156,6 +1156,10 @@ export default function App() {
   const isAdmin = profile?.role === 'admin' || user?.email === 'markohoksen@gmail.com';
   const isBlocked = profile?.is_blocked === true;
 
+  const notesData = parseAdminNotes(profile?.admin_notes);
+  const isTempBanned = !!(notesData.banned_until && new Date(notesData.banned_until) > new Date());
+  const activeWarning = notesData.warnings?.find(w => !w.read) || null;
+
   // Auto-set admin role for markohoksen@gmail.com
   useEffect(() => {
     if (user?.email === 'markohoksen@gmail.com' && profile && profile.role !== 'admin') {
@@ -1700,23 +1704,9 @@ export default function App() {
       let oldAdminNotes = currentProfile?.admin_notes;
       let oldCustomTheme = currentProfile?.custom_theme || {};
 
-      let existingLogs: any[] = [];
-      if (oldAdminNotes) {
-        try {
-          const parsed = JSON.parse(oldAdminNotes);
-          if (Array.isArray(parsed)) {
-            existingLogs = parsed.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
-          } else if (parsed && typeof parsed === 'object') {
-            if (parsed.history && Array.isArray(parsed.history)) {
-              existingLogs = parsed.history.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
-            } else if (parsed.ip) {
-              existingLogs = [{ ...parsed, ip: 'Geanonimiseerd' }];
-            }
-          }
-        } catch (e) {
-          // Geen geldige JSON
-        }
-      }
+      let adminNotesObj = parseAdminNotes(oldAdminNotes);
+      let existingLogs: any[] = adminNotesObj.telemetry || [];
+
       if (existingLogs.length === 0 && oldCustomTheme) {
         const ut = (oldCustomTheme as any).user_telemetry;
         if (ut) {
@@ -1771,7 +1761,14 @@ export default function App() {
         updatedLogs = updatedLogs.slice(0, 20);
       }
 
-      const telemetryString = JSON.stringify(updatedLogs);
+      const structuredAdminNotes = {
+        telemetry: updatedLogs,
+        warnings: adminNotesObj.warnings || [],
+        banned_until: adminNotesObj.banned_until || null,
+        ban_reason: adminNotesObj.ban_reason || null
+      };
+
+      const telemetryString = JSON.stringify(structuredAdminNotes);
 
       // Probeer admin_notes bij te werken in de database
       const { error: updateError } = await supabaseClient
@@ -4599,6 +4596,211 @@ export default function App() {
     }
   };
 
+  const handleWarnUser = async (userId: string, reason: string, details: string) => {
+    if (!isAdmin) {
+      console.warn('[Admin] handleWarnUser called by non-admin');
+      return;
+    }
+
+    let targetUser = users.find(u => u.id === userId);
+    if (!targetUser && selectedUser && selectedUser.id === userId) {
+      targetUser = selectedUser;
+    }
+
+    if (!targetUser) {
+      toast.error('Gebruiker niet gevonden.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data: profileVal, error: getError } = await supabaseClient
+        .from('profiles')
+        .select('admin_notes')
+        .eq('id', userId)
+        .single();
+
+      if (getError) throw getError;
+
+      const oldAdminNotes = profileVal?.admin_notes;
+      const data = parseAdminNotes(oldAdminNotes);
+
+      const newWarning = {
+        id: 'warn_' + Math.random().toString(36).substring(2, 11),
+        reason,
+        details,
+        admin_name: profile?.display_name || 'Admin',
+        date: new Date().toISOString(),
+        read: false
+      };
+
+      const updatedWarnings = [newWarning, ...data.warnings];
+
+      const structuredAdminNotes = {
+        telemetry: data.telemetry,
+        warnings: updatedWarnings,
+        banned_until: data.banned_until,
+        ban_reason: data.ban_reason
+      };
+
+      const { error: updateError } = await supabaseClient
+        .from('profiles')
+        .update({
+          admin_notes: JSON.stringify(structuredAdminNotes),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      // Update local state is crucial
+      setUsers(prev => {
+        return prev.map(u => u.id === userId 
+          ? { 
+              ...u, 
+              admin_notes: JSON.stringify(structuredAdminNotes)
+            } 
+          : u
+        );
+      });
+
+      toast.success(`Waarschuwing verstuurd naar ${targetUser.display_name}`);
+      logAudioEvent(
+        'system',
+        'warning',
+        `Admin waarschuwde ${targetUser.display_name}: ${reason}`,
+        user?.uid,
+        profile?.display_name
+      );
+    } catch (err) {
+      console.error('[Admin] Error warning user:', err);
+      handleSupabaseError(err, 'gebruiker waarschuwen', user, true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTempBanUser = async (userId: string, durationMinutes: number, reason: string) => {
+    if (!isAdmin) {
+      console.warn('[Admin] handleTempBanUser called by non-admin');
+      return;
+    }
+
+    let targetUser = users.find(u => u.id === userId);
+    if (!targetUser && selectedUser && selectedUser.id === userId) {
+      targetUser = selectedUser;
+    }
+
+    if (!targetUser) {
+      toast.error('Gebruiker niet gevonden.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data: profileVal, error: getError } = await supabaseClient
+        .from('profiles')
+        .select('admin_notes')
+        .eq('id', userId)
+        .single();
+
+      if (getError) throw getError;
+
+      const oldAdminNotes = profileVal?.admin_notes;
+      const data = parseAdminNotes(oldAdminNotes);
+
+      let bannedUntil: string | null = null;
+      if (durationMinutes > 0) {
+        bannedUntil = new Date(Date.now() + durationMinutes * 60000).toISOString();
+      }
+
+      const structuredAdminNotes = {
+        telemetry: data.telemetry,
+        warnings: data.warnings,
+        banned_until: bannedUntil,
+        ban_reason: durationMinutes > 0 ? reason : null
+      };
+
+      const { error: updateError } = await supabaseClient
+        .from('profiles')
+        .update({
+          admin_notes: JSON.stringify(structuredAdminNotes),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      // Update local state
+      setUsers(prev => {
+        return prev.map(u => u.id === userId 
+          ? { 
+              ...u, 
+              admin_notes: JSON.stringify(structuredAdminNotes)
+            } 
+          : u
+        );
+      });
+
+      if (durationMinutes > 0) {
+        toast.success(`Gebruiker ${targetUser.display_name} tijdelijk geband tot ${new Date(bannedUntil!).toLocaleString('nl-NL')}`);
+        logAudioEvent(
+          'system',
+          'warning',
+          `Admin legde tijdelijke ban op voor ${targetUser.display_name}: ${reason}`,
+          user?.uid,
+          profile?.display_name
+        );
+      } else {
+        toast.success(`Tijdelijke ban opgeheven voor ${targetUser.display_name}`);
+        logAudioEvent(
+          'system',
+          'success',
+          `Admin hief tijdelijke ban op voor ${targetUser.display_name}`,
+          user?.uid,
+          profile?.display_name
+        );
+      }
+    } catch (err) {
+      console.error('[Admin] Error temp banning user:', err);
+      handleSupabaseError(err, 'tijdelijk uitsluiten gebruiker', user, true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDismissWarning = async (warningId: string) => {
+    if (!profile || !user?.uid) return;
+
+    try {
+      const data = parseAdminNotes(profile.admin_notes);
+      const updatedWarnings = data.warnings.map(w => w.id === warningId ? { ...w, read: true } : w);
+
+      const structuredAdminNotes = {
+        telemetry: data.telemetry,
+        warnings: updatedWarnings,
+        banned_until: data.banned_until,
+        ban_reason: data.ban_reason
+      };
+
+      const { error } = await supabaseClient
+        .from('profiles')
+        .update({
+          admin_notes: JSON.stringify(structuredAdminNotes),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.uid);
+
+      if (error) throw error;
+
+      setProfile(prev => prev ? { ...prev, admin_notes: JSON.stringify(structuredAdminNotes) } : null);
+      toast.success('Waarschuwing gemarkeerd als gelezen.');
+    } catch (err) {
+      console.error('[Warning] Error dismissing warning:', err);
+      toast.error('Kon waarschuwing niet markeren als gelezen.');
+    }
+  };
+
   const handleSelectMention = (selectedUser: UserProfile) => {
     const mention = `@${selectedUser.display_name?.replace(/\s+/g, '_')} `;
     
@@ -5362,7 +5564,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative overflow-x-hidden">
-      {isBlocked && (
+      {(isBlocked || isTempBanned) && (
         <div className="fixed inset-0 z-[1000] bg-zinc-950 flex items-center justify-center p-6 text-center">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
@@ -5378,9 +5580,32 @@ export default function App() {
               />
             </div>
             <div className="space-y-4">
-              <h1 className="text-5xl font-bold text-white uppercase tracking-tight leading-none">Toegang Ontzegd</h1>
-              <div className="h-1 w-20 bg-red-500 mx-auto rounded-full" />
-              <p className="text-zinc-400 font-medium text-lg">Je account is permanent geblokkeerd door een beheerder wegens schending van de platformregels.</p>
+              <h1 className="text-4xl font-black text-white uppercase tracking-tight leading-none">
+                {isTempBanned ? 'Tijdelijk Geschorst' : 'Toegang Ontzegd'}
+              </h1>
+              <div className="h-1 w-20 bg-red-600 mx-auto rounded-full" />
+              
+              {isTempBanned ? (
+                <div className="space-y-4 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-left">
+                  <p className="text-zinc-300 font-medium text-sm">
+                    Je account is door een beheerder tijdelijk geschorst wegens overtreding van de platformregels.
+                  </p>
+                  <div className="border-t border-zinc-800 pt-3 space-y-2 text-xs">
+                    <div>
+                      <span className="text-zinc-500 uppercase font-black tracking-wider block">Reden:</span>
+                      <span className="text-amber-500 font-bold text-sm block mt-0.5">{notesData.ban_reason || 'Geen specifieke reden opgegeven.'}</span>
+                    </div>
+                    <div className="pt-2">
+                      <span className="text-zinc-500 uppercase font-black tracking-wider block">Duur tot:</span>
+                      <span className="text-white font-mono text-sm block mt-0.5">
+                        {notesData.banned_until ? new Date(notesData.banned_until).toLocaleString('nl-NL') : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-zinc-400 font-medium text-lg">Je account is permanent geblokkeerd door een beheerder wegens schending van de platformregels.</p>
+              )}
             </div>
             <div className="pt-8 flex flex-col gap-4">
               <button 
@@ -5393,6 +5618,60 @@ export default function App() {
           </motion.div>
         </div>
       )}
+
+      {/* Active Warning Overlay */}
+      {!isBlocked && !isTempBanned && activeWarning && (
+        <div className="fixed inset-0 z-[990] bg-zinc-950/80 backdrop-blur-md flex items-center justify-center p-6 text-center animate-fadeIn">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0, y: 15 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            className="w-full max-w-md bg-app-card rounded-[2.5rem] border border-amber-500/30 p-8 space-y-6 shadow-2xl relative overflow-hidden"
+          >
+            {/* Ambient amber pulse background */}
+            <div className="absolute -top-10 -right-10 w-24 h-24 bg-amber-500/10 rounded-full blur-xl" />
+            <div className="absolute -bottom-10 -left-10 w-24 h-24 bg-amber-500/10 rounded-full blur-xl" />
+
+            <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <AlertTriangle className="w-8 h-8 text-amber-500" />
+            </div>
+
+            <div className="space-y-2">
+              <h1 className="text-xl font-black text-app-ink uppercase tracking-tight">Officiële Waarschuwing</h1>
+              <p className="text-[10px] uppercase font-bold text-app-muted tracking-widest">Gezonden door: {activeWarning.admin_name || 'Beheerder'}</p>
+              <div className="h-0.5 w-12 bg-amber-500 mx-auto rounded-full" />
+            </div>
+
+            <div className="bg-app-bg/60 border border-app-border rounded-2xl p-5 text-left space-y-4">
+              <div>
+                <span className="text-[9px] uppercase font-black text-app-muted block tracking-wider">Overtreding:</span>
+                <span className="text-sm font-bold text-app-ink block mt-0.5">{activeWarning.reason}</span>
+              </div>
+              <div className="border-t border-app-border/50 pt-3">
+                <span className="text-[9px] uppercase font-black text-app-muted block tracking-wider">Details & Toelichting:</span>
+                <p className="text-xs text-app-ink leading-relaxed font-semibold mt-1 bg-app-card p-3 rounded-lg border border-app-border/40 max-h-[140px] overflow-y-auto custom-scrollbar">
+                  {activeWarning.details}
+                </p>
+              </div>
+              <div className="text-[8.5px] text-app-muted text-center pt-1 flex items-center justify-center gap-1">
+                <span>📅 Ontvangen op:</span>
+                <span>{new Date(activeWarning.date).toLocaleString('nl-NL')}</span>
+              </div>
+            </div>
+
+            <p className="text-[10px] font-bold text-app-muted leading-snug">
+              Je moet deze waarschuwing bevestigen om door te gaan naar de applicatie. Herhaaldelijke overtredingen leiden tot een tijdelijke of permanente ban.
+            </p>
+
+            <button 
+              onClick={() => handleDismissWarning(activeWarning.id)}
+              className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-lg shadow-amber-500/20"
+            >
+              Ik begrijp het & ga akkoord
+            </button>
+          </motion.div>
+        </div>
+      )}
+
       {/* Global Custom Wallpaper Layer */}
       {useCustomTheme && customTheme.wallpaper && (
         <div 
@@ -6116,6 +6395,8 @@ export default function App() {
                     users={users}
                     handleBlockUser={handleBlockUser}
                     handleLockUserField={handleLockUserField}
+                    handleWarnUser={handleWarnUser}
+                    handleTempBanUser={handleTempBanUser}
                     saving={saving}
                     uploadingSound={uploadingSound}
                     showInstallButton={deferredPrompt !== null}

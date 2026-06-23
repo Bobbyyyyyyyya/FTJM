@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import { AudioLog, SupabaseErrorInfo } from '../types';
+import { AudioLog, SupabaseErrorInfo, AdminNotesData } from '../types';
 import { supabase } from './supabase';
 
 export const audioCache = new Map<string, HTMLAudioElement>();
@@ -494,4 +494,39 @@ export const isDarkColor = (color: string): boolean => {
   );
 
   return hsp < 127.5;
+};
+
+export const parseAdminNotes = (notesStr: string | null | undefined): AdminNotesData => {
+  const fallback: AdminNotesData = {
+    telemetry: [],
+    warnings: [],
+    banned_until: null,
+    ban_reason: null
+  };
+  if (!notesStr) return fallback;
+  try {
+    const parsed = JSON.parse(notesStr);
+    if (Array.isArray(parsed)) {
+      return {
+        ...fallback,
+        telemetry: parsed
+      };
+    } else if (parsed && typeof parsed === 'object') {
+      if ('telemetry' in parsed || 'warnings' in parsed || 'banned_until' in parsed) {
+        return {
+          telemetry: parsed.telemetry || [],
+          warnings: parsed.warnings || [],
+          banned_until: parsed.banned_until || null,
+          ban_reason: parsed.ban_reason || null
+        };
+      }
+      return {
+        ...fallback,
+        telemetry: [parsed]
+      };
+    }
+  } catch (e) {
+    console.warn('[parseAdminNotes] Error parsing admin notes:', e);
+  }
+  return fallback;
 };

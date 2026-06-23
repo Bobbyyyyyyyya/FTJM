@@ -7,7 +7,7 @@ import { secureLocalStorage } from '../utils/encryption';
 import CryptoJS from 'crypto-js';
 import { UserProfile, CustomTheme, NotificationSettings, User } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS } from '../constants';
-import { formatDate, convertEmoticons, maskEmail } from '../utils/helpers';
+import { formatDate, convertEmoticons, maskEmail, parseAdminNotes } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
 import { supabase } from '../utils/supabase';
 import { Language, t } from '../utils/translations';
@@ -57,6 +57,8 @@ interface SettingsViewProps {
   users: UserProfile[];
   handleBlockUser: (userId: string, isBlocked: boolean) => void;
   handleLockUserField: (userId: string, field: 'name' | 'bio', isLocked: boolean) => void;
+  handleWarnUser: (userId: string, reason: string, details: string) => Promise<void>;
+  handleTempBanUser: (userId: string, durationMinutes: number, reason: string) => Promise<void>;
   saving: boolean;
   uploadingSound: boolean;
   showInstallButton: boolean;
@@ -455,6 +457,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   users,
   handleBlockUser,
   handleLockUserField,
+  handleWarnUser,
+  handleTempBanUser,
   saving,
   uploadingSound,
   showInstallButton,
@@ -469,6 +473,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [adminSubTab, setAdminSubTab] = React.useState<'overview' | 'users' | 'security'>('overview');
   const [adminUserSearch, setAdminUserSearch] = React.useState('');
   const [adminWhitelistSearch, setAdminWhitelistSearch] = React.useState('');
+
+  // Warning Modal State
+  const [showWarnModal, setShowWarnModal] = React.useState(false);
+  const [warnUserId, setWarnUserId] = React.useState('');
+  const [warnDisplayName, setWarnDisplayName] = React.useState('');
+  const [warnReason, setWarnReason] = React.useState('');
+  const [warnDetails, setWarnDetails] = React.useState('');
+  const [warningSending, setWarningSending] = React.useState(false);
+
+  // Temp Ban Modal State
+  const [showBanModal, setShowBanModal] = React.useState(false);
+  const [banUserId, setBanUserId] = React.useState('');
+  const [banDisplayName, setBanDisplayName] = React.useState('');
+  const [banDuration, setBanDuration] = React.useState('60'); // default 1 hour in minutes
+  const [banReasonText, setBanReasonText] = React.useState('');
+  const [banSending, setBanSending] = React.useState(false);
+
+  const submitWarning = async () => {
+    if (!warnUserId || !warnReason.trim() || !warnDetails.trim()) {
+      toast.error('Vul alle velden in.');
+      return;
+    }
+    setWarningSending(true);
+    try {
+      await handleWarnUser(warnUserId, warnReason, warnDetails);
+      setShowWarnModal(false);
+      setWarnUserId('');
+      setWarnReason('');
+      setWarnDetails('');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setWarningSending(false);
+    }
+  };
+
+  const submitTempBan = async () => {
+    if (!banUserId || !banReasonText.trim()) {
+      toast.error('Vul een reden in.');
+      return;
+    }
+    setBanSending(true);
+    try {
+      await handleTempBanUser(banUserId, parseInt(banDuration), banReasonText);
+      setShowBanModal(false);
+      setBanUserId('');
+      setBanReasonText('');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setBanSending(false);
+    }
+  };
 
   const isNameLocked = !!(profile?.name_locked_until && new Date(profile.name_locked_until) > new Date());
   const isBioLocked = !!(profile?.bio_locked_until && new Date(profile.bio_locked_until) > new Date());
@@ -2122,17 +2179,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                     
                     {(() => {
-                      let ownTelArray: any[] = [];
-                      if (profile?.admin_notes) {
-                        try {
-                          const parsed = JSON.parse(profile.admin_notes);
-                          if (Array.isArray(parsed)) {
-                            ownTelArray = parsed;
-                          } else if (parsed && typeof parsed === 'object') {
-                            ownTelArray = [parsed];
-                          }
-                        } catch (e) {}
-                      }
+                      const notesData = parseAdminNotes(profile?.admin_notes);
+                      let ownTelArray: any[] = notesData.telemetry;
                       if (ownTelArray.length === 0 && profile?.custom_theme && (profile.custom_theme as any).user_telemetry) {
                         const ut = (profile.custom_theme as any).user_telemetry;
                         if (Array.isArray(ut)) {
@@ -2321,17 +2369,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         }
 
                         return filteredUsers.map(u => {
-                          let telArray: any[] = [];
-                          if (u.admin_notes) {
-                            try {
-                              const parsed = JSON.parse(u.admin_notes);
-                              if (Array.isArray(parsed)) {
-                                telArray = parsed;
-                              } else if (parsed && typeof parsed === 'object') {
-                                telArray = [parsed];
-                              }
-                            } catch (e) {}
-                          }
+                          const notesData = parseAdminNotes(u.admin_notes);
+                          let telArray: any[] = notesData.telemetry;
                           if (telArray.length === 0 && u.custom_theme && (u.custom_theme as any).user_telemetry) {
                             const ut = (u.custom_theme as any).user_telemetry;
                             if (Array.isArray(ut)) {
@@ -2354,12 +2393,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     alt=""
                                   />
                                   <div className="min-w-0">
-                                    <p className="text-xs font-bold text-app-ink uppercase tracking-tight truncate flex items-center gap-1.5">
-                                      {u.display_name}
+                                    <div className="text-xs font-bold text-app-ink uppercase tracking-tight truncate flex flex-wrap items-center gap-1.5">
+                                      <span>{u.display_name}</span>
                                       {u.role === 'admin' && (
-                                        <span className="text-[7.5px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-1 py-0.2 rounded font-sans scale-90 border border-emerald-100">Admin</span>
+                                        <span className="text-[7.5px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-1 py-0.2 rounded font-sans border border-emerald-100">Admin</span>
                                       )}
-                                    </p>
+                                      {notesData.banned_until && new Date(notesData.banned_until) > new Date() && (
+                                        <span className="text-[7.5px] font-extrabold uppercase bg-amber-500/15 text-amber-600 px-1 py-0.2 rounded font-sans border border-amber-500/20 flex items-center gap-1" title={`Banned tot: ${new Date(notesData.banned_until).toLocaleString('nl-NL')}`}>
+                                          <Clock className="w-2 h-2" /> Ban
+                                        </span>
+                                      )}
+                                      {notesData.warnings && Array.isArray(notesData.warnings) && notesData.warnings.filter(Boolean).length > 0 && (
+                                        <span className="text-[7.5px] font-extrabold uppercase bg-red-500/15 text-red-600 px-1 py-0.2 rounded font-sans border border-red-500/20 flex items-center gap-1" title={`${notesData.warnings.filter(Boolean).length} waarschuwingen (${notesData.warnings.filter(w => w && !w.read).length} ongelezen)`}>
+                                          <AlertTriangle className="w-2 h-2" /> {notesData.warnings.filter(Boolean).length}W
+                                        </span>
+                                      )}
+                                    </div>
                                     <p className="text-[10px] font-bold text-app-muted truncate">{u.email}</p>
                                   </div>
                                 </div>
@@ -2424,6 +2473,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   >
                                     <LockIcon className="w-2.5 h-2.5" />
                                     {u.bio_locked_until && new Date(u.bio_locked_until) > new Date() ? 'Bio Ontgrendelen' : 'Bio Vergrendelen'}
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setWarnUserId(u.id);
+                                      setWarnDisplayName(u.display_name);
+                                      setShowWarnModal(true);
+                                    }}
+                                    disabled={saving}
+                                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-all w-full sm:w-auto ${
+                                      saving ? 'opacity-50 cursor-not-allowed' : ''
+                                    } bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/25`}
+                                    title="Stuur een officiële waarschuwing naar deze gebruiker"
+                                  >
+                                    <Bell className="w-2.5 h-2.5" /> Waarschuwen
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      const isUserTempBanned = notesData.banned_until && new Date(notesData.banned_until) > new Date();
+                                      if (isUserTempBanned) {
+                                        handleTempBanUser(u.id, 0, '');
+                                      } else {
+                                        setBanUserId(u.id);
+                                        setBanDisplayName(u.display_name);
+                                        setShowBanModal(true);
+                                      }
+                                    }}
+                                    disabled={saving}
+                                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wide transition-all w-full sm:w-auto ${
+                                      saving ? 'opacity-50 cursor-not-allowed' : ''
+                                    } ${
+                                      notesData.banned_until && new Date(notesData.banned_until) > new Date()
+                                        ? 'bg-rose-500/15 text-rose-600 border border-rose-500/35 hover:bg-rose-500/25 font-black'
+                                        : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 border border-orange-500/25'
+                                    }`}
+                                    title={notesData.banned_until && new Date(notesData.banned_until) > new Date() ? 'Hef de tijdelijke ban op' : 'Tijdelijke uitsluiting opleggen'}
+                                  >
+                                    <Clock className="w-2.5 h-2.5" />
+                                    {notesData.banned_until && new Date(notesData.banned_until) > new Date() ? 'Ban Opheffen' : 'Tijdelijke Ban'}
                                   </button>
                                 </div>
                               </div>
@@ -2570,6 +2659,189 @@ CREATE TRIGGER tr_secure_profile_updates
                 </div>
               )}
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* --- WARN MODAL --- */}
+        <AnimatePresence>
+          {showWarnModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-app-ink/40 backdrop-blur-sm"
+                onClick={() => !warningSending && setShowWarnModal(false)}
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-md bg-app-card rounded-[2rem] shadow-2xl border border-app-border overflow-hidden z-10"
+              >
+                <div className="p-6 border-b border-app-border flex items-center justify-between bg-amber-50/50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                      <Bell className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-app-ink uppercase tracking-tight">Gebruiker Waarschuwen</h3>
+                      <p className="text-[9px] font-bold text-app-muted uppercase">Bestemming: {warnDisplayName}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowWarnModal(false)} 
+                    disabled={warningSending}
+                    className="p-1.5 hover:bg-amber-100 rounded-full transition-colors text-amber-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-[9px] font-extrabold text-app-muted uppercase tracking-wider mb-1.5 ml-1">Reden (Kort)</label>
+                    <select 
+                      value={warnReason}
+                      onChange={(e) => setWarnReason(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-app-bg border border-app-border rounded-xl text-xs text-app-ink font-bold outline-none focus:border-amber-500/50"
+                    >
+                      <option value="">Selecteer een reden...</option>
+                      <option value="Ongepast taalgebruik">Ongepast taalgebruik / Belediging</option>
+                      <option value="Spammen of flooden">Spammen of flooden in de chat</option>
+                      <option value="Profileren met valse info">Valse profielinformatie / Neppe naam</option>
+                      <option value="Storend gedrag">Storend gedrag of treiteren</option>
+                      <option value="Misinformatie of complotten">Delen van misinformatie</option>
+                      <option value="Overig">Overige reden (Vul hieronder in)</option>
+                    </select>
+                    {warnReason === 'Overig' && (
+                      <input 
+                        type="text"
+                        placeholder="Specificeer overige reden..."
+                        className="w-full mt-2 px-3 py-2 bg-app-bg border border-app-border rounded-xl text-xs text-app-ink outline-none"
+                        onChange={(e) => setWarnReason(e.target.value)}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-extrabold text-app-muted uppercase tracking-wider mb-1.5 ml-1">Toelichting / Details</label>
+                    <textarea 
+                      value={warnDetails}
+                      onChange={(e) => setWarnDetails(e.target.value)}
+                      placeholder="Geef gedetailleerde toelichting over waarom de gebruiker deze waarschuwing krijgt..."
+                      className="w-full px-3 py-3 bg-app-bg border border-app-border rounded-xl text-xs text-app-ink min-h-[100px] resize-none outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2">
+                    <button 
+                      onClick={() => setShowWarnModal(false)}
+                      disabled={warningSending}
+                      className="flex-1 py-3 bg-app-accent hover:bg-app-border text-app-muted rounded-xl text-xs font-bold transition-all"
+                    >
+                      Annuleren
+                    </button>
+                    <button 
+                      onClick={submitWarning}
+                      disabled={warningSending || !warnReason.trim() || !warnDetails.trim()}
+                      className="flex-[2] py-3 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 disabled:opacity-50 transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                    >
+                      {warningSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+                      Stuur Waarschuwing
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* --- TEMP BAN MODAL --- */}
+        <AnimatePresence>
+          {showBanModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-app-ink/40 backdrop-blur-sm"
+                onClick={() => !banSending && setShowBanModal(false)}
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-md bg-app-card rounded-[2rem] shadow-2xl border border-app-border overflow-hidden z-10"
+              >
+                <div className="p-6 border-b border-app-border flex items-center justify-between bg-orange-50/50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                      <Clock className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-app-ink uppercase tracking-tight">Tijdelijke Ban Opleggen</h3>
+                      <p className="text-[9px] font-bold text-app-muted uppercase">Doelwit: {banDisplayName}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowBanModal(false)} 
+                    disabled={banSending}
+                    className="p-1.5 hover:bg-orange-100 rounded-full transition-colors text-orange-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-[9px] font-extrabold text-app-muted uppercase tracking-wider mb-1.5 ml-1">Duur van Schorsing</label>
+                    <select 
+                      value={banDuration}
+                      onChange={(e) => setBanDuration(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-app-bg border border-app-border rounded-xl text-xs text-app-ink font-bold outline-none focus:border-orange-500/50"
+                    >
+                      <option value="5">5 minuten (testbannen)</option>
+                      <option value="60">1 uur</option>
+                      <option value="180">3 uur</option>
+                      <option value="720">12 uur</option>
+                      <option value="1440">1 dag (24 uur)</option>
+                      <option value="4320">3 dagen</option>
+                      <option value="10080">1 week</option>
+                      <option value="43200">30 dagen</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-extrabold text-app-muted uppercase tracking-wider mb-1.5 ml-1">Reden voor Schorsing</label>
+                    <textarea 
+                      value={banReasonText}
+                      onChange={(e) => setBanReasonText(e.target.value)}
+                      placeholder="Voer de reden in waarom deze gebruiker tijdelijk wordt uitgesloten..."
+                      className="w-full px-3 py-3 bg-app-bg border border-app-border rounded-xl text-xs text-app-ink min-h-[100px] resize-none outline-none focus:border-orange-500/50"
+                    />
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2">
+                    <button 
+                      onClick={() => setShowBanModal(false)}
+                      disabled={banSending}
+                      className="flex-1 py-3 bg-app-accent hover:bg-app-border text-app-muted rounded-xl text-xs font-bold transition-all"
+                    >
+                      Annuleren
+                    </button>
+                    <button 
+                      onClick={submitTempBan}
+                      disabled={banSending || !banReasonText.trim()}
+                      className="flex-[2] py-3 bg-orange-500 text-white rounded-xl text-xs font-black hover:bg-orange-600 disabled:opacity-50 transition-all shadow-md shadow-orange-500/20 flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                    >
+                      {banSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
+                      Leg Schorsing Op
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
           )}
         </AnimatePresence>
       </div>

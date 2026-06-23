@@ -2,6 +2,10 @@
   "name": "FTJM Forum",
   "description": "Besloten forum voor FTJM leden.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }
