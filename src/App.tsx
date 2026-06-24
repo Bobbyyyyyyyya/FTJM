@@ -1622,25 +1622,38 @@ export default function App() {
         schema: 'public',
         table: 'profiles',
         filter: `id=eq.${user.uid}`
-      }, (payload) => {
-        const data = payload.new as UserProfile;
-        setProfile(data);
-        localStorage.setItem('cached_profile', JSON.stringify(data));
-        setBioInput(data.bio || '');
-        setDisplayNameInput(data.display_name || '');
-        setPhotoURLInput(data.photo_url || '');
-        setBannerURLInput(data.banner_url || data.custom_theme?.banner_url || '');
-        
-        if (!isSavingThemeRef.current && !(view === 'settings' && settingsTab === 'theme')) {
-          if (data.notification_settings) {
-            setNotificationSettings(cleanNotificationSettings(data.notification_settings));
+      }, async (payload) => {
+        // Fetch full profile securely to prevent incomplete payload or database RLS replication issues
+        try {
+          const { data, error } = await supabaseClient
+            .from('profiles')
+            .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes, is_blocked, name_locked_until, bio_locked_until')
+            .eq('id', user.uid)
+            .maybeSingle();
+
+          if (data && !error) {
+            const upP = data as UserProfile;
+            setProfile(upP);
+            localStorage.setItem('cached_profile', JSON.stringify(upP));
+            setBioInput(upP.bio || '');
+            setDisplayNameInput(upP.display_name || '');
+            setPhotoURLInput(upP.photo_url || '');
+            setBannerURLInput(upP.banner_url || upP.custom_theme?.banner_url || '');
+            
+            if (!isSavingThemeRef.current && !(view === 'settings' && settingsTab === 'theme')) {
+              if (upP.notification_settings) {
+                setNotificationSettings(cleanNotificationSettings(upP.notification_settings));
+              }
+              if (upP.custom_theme) {
+                setCustomTheme(prev => ({ ...prev, ...upP.custom_theme }));
+              }
+              if (upP.use_custom_theme !== undefined) {
+                setUseCustomTheme(upP.use_custom_theme);
+              }
+            }
           }
-          if (data.custom_theme) {
-            setCustomTheme(prev => ({ ...prev, ...data.custom_theme }));
-          }
-          if (data.use_custom_theme !== undefined) {
-            setUseCustomTheme(data.use_custom_theme);
-          }
+        } catch (e) {
+          console.error('[RealtimeProfileSync] Failed to fetch full profile:', e);
         }
       })
       .subscribe((status) => {
@@ -1650,6 +1663,33 @@ export default function App() {
 
     return () => {
       supabaseClient.removeChannel(channel);
+    };
+  }, [user?.uid, isWhitelisted]);
+
+  // Periodic polling fallback (every 10 seconds) to guarantee sync of warnings and bans
+  useEffect(() => {
+    if (!user || isWhitelisted === false) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const { data, error } = await supabaseClient
+          .from('profiles')
+          .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes, is_blocked, name_locked_until, bio_locked_until')
+          .eq('id', user.uid)
+          .maybeSingle();
+        
+        if (data && !error) {
+          const upP = data as UserProfile;
+          setProfile(upP);
+          localStorage.setItem('cached_profile', JSON.stringify(upP));
+        }
+      } catch (err) {
+        console.warn('Periodic safety check sync failed:', err);
+      }
+    }, 10000);
+
+    return () => {
+      clearInterval(interval);
     };
   }, [user?.uid, isWhitelisted]);
 

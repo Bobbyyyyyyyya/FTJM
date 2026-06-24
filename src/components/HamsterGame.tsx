@@ -92,6 +92,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
   const [frightenedTimer, setFrightenedTimer] = useState(0);
+  const [devilModeTimer, setDevilModeTimer] = useState(0);
 
   // Shared ref to avoid creating a new AudioContext on every sound play
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -107,7 +108,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
   }, []);
 
   // Web Audio Hook For Synthesized Retro Atmosphere using a single cached context
-  const playTone = (type: 'eat' | 'power' | 'eat_cola' | 'die' | 'victory' | 'start') => {
+  const playTone = (type: 'eat' | 'power' | 'eat_cola' | 'die' | 'victory' | 'start' | 'devil_chili') => {
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
@@ -192,6 +193,21 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
           noteOsc.start(ctx.currentTime + i * 0.08);
           noteOsc.stop(ctx.currentTime + i * 0.08 + 0.28);
         });
+      } else if (type === 'devil_chili') {
+        const notes = [220, 330, 440, 660, 880];
+        notes.forEach((freq, i) => {
+          const noteOsc = ctx.createOscillator();
+          const noteGain = ctx.createGain();
+          noteOsc.connect(noteGain);
+          noteGain.connect(ctx.destination);
+          noteOsc.type = 'sawtooth';
+          noteOsc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.05);
+          noteOsc.frequency.exponentialRampToValueAtTime(freq * 1.5, ctx.currentTime + i * 0.05 + 0.12);
+          noteGain.gain.setValueAtTime(0.08, ctx.currentTime + i * 0.05);
+          noteGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.05 + 0.12);
+          noteOsc.start(ctx.currentTime + i * 0.05);
+          noteOsc.stop(ctx.currentTime + i * 0.05 + 0.15);
+        });
       }
     } catch (err) {
       console.warn('Synth sound was blocked or failed:', err);
@@ -235,7 +251,8 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
     // Ghosts Cola Bottles
     ghosts: [] as GameActor[],
     invulnFrames: 0, // Flash invulnerable frames when caught
-    frameCount: 0
+    frameCount: 0,
+    devilModeTimer: 0
   });
 
   // Init/Spawn the Ghosts
@@ -432,6 +449,29 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
     engine.invulnFrames = 0;
     engine.frightenedTimer = 0;
     setFrightenedTimer(0);
+    engine.devilModeTimer = 0;
+    setDevilModeTimer(0);
+    engine.hamster.speed = 2;
+
+    if (engine.level >= 3) {
+      const vodkaCells: { r: number, c: number }[] = [];
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (engine.maze[r][c] === 0) {
+            vodkaCells.push({ r, c });
+          }
+        }
+      }
+      
+      const chiliCount = Math.min(3, vodkaCells.length);
+      for (let i = 0; i < chiliCount; i++) {
+        if (vodkaCells.length === 0) break;
+        const randIdx = Math.floor(Math.random() * vodkaCells.length);
+        const cell = vodkaCells.splice(randIdx, 1)[0];
+        engine.maze[cell.r][cell.c] = 5;
+      }
+      toast.error("👿 DEVIL'S CAVE EXPANSIE: Pas op voor de hitte! Eet pepers (🌶️) voor de ultieme DUIVELHAMSTER beloning! 🔥", { duration: 6000 });
+    }
   };
 
   const handleStartGame = () => {
@@ -548,6 +588,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       }
 
       const engine = engineRef.current;
+      const player = engine.hamster;
       engine.frameCount++;
 
       const isNightmare = engine.level >= 10;
@@ -556,17 +597,35 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         : 0.9 + Math.min(engine.level - 1, 8) * 0.125;
 
       // 1. TIMERS UPDATE
+      if (engine.devilModeTimer > 0) {
+        engine.devilModeTimer--;
+        if (engine.frameCount % 30 === 0) {
+          setDevilModeTimer(Math.ceil(engine.devilModeTimer / 60));
+        }
+        if (engine.devilModeTimer === 0) {
+          player.speed = 2;
+          setDevilModeTimer(0);
+          if (engine.frightenedTimer === 0) {
+            engine.ghosts.forEach(g => {
+              g.isFrightened = false;
+              g.speed = normalGhostSpeed;
+            });
+          }
+        }
+      }
+
       if (engine.frightenedTimer > 0) {
         engine.frightenedTimer--;
         if (engine.frameCount % 30 === 0) {
           setFrightenedTimer(Math.ceil(engine.frightenedTimer / 60));
         }
         if (engine.frightenedTimer === 0) {
-          // Revert frightening status back to dynamic level difficulty speed
-          engine.ghosts.forEach(g => {
-            g.isFrightened = false;
-            g.speed = normalGhostSpeed;
-          });
+          if (engine.devilModeTimer === 0) {
+            engine.ghosts.forEach(g => {
+              g.isFrightened = false;
+              g.speed = normalGhostSpeed;
+            });
+          }
           setFrightenedTimer(0);
         }
       }
@@ -576,7 +635,6 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       }
 
       // 2. PLAYERS ENGINE (HAMSTER SMOOTH GRID-ALIGNMENT MOVEMENT)
-      const player = engine.hamster;
 
       // Poll current keysPressed state to continuously feed player.nextDir response instantly!
       if (engine.keysPressed.UP) player.nextDir = 'UP';
@@ -721,14 +779,38 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
           engine.lives = 3; // Regenerate all health/lives!
           setLives(3);
           toast.success("✨ SPECTACULAIR! Je hebt de GOUDEN VODKA gedronken! Al je health is hersteld! 🍾✨", { duration: 5000 });
+        } else if (item === 5) {
+          // Collected Devil's Chili Pepper! 🌶️
+          engine.maze[checkCollectGridY][checkCollectGridX] = 3; // Clear item cell
+          engine.score += 1000; // Big point reward!
+          setScore(engine.score);
+          playTone('devil_chili');
+
+          // Activate Devil mode for 6 seconds (360 frames)
+          engine.devilModeTimer = 360; 
+          setDevilModeTimer(6);
+
+          // Give player double speed
+          player.speed = 4;
+
+          // Scare all ghosts immediately
+          engine.ghosts.forEach(g => {
+            g.isFrightened = true;
+            g.speed = 0.5; // Even slower for Devil Hamster chase!
+          });
+
+          toast.success("👿 DUIVELHAMSTER MODE GEACTIVEERD! +1000 ptn! Je rent nu supersnel en verdient bonuspunten per cola! 🔥⚔️🌶️", {
+            duration: 5000,
+            icon: '🔥'
+          });
         }
       }
 
-      // Check level cleared condition (any 0s, 2s or 4s left in maze?)
+      // Check level cleared condition (any 0s, 2s, 4s or 5s left in maze?)
       let itemsRemaining = 0;
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-          if (engine.maze[r][c] === 0 || engine.maze[r][c] === 2 || engine.maze[r][c] === 4) {
+          if (engine.maze[r][c] === 0 || engine.maze[r][c] === 2 || engine.maze[r][c] === 4 || engine.maze[r][c] === 5) {
             itemsRemaining++;
           }
         }
@@ -893,8 +975,14 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
           if (ghost.isFrightened) {
             // Hamster drinks/devours the Cola Ghost! 🍾💥
             playTone('eat_cola');
-            toast.success(`Je dronk de ${ghost.name} op! +200 ptn 🐹🥤`);
-            engine.score += 200;
+            const isDevil = engine.devilModeTimer > 0;
+            const pts = isDevil ? 400 : 200;
+            if (isDevil) {
+              toast.success(`😈 VERNIETIGD! De Duivelhamster verorberde ${ghost.name}! +400 ptn 🔥🥤`, { icon: '😈' });
+            } else {
+              toast.success(`Je dronk de ${ghost.name} op! +200 ptn 🐹🥤`);
+            }
+            engine.score += pts;
             setScore(engine.score);
 
             // Send ghost back to central cage / spawn spot
@@ -906,7 +994,10 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ghost.y = 5 * CELL_SIZE;
             
             // Retain frightened status if global frightened power mode is still active
-            if (engine.frightenedTimer > 0) {
+            if (engine.devilModeTimer > 0) {
+              ghost.isFrightened = true;
+              ghost.speed = 0.5;
+            } else if (engine.frightenedTimer > 0) {
               ghost.isFrightened = true;
               ghost.speed = 0.8;
             } else {
@@ -949,6 +1040,20 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       ctx.scale(dpr, dpr);
 
       ctx.clearRect(0, 0, 360, 360);
+      if (engine.level >= 3) {
+        ctx.fillStyle = '#0f0202'; // Deep fiery blood-red background for Devil's Cave
+        ctx.fillRect(0, 0, 360, 360);
+        
+        // Render glowing fire embers rising upwards
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+        for (let i = 0; i < 6; i++) {
+          const px = ((engine.frameCount + i * 60) * 0.5) % 360;
+          const py = (Math.sin(engine.frameCount * 0.01 + i) * 50 + i * 60) % 360;
+          ctx.beginPath();
+          ctx.arc(px, 360 - py, 3 + (i % 3), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
       // Draw beautiful Pacman grid walls and items
       for (let r = 0; r < ROWS; r++) {
@@ -957,11 +1062,11 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
           
           if (type === 1) {
             // Solid retro wall decor
-            ctx.fillStyle = '#0f172a'; // Deeper dark wall center
+            ctx.fillStyle = engine.level >= 3 ? '#220000' : '#0f172a'; // Deeper dark wall center or devil red
             ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
             
-            // Neon grid blue accent border
-            ctx.strokeStyle = '#2563eb';
+            // Neon grid blue / red accent border
+            ctx.strokeStyle = engine.level >= 3 ? '#ef4444' : '#2563eb';
             ctx.lineWidth = 1.5;
             ctx.strokeRect(c * CELL_SIZE + 1.5, r * CELL_SIZE + 1.5, CELL_SIZE - 3, CELL_SIZE - 3);
           } else if (type === 0) {
@@ -1040,6 +1145,34 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ctx.fillText('✨', 8, -6);
             ctx.fillText('✨', -8, 6);
             ctx.restore();
+          } else if (type === 5) {
+            // DRAW DEVIL'S CHILI PEPPER 🌶️
+            const pulse = 1 + 0.25 * Math.sin(engine.frameCount * 0.2 + (r + c) * 0.8);
+            ctx.save();
+            ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
+            ctx.scale(pulse, pulse);
+
+            // Radiant red fire aura ring
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.45)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 13, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#dc2626';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 11, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw chili emoji and sparkles
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🌶️', 0, 0.5);
+            ctx.font = '10px sans-serif';
+            ctx.fillText('🔥', 8, -6);
+            ctx.fillText('🔥', -8, 6);
+            ctx.restore();
           }
         }
       }
@@ -1051,7 +1184,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
 
       // Draw beautiful glows and outline of the ghost cage (kooi) in the center
       ctx.save();
-      ctx.strokeStyle = '#f43f5e'; // Vibrant pink/rose glowing neon cage
+      ctx.strokeStyle = engine.level >= 3 ? '#ef4444' : '#f43f5e'; // Vibrant pink/rose glowing neon cage of red devil themed cage
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       
@@ -1129,14 +1262,32 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         ctx.save();
         ctx.translate(player.x + CELL_SIZE / 2, player.y + CELL_SIZE / 2);
         
-        ctx.fillStyle = 'rgba(234, 179, 8, 0.25)';
-        ctx.beginPath();
-        ctx.arc(0, 0, 12, 0, Math.PI * 2);
-        ctx.fill();
+        if (engine.devilModeTimer > 0) {
+          // Flame aura red circles
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+          ctx.beginPath();
+          ctx.arc(0, 0, 14, 0, Math.PI * 2);
+          ctx.fill();
 
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+          ctx.strokeStyle = '#dc2626';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, 17, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(249, 115, 22, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = 'rgba(234, 179, 8, 0.25)';
+          ctx.beginPath();
+          ctx.arc(0, 0, 12, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
 
         if (player.currentDir === 'LEFT' || player.nextDir === 'LEFT') {
           ctx.scale(-1, 1);
@@ -1145,9 +1296,17 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         ctx.font = '24px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(player.emoji, 0, 0);
         
-        if (engine.frightenedTimer > 0) {
+        const emojiToUse = engine.devilModeTimer > 0 ? '😈' : player.emoji;
+        ctx.fillText(emojiToUse, 0, 0);
+        
+        if (engine.devilModeTimer > 0) {
+          ctx.beginPath();
+          ctx.arc(0, 0, 20, 0, Math.PI * 2);
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (engine.frightenedTimer > 0) {
           ctx.beginPath();
           ctx.arc(0, 0, 14, 0, Math.PI * 2);
           ctx.strokeStyle = '#eab308';
@@ -1199,6 +1358,8 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             <span className="text-[10px] font-bold text-app-muted uppercase tracking-wider block text-right">Moeilijkheid</span>
             {level >= 10 ? (
               <span className="text-sm font-black text-rose-500 uppercase block text-right animate-pulse">💀 NIGHTMARE {level}</span>
+            ) : level >= 3 ? (
+              <span className="text-sm font-black text-red-500 uppercase block text-right animate-pulse">👿 DUIVELSGROT {level}</span>
             ) : (
               <span className="text-sm font-black text-cyan-500 uppercase block text-right">Lvl {level}</span>
             )}
@@ -1297,12 +1458,16 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
           )}
         </AnimatePresence>
 
-        {/* Vulnerable peanut super timer banner */}
-        {frightenedTimer > 0 && gameState === 'playing' && (
+        {/* Vulnerable peanut / devil chili super timer banners */}
+        {devilModeTimer > 0 && gameState === 'playing' ? (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white border border-red-500 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 animate-pulse shadow-lg shadow-red-600/40">
+            <span className="animate-[bounce_1s_infinite]">🔥</span> Duivelmodus: {devilModeTimer}s! 😈🌶️
+          </div>
+        ) : frightenedTimer > 0 && gameState === 'playing' ? (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-yellow-500 text-slate-950 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 animate-pulse shadow-md">
             <Zap className="w-3.5 h-3.5 fill-current" /> Peanut Power: {frightenedTimer}s! 🐹⚡
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Touch steering controls layout for mobile screens */}
@@ -1349,7 +1514,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
           Bestuur de hamster (🐹) door het netwerk! Drink alle <span className="text-amber-500 font-bold">Vodka flessen (🍾)</span> leeg om punten te verzamelen en de ronde te winnen. Het spel is gewonnen wanneer de hele kaart leeggedronken is!
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-[11px]">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3 text-[11px]">
           <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-base">🥜</span>
@@ -1366,6 +1531,16 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
               <div>
                 <span className="font-bold text-app-ink block">Warp Tunnels:</span>
                 <span className="text-cyan-500">Loop de linker- of rechterrand van het scherm uit om onmiddellijk aan de overkant te verschijnen!</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🌶️</span>
+              <div>
+                <span className="font-bold text-app-ink block">Lvl 3+: Duivelsgrot!</span>
+                <span className="text-red-500">Eet pepers om te veranderen in de <span className="font-bold">Duivelhamster 😈</span>: loop supersnel, word onkwetsbaar, verdien <span className="font-bold text-emerald-500">+1000 ptn</span> en win <span className="font-bold">+400 ptn</span> per opgedronken Cola!</span>
               </div>
             </div>
           </div>

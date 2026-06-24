@@ -512,17 +512,11 @@ export const parseAdminNotes = (notesStr: string | null | undefined): AdminNotes
         telemetry: parsed
       };
     } else if (parsed && typeof parsed === 'object') {
-      if ('telemetry' in parsed || 'warnings' in parsed || 'banned_until' in parsed) {
-        return {
-          telemetry: parsed.telemetry || [],
-          warnings: parsed.warnings || [],
-          banned_until: parsed.banned_until || null,
-          ban_reason: parsed.ban_reason || null
-        };
-      }
       return {
-        ...fallback,
-        telemetry: [parsed]
+        telemetry: Array.isArray(parsed.telemetry) ? parsed.telemetry : [],
+        warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+        banned_until: parsed.banned_until || null,
+        ban_reason: parsed.ban_reason || null
       };
     }
   } catch (e) {
