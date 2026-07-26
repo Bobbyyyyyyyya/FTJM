@@ -4,33 +4,31 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 import fs from 'fs';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    plugins: [
-      react(), 
-      tailwindcss(),
-      {
-        name: 'sw-version-injector',
-        closeBundle() {
-          const swPath = path.resolve(__dirname, 'dist/sw.js');
-          if (fs.existsSync(swPath)) {
-            let swContent = fs.readFileSync(swPath, 'utf8');
-            // Generate a unique build ID based on the timestamp of the compilation
-            const buildId = Date.now().toString();
-            // Replace the static CACHE_NAME line with our dynamic one
-            swContent = swContent.replace(
-              /const CACHE_NAME\s*=\s*['"`](.*?)['"`];/,
-              `const CACHE_NAME = 'ftjm-build-${buildId}';`
-            );
-            fs.writeFileSync(swPath, swContent, 'utf8');
-            console.log(`[SW Injector] Injected cache name: 'ftjm-build-${buildId}' into dist/sw.js`);
-          } else {
-            console.warn('[SW Injector] dist/sw.js not found!');
-          }
+    plugins: [react(), tailwindcss(), {
+      name: 'sw-version-injector',
+      closeBundle() {
+        const swPath = path.resolve(__dirname, 'dist/sw.js');
+        if (fs.existsSync(swPath)) {
+          let swContent = fs.readFileSync(swPath, 'utf8');
+          // Generate a unique build ID based on the timestamp of the compilation
+          const buildId = Date.now().toString();
+          // Replace the static CACHE_NAME line with our dynamic one
+          swContent = swContent.replace(
+            /const CACHE_NAME\s*=\s*['"`](.*?)['"`];/,
+            `const CACHE_NAME = 'ftjm-build-${buildId}';`
+          );
+          fs.writeFileSync(swPath, swContent, 'utf8');
+          console.log(`[SW Injector] Injected cache name: 'ftjm-build-${buildId}' into dist/sw.js`);
+        } else {
+          console.warn('[SW Injector] dist/sw.js not found!');
         }
       }
-    ],
+    }, cloudflare()],
     define: {
     },
     resolve: {
