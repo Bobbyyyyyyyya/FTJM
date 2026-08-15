@@ -1,6 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-// Force rebuild - RefreshCw fix
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase, setSupabaseFirebaseUid, createSupabaseClient } from './utils/supabase';
 import { User, UserProfile, Post, Conversation, DirectMessage, CustomTheme, ForumThread, ForumComment, AppNotification, NotificationSettings, Report } from './types';
 import { MentionOverlay } from './components/MentionOverlay';
@@ -8,12 +6,11 @@ import { EmojiOverlay } from './components/EmojiOverlay';
 import { Toaster, toast } from 'sonner';
 
 import { motion, AnimatePresence } from 'motion/react';
-import { RefreshCw } from 'lucide-react';
 import { 
+  RefreshCw,
   Shield, 
   Bell, 
   Volume2, 
-  VolumeX, 
   Gamepad2,
   Moon, 
   Sparkles, 
@@ -35,29 +32,22 @@ import {
   X, 
   ChevronLeft, 
   Plus, 
-  Clock, 
-  UserCog, 
-  Palette, 
-  Camera, 
-  Save, 
   Upload, 
   Play, 
   Trash2, 
   Keyboard, 
   UserPlus, 
-  CloudOff, 
   Flag, 
   Pencil, 
   Check,
-  Zap,
   ShieldAlert,
   ArrowRight,
-  ArrowLeft,
-  Link,
   Bot,
   Phone,
   PhoneOff,
-  Fingerprint
+  Fingerprint,
+  Film,
+  FlaskConical
 } from 'lucide-react';
 
 // Components
@@ -75,6 +65,7 @@ import { ReportModal } from './components/ReportModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { AudioLogsView } from './components/AudioLogsView';
 import { GamesView } from './components/GamesView';
+import { MediaFeedCard } from './components/MediaFeedCard';
 import { MessageEditArea } from './components/MessageEditArea';
 import { useVoiceCall } from './hooks/useVoiceCall';
 import { VoiceCallUI } from './components/VoiceCallUI';
@@ -83,8 +74,8 @@ import { GroupVoiceCallUI } from './components/GroupVoiceCallUI';
 import { t, Language, getLanguage, setLanguage } from './utils/translations';
 
 // Constants & Helpers
-import { NEWS_ITEMS, SOUND_OPTIONS, PATTERNS, EMOJI_LIST } from './constants';
-import { playSound, formatDate, formatTime, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes } from './utils/helpers';
+import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVerifiedEmail, isBetaTester } from './constants';
+import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes } from './utils/helpers';
 
 import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
 import { rateLimiter } from './utils/rateLimiter';
@@ -179,8 +170,8 @@ export default function App() {
   const [ddosLock, setDdosLock] = useState(() => rateLimiter.getIsLockedStatus());
 
   useEffect(() => {
-    rateLimiter.registerCallback((locked, secondsLeft) => {
-      setDdosLock({ locked, secondsLeft });
+    rateLimiter.registerCallback((locked, secondsLeft, reason) => {
+      setDdosLock({ locked, secondsLeft, reason });
     });
   }, []);
 
@@ -228,6 +219,8 @@ export default function App() {
 
   const needsTermsAgreement = React.useMemo(() => {
     if (!user || isWhitelisted === false) return false;
+    const cachedAgreed = secureLocalStorage.getItem('has_agreed_terms_v2') === 'true';
+    if (cachedAgreed) return false;
     if (profile) {
       const themeObj = profile.custom_theme || {};
       return !(themeObj as any).agreed_terms_v2;
@@ -255,9 +248,9 @@ export default function App() {
   const [commentInput, setCommentInput] = useState('');
   const [whitelistInput, setWhitelistInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs' | 'arcade'>('chat');
+  const [view, setView] = useState<'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs' | 'arcade' | 'media_feed'>('chat');
 
-  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security'>('profile');
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security' | 'discord'>('profile');
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [threads, setThreads] = useState<ForumThread[]>([]);
   const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
@@ -301,6 +294,13 @@ export default function App() {
     conversationsRef.current = conversations;
   }, [conversations]);
 
+  const threadsRef = useRef<ForumThread[]>(threads);
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
+
+  const handleNotificationClickRef = useRef<(notif: AppNotification) => void>(() => {});
+
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(() => {
     try {
       const cached = secureLocalStorage.getItem('active_conversation');
@@ -332,14 +332,14 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v2.3') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.4') !== 'true';
   });
   const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v2.3') === 'true';
+    return localStorage.getItem('has_seen_news_v2.4') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v2.3') === 'true';
+    return localStorage.getItem('has_seen_menu_v2.4') === 'true';
   });
   const cleanNotificationSettings = (settings: any): NotificationSettings => {
     const defaultSettings = {
@@ -349,7 +349,10 @@ export default function App() {
       notify_mentions: true,
       message_sound: SOUND_OPTIONS[0].url,
       post_sound: SOUND_OPTIONS[1].url,
-      ringtone_url: '/audio/ringtones/classic.mp3'
+      ringtone_url: RINGTONE_OPTIONS[0].url,
+      discord_webhook_url: '',
+      discord_notify_general: false,
+      discord_notify_dm: false
     };
 
     if (!settings) return defaultSettings;
@@ -362,7 +365,10 @@ export default function App() {
       notify_mentions: settings.notify_mentions !== undefined ? settings.notify_mentions : (settings.notifyMentions !== undefined ? settings.notifyMentions : defaultSettings.notify_mentions),
       message_sound: settings.message_sound || settings.messageSound || defaultSettings.message_sound,
       post_sound: settings.post_sound || settings.postSound || defaultSettings.post_sound,
-      ringtone_url: settings.ringtone_url || defaultSettings.ringtone_url
+      ringtone_url: settings.ringtone_url || defaultSettings.ringtone_url,
+      discord_webhook_url: settings.discord_webhook_url !== undefined ? settings.discord_webhook_url : defaultSettings.discord_webhook_url,
+      discord_notify_general: settings.discord_notify_general !== undefined ? settings.discord_notify_general : defaultSettings.discord_notify_general,
+      discord_notify_dm: settings.discord_notify_dm !== undefined ? settings.discord_notify_dm : defaultSettings.discord_notify_dm
     };
 
     // Migration: Reset problematic old Mixkit URLs
@@ -585,8 +591,947 @@ export default function App() {
   });
 
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+
+  // Profile Media Gallery States
+  const [profileMedia, setProfileMedia] = React.useState<any[]>([]);
+  const [profileMediaLoading, setProfileMediaLoading] = React.useState<boolean>(false);
+  const [selectedFullscreenMedia, setSelectedFullscreenMedia] = React.useState<string | null>(null);
+
+  // Image Compressor for Profile Media
+  const compressProfileMediaImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_DIM = 720;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.62);
+            resolve(compressed);
+          } else {
+            resolve(event.target?.result as string);
+          }
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Add Profile Media Handler
+  const handleAddProfileMedia = async (url: string, type: 'image' | 'gif' | 'video') => {
+    if (!user) return;
+    if (selectedUser && selectedUser.id === user.uid && profileMedia.length >= 10) {
+      toast.error('Je kunt maximaal 10 media items uploaden onder je profiel.');
+      return;
+    }
+
+    setProfileMediaLoading(true);
+    const newItem = {
+      id: Date.now().toString(),
+      user_id: user.uid,
+      media_url: url,
+      media_type: type,
+      created_at: new Date().toISOString(),
+      likes: [] as string[],
+      comments: [] as any[]
+    };
+
+    try {
+      // 1. Try to insert in profile_media table
+      const { data, error } = await supabaseClient
+        .from('profile_media')
+        .insert([{
+          user_id: user.uid,
+          media_url: url,
+          media_type: type,
+          likes: [],
+          comments: []
+        }])
+        .select();
+
+      const savedItem = (!error && data && data[0]) ? {
+        ...data[0],
+        likes: [] as string[],
+        comments: [] as any[]
+      } : newItem;
+
+      // Always sync to profiles.custom_theme.media as well!
+      const updatedTheme = {
+        ...(profile?.custom_theme || {}),
+        agreed_terms_v2: true,
+        media: [savedItem, ...(profile?.custom_theme?.media || [])].slice(0, 10)
+      };
+
+      const { error: profileError } = await supabaseClient
+        .from('profiles')
+        .update({ custom_theme: updatedTheme })
+        .eq('id', user.uid);
+
+      if (profileError) {
+        console.warn('Profile theme sync failed:', profileError.message);
+      } else {
+        if (profile) profile.custom_theme = updatedTheme;
+        if (selectedUser && selectedUser.id === user.uid) {
+          selectedUser.custom_theme = updatedTheme;
+        }
+      }
+
+      if (error) {
+        console.warn('profile_media table insert failed, falling back to profiles.custom_theme:', error.message);
+        setProfileMedia(updatedTheme.media);
+        toast.success('Media opgeslagen op je profiel!');
+      } else {
+        setProfileMedia(prev => [savedItem, ...prev]);
+        toast.success('Media geüpload naar je profiel!');
+      }
+
+      // Real-time broadcast new media
+      try {
+        const broadcastItem = {
+          ...savedItem,
+          author_name: profile?.display_name || user.displayName || 'Anoniem',
+          author_photo: profile?.photo_url || user.photoURL || null,
+          likes: [],
+          comments: []
+        };
+        supabaseClient.channel('media_feed_realtime').send({
+          type: 'broadcast',
+          event: 'media_event',
+          payload: { type: 'NEW_MEDIA', media: broadcastItem }
+        });
+      } catch (bcErr) {
+        console.warn('Media broadcast failed:', bcErr);
+      }
+
+      // Notify followers of new upload
+      try {
+        const { data: followers } = await supabaseClient
+          .from('profiles')
+          .select('id')
+          .contains('custom_theme', { following: [user.uid] });
+
+        const followerIds = new Set<string>();
+        if (followers) {
+          followers.forEach(f => followerIds.add(f.id));
+        }
+        users.filter(u => u.custom_theme?.following?.includes(user.uid)).forEach(u => followerIds.add(u.id));
+
+        if (followerIds.size > 0) {
+          const promises = Array.from(followerIds).map(fid => {
+            return supabaseClient.from('notifications').insert({
+              user_id: fid,
+              actor_id: user.uid,
+              actor_name: profile?.display_name || user.displayName || 'Anoniem',
+              actor_photo: profile?.photo_url || user.photoURL || null,
+              type: 'mention',
+              resource_type: 'post',
+              resource_id: 'media_feed',
+              content: `${profile?.display_name || user.displayName || 'Anoniem'} heeft een nieuwe ${type === 'video' ? 'video' : type === 'gif' ? 'GIF' : 'foto'} geüpload!`,
+              is_read: false,
+              created_at: new Date().toISOString()
+            });
+          });
+          await Promise.allSettled(promises);
+        }
+      } catch (notifErr) {
+        console.warn('Follower notification dispatch failed:', notifErr);
+      }
+
+    } catch (err: any) {
+      console.error('Error adding profile media:', err);
+      toast.error('Fout bij het opslaan van media: ' + (err.message || err));
+    } finally {
+      setProfileMediaLoading(false);
+      // Refresh the Media Feed instantly!
+      fetchFeedMedia();
+    }
+  };
+
+  // Delete Profile Media Handler
+  const handleDeleteProfileMedia = async (itemId: string, mediaUrl: string) => {
+    if (!selectedUser || !user) return;
+
+    setProfileMediaLoading(true);
+    try {
+      // 1. Try deleting from profile_media table
+      const { error } = await supabaseClient
+        .from('profile_media')
+        .delete()
+        .or(`id.eq.${itemId},media_url.eq.${mediaUrl}`);
+
+      if (error) {
+        console.warn('profile_media table delete failed, falling back to profiles.custom_theme:', error.message);
+        // 2. Fallback to custom_theme.media array
+        const updatedMedia = (profile?.custom_theme?.media || []).filter((m: any) => m.id !== itemId && m.media_url !== mediaUrl);
+        const updatedTheme = {
+          ...(profile?.custom_theme || {}),
+          media: updatedMedia
+        };
+        const { error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ custom_theme: updatedTheme })
+          .eq('id', user.uid);
+
+        if (profileError) throw profileError;
+
+        setProfileMedia(updatedMedia);
+        if (profile) profile.custom_theme = updatedTheme;
+        if (selectedUser && selectedUser.id === user.uid) {
+          selectedUser.custom_theme = updatedTheme;
+        }
+        toast.success('Media verwijderd!');
+      } else {
+        setProfileMedia(prev => prev.filter(m => m.id !== itemId && m.media_url !== mediaUrl));
+        toast.success('Media verwijderd!');
+      }
+    } catch (err: any) {
+      console.error('Error deleting profile media:', err);
+      toast.error('Fout bij het verwijderen van media: ' + (err.message || err));
+    } finally {
+      setProfileMediaLoading(false);
+    }
+  };
+
+  const handleProfileMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('Bestand is te groot. Maximaal 25MB toegestaan.');
+      return;
+    }
+
+    setProfileMediaLoading(true);
+    try {
+      if (file.type.startsWith('video/')) {
+        const videoEl = document.createElement('video');
+        videoEl.preload = 'metadata';
+        videoEl.onloadedmetadata = () => {
+          window.URL.revokeObjectURL(videoEl.src);
+          const duration = videoEl.duration;
+          if (duration > 15.5) {
+            toast.error('Video is te lang. Maximaal 15 seconden toegestaan.');
+            setProfileMediaLoading(false);
+            return;
+          }
+          
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            const base64Url = event.target?.result as string;
+            await handleAddProfileMedia(base64Url, 'video');
+            setProfileMediaLoading(false);
+          };
+          reader.readAsDataURL(file);
+        };
+        videoEl.onerror = () => {
+          toast.error('Kan de video niet inlezen. Controleer of het een geldige video is.');
+          setProfileMediaLoading(false);
+        };
+        videoEl.src = URL.createObjectURL(file);
+      } else {
+        const compressed = await compressProfileMediaImage(file);
+        await handleAddProfileMedia(compressed, 'image');
+        setProfileMediaLoading(false);
+      }
+    } catch (err: any) {
+      console.error('Failed to process file upload:', err);
+      toast.error('Fout bij verwerken bestand: ' + (err.message || err));
+      setProfileMediaLoading(false);
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  // Fetch Profile Media on selectedUser change
+  React.useEffect(() => {
+    if (!selectedUser) {
+      setProfileMedia([]);
+      return;
+    }
+
+    const fetchProfileMedia = async () => {
+      setProfileMediaLoading(true);
+      try {
+        const { data, error } = await supabaseClient
+          .from('profile_media')
+          .select('*')
+          .eq('user_id', selectedUser.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          setProfileMedia(selectedUser.custom_theme?.media || []);
+        } else {
+          setProfileMedia(data || []);
+        }
+      } catch (err) {
+        setProfileMedia(selectedUser.custom_theme?.media || []);
+      } finally {
+        setProfileMediaLoading(false);
+      }
+    };
+
+    fetchProfileMedia();
+  }, [selectedUser?.id]);
   const [nicknameInput, setNicknameInput] = useState('');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const usersRef = useRef<UserProfile[]>(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
+  const [feedMedia, setFeedMedia] = useState<any[]>([]);
+  const [feedLoading, setFeedLoading] = useState<boolean>(false);
+
+  const fetchFeedMedia = async () => {
+    setFeedLoading(true);
+    try {
+      // 1. Try fetching from profile_media table
+      const { data, error } = await supabaseClient
+        .from('profile_media')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (!error && data) {
+        // Fetch profiles for the unique user_ids of the uploaded media
+        const userIds = Array.from(new Set(data.map(m => m.user_id)));
+        let fetchedProfiles: UserProfile[] = [];
+        if (userIds.length > 0) {
+          const { data: pData, error: pError } = await supabaseClient
+            .from('profiles')
+            .select('id, display_name, photo_url, custom_theme, email, created_at, updated_at, is_blocked')
+            .in('id', userIds);
+          if (!pError && pData) {
+            fetchedProfiles = pData;
+            // Merge into local users state so other parts of the app also have access to these profiles
+            setUsers(prev => {
+              const map = new Map<string, UserProfile>();
+              prev.forEach(u => map.set(u.id, u));
+              pData.forEach(p => {
+                const existing = map.get(p.id);
+                map.set(p.id, existing ? { ...existing, ...p } : p);
+              });
+              return Array.from(map.values()).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+            });
+          }
+        }
+
+        // Map with user profiles
+        const mappedData = data.map(m => {
+          const authorProfile = fetchedProfiles.find(u => u.id === m.user_id) 
+            || usersRef.current.find(u => u.id === m.user_id)
+            || (user && m.user_id === user.uid ? profile : null);
+          const mediaFromTheme = authorProfile?.custom_theme?.media?.find((tMedia: any) => tMedia.media_url === m.media_url || tMedia.id === m.id);
+          return {
+            ...m,
+            author_name: authorProfile?.display_name || (user && m.user_id === user.uid ? (profile?.display_name || user.displayName) : null) || 'Anoniem',
+            author_photo: authorProfile?.photo_url || (user && m.user_id === user.uid ? (profile?.photo_url || user.photoURL) : null) || null,
+            likes: m.likes || mediaFromTheme?.likes || [],
+            comments: m.comments || mediaFromTheme?.comments || []
+          };
+        });
+
+        // Sort by likes count (descending), then by date (descending)
+        mappedData.sort((a, b) => {
+          const aLikes = (a.likes || []).length;
+          const bLikes = (b.likes || []).length;
+          if (bLikes !== aLikes) {
+            return bLikes - aLikes;
+          }
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+
+        setFeedMedia(mappedData);
+      } else {
+        // Fallback to locally loaded profiles
+        const localItems: any[] = [];
+        usersRef.current.forEach(u => {
+          const mediaArray = u.custom_theme?.media || [];
+          mediaArray.forEach((m: any) => {
+            localItems.push({
+              id: m.id || `${u.id}-${Date.now()}-${Math.random()}`,
+              user_id: u.id,
+              media_url: m.media_url,
+              media_type: m.media_type,
+              created_at: m.created_at || new Date().toISOString(),
+              author_name: u.display_name || 'Anoniem',
+              author_photo: u.photo_url || null,
+              likes: m.likes || [],
+              comments: m.comments || []
+            });
+          });
+        });
+        // Sort by likes count (descending), then by date (descending)
+        localItems.sort((a, b) => {
+          const aLikes = (a.likes || []).length;
+          const bLikes = (b.likes || []).length;
+          if (bLikes !== aLikes) {
+            return bLikes - aLikes;
+          }
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        setFeedMedia(localItems);
+      }
+    } catch (err) {
+      console.error('Error loading media feed:', err);
+    } finally {
+      setFeedLoading(false);
+    }
+  };
+
+  const handleLikeMedia = async (mediaId: string, authorId: string) => {
+    if (!user) {
+      toast.error('Je moet ingelogd zijn om te liken.');
+      return;
+    }
+
+    try {
+      // Find current likes in state
+      const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
+      const likes = currentMediaItem?.likes || [];
+      
+      let isLiked = false;
+      let updatedLikes: string[];
+      if (likes.includes(user.uid)) {
+        updatedLikes = likes.filter((uid: string) => uid !== user.uid);
+        isLiked = false;
+      } else {
+        updatedLikes = [...likes, user.uid];
+        isLiked = true;
+      }
+
+      // 1. Try to save directly to profile_media table
+      const { error: dbError } = await supabaseClient
+        .from('profile_media')
+        .update({ likes: updatedLikes })
+        .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
+
+      // 2. Also sync to profiles.custom_theme.media as fallback and for cached client lookups
+      const authorProfile = users.find(u => u.id === authorId);
+      let updatedTheme = authorProfile?.custom_theme || {};
+      if (authorProfile) {
+        const currentMediaList = authorProfile.custom_theme?.media || [];
+        const updatedMediaList = currentMediaList.map((m: any) => {
+          if (m.id === mediaId || m.media_url === mediaId) {
+            return { ...m, likes: updatedLikes };
+          }
+          return m;
+        });
+        updatedTheme = {
+          ...authorProfile.custom_theme,
+          media: updatedMediaList
+        };
+
+        const { error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ custom_theme: updatedTheme })
+          .eq('id', authorId);
+
+        if (profileError && dbError) {
+          throw new Error(dbError.message || profileError.message);
+        }
+
+        // Update users state
+        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
+      } else if (dbError) {
+        throw dbError;
+      }
+      
+      // Update local feedMedia instantly
+      setFeedMedia(prev => {
+        const updated = prev.map(m => {
+          if (m.id === mediaId || m.media_url === mediaId) {
+            return {
+              ...m,
+              likes: updatedLikes
+            };
+          }
+          return m;
+        });
+
+        return updated.sort((a, b) => {
+          const aLikes = (a.likes || []).length;
+          const bLikes = (b.likes || []).length;
+          if (bLikes !== aLikes) {
+            return bLikes - aLikes;
+          }
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+      });
+
+      // Broadcast real-time like event
+      try {
+        supabaseClient.channel('media_feed_realtime').send({
+          type: 'broadcast',
+          event: 'media_event',
+          payload: { type: 'LIKE', mediaId, likes: updatedLikes }
+        });
+      } catch (bcErr) {
+        console.warn('Realtime like broadcast error:', bcErr);
+      }
+
+      // Send notification if liked and not self
+      if (isLiked && authorId !== user.uid) {
+        await supabaseClient.from('notifications').insert({
+          user_id: authorId,
+          actor_id: user.uid,
+          actor_name: profile?.display_name || user.displayName || 'Anoniem',
+          actor_photo: profile?.photo_url || user.photoURL || null,
+          type: 'mention',
+          resource_type: 'post',
+          resource_id: 'media_feed',
+          content: `${profile?.display_name || user.displayName || 'Anoniem'} vindt je foto leuk! ❤️`,
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      toast.success(isLiked ? 'Leuk gevonden!' : 'Niet meer leuk gevonden');
+    } catch (err: any) {
+      console.error('Error liking media:', err);
+      toast.error('Fout bij liken: ' + err.message);
+    }
+  };
+
+  const handleCommentMedia = async (mediaId: string, authorId: string, text: string) => {
+    if (!user) {
+      toast.error('Je moet ingelogd zijn om te reageren.');
+      return;
+    }
+    if (!text.trim()) return;
+
+    try {
+      // Find current comments in state
+      const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
+      const comments = currentMediaItem?.comments || [];
+
+      const newComment = {
+        id: Date.now().toString(),
+        user_id: user.uid,
+        author_name: profile?.display_name || user.displayName || 'Anoniem',
+        author_photo: profile?.photo_url || user.photoURL || null,
+        text: text.trim(),
+        created_at: new Date().toISOString()
+      };
+
+      const updatedComments = [...comments, newComment];
+
+      // 1. Try to update directly in profile_media table
+      const { error: dbError } = await supabaseClient
+        .from('profile_media')
+        .update({ comments: updatedComments })
+        .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
+
+      // 2. Also sync to profiles.custom_theme.media as fallback and for cached client lookups
+      const authorProfile = users.find(u => u.id === authorId);
+      let updatedTheme = authorProfile?.custom_theme || {};
+      if (authorProfile) {
+        const currentMediaList = authorProfile.custom_theme?.media || [];
+        const updatedMediaList = currentMediaList.map((m: any) => {
+          if (m.id === mediaId || m.media_url === mediaId) {
+            return { ...m, comments: updatedComments };
+          }
+          return m;
+        });
+        updatedTheme = {
+          ...authorProfile.custom_theme,
+          media: updatedMediaList
+        };
+
+        const { error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ custom_theme: updatedTheme })
+          .eq('id', authorId);
+
+        if (profileError && dbError) {
+          throw new Error(dbError.message || profileError.message);
+        }
+
+        // Update users state
+        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
+      } else if (dbError) {
+        throw dbError;
+      }
+
+      // Update feedMedia state instantly
+      setFeedMedia(prev => prev.map(m => {
+        if (m.id === mediaId || m.media_url === mediaId) {
+          return {
+            ...m,
+            comments: updatedComments
+          };
+        }
+        return m;
+      }));
+
+      // Broadcast real-time comment event
+      try {
+        supabaseClient.channel('media_feed_realtime').send({
+          type: 'broadcast',
+          event: 'media_event',
+          payload: { type: 'COMMENT', mediaId, comments: updatedComments }
+        });
+      } catch (bcErr) {
+        console.warn('Realtime comment broadcast error:', bcErr);
+      }
+
+      // Send notification
+      if (authorId !== user.uid) {
+        await supabaseClient.from('notifications').insert({
+          user_id: authorId,
+          actor_id: user.uid,
+          actor_name: profile?.display_name || user.displayName || 'Anoniem',
+          actor_photo: profile?.photo_url || user.photoURL || null,
+          type: 'mention',
+          resource_type: 'post',
+          resource_id: 'media_feed',
+          content: `${profile?.display_name || user.displayName || 'Anoniem'} reageerde op je foto: "${text.trim().substring(0, 30)}${text.trim().length > 30 ? '...' : ''}" 💬`,
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      toast.success('Reactie geplaatst!');
+    } catch (err: any) {
+      console.error('Error commenting on media:', err);
+      toast.error('Fout bij plaatsen reactie: ' + err.message);
+    }
+  };
+
+  const handleDeleteCommentMedia = async (mediaId: string, authorId: string, commentId: string) => {
+    if (!user) {
+      toast.error('Je moet ingelogd zijn om een reactie te verwijderen.');
+      return;
+    }
+
+    try {
+      // Find current comments in state
+      const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
+      if (!currentMediaItem) return;
+      const comments = currentMediaItem?.comments || [];
+      
+      // Check if the comment belongs to the user
+      const targetComment = comments.find(c => c.id === commentId);
+      if (!targetComment) {
+        toast.error('Reactie niet gevonden.');
+        return;
+      }
+
+      const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+      if (targetComment.user_id !== user.uid && !isSystemAdmin) {
+        toast.error('Je kunt alleen je eigen reacties verwijderen.');
+        return;
+      }
+
+      const updatedComments = comments.filter(c => c.id !== commentId);
+
+      // 1. Try to update directly in profile_media table
+      const { error: dbError } = await supabaseClient
+        .from('profile_media')
+        .update({ comments: updatedComments })
+        .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
+
+      // 2. Also sync to profiles.custom_theme.media as fallback and for cached client lookups
+      const authorProfile = users.find(u => u.id === authorId);
+      let updatedTheme = authorProfile?.custom_theme || {};
+      if (authorProfile) {
+        const currentMediaList = authorProfile.custom_theme?.media || [];
+        const updatedMediaList = currentMediaList.map((m: any) => {
+          if (m.id === mediaId || m.media_url === mediaId) {
+            return { ...m, comments: updatedComments };
+          }
+          return m;
+        });
+        updatedTheme = {
+          ...authorProfile.custom_theme,
+          media: updatedMediaList
+        };
+
+        const { error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ custom_theme: updatedTheme })
+          .eq('id', authorId);
+
+        if (profileError && dbError) {
+          throw new Error(dbError.message || profileError.message);
+        }
+
+        // Update users state
+        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
+      } else if (dbError) {
+        throw dbError;
+      }
+
+      // Update feedMedia state instantly
+      setFeedMedia(prev => prev.map(m => {
+        if (m.id === mediaId || m.media_url === mediaId) {
+          return {
+            ...m,
+            comments: updatedComments
+          };
+        }
+        return m;
+      }));
+
+      // Broadcast real-time comment deletion event
+      try {
+        supabaseClient.channel('media_feed_realtime').send({
+          type: 'broadcast',
+          event: 'media_event',
+          payload: { type: 'COMMENT', mediaId, comments: updatedComments }
+        });
+      } catch (bcErr) {
+        console.warn('Realtime comment delete broadcast error:', bcErr);
+      }
+
+      toast.success('Reactie verwijderd!');
+    } catch (err: any) {
+      console.error('Error deleting comment:', err);
+      toast.error('Fout bij verwijderen reactie: ' + err.message);
+    }
+  };
+
+  const handleDeleteFeedMedia = async (mediaId: string, authorId: string) => {
+    if (!user) {
+      toast.error('Je moet ingelogd zijn om media te verwijderen.');
+      return;
+    }
+
+    const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+    if (authorId !== user.uid && !isSystemAdmin) {
+      toast.error('Je hebt geen rechten om deze media te verwijderen.');
+      return;
+    }
+
+    try {
+      // 1. Try deleting from profile_media table
+      const { error: dbError } = await supabaseClient
+        .from('profile_media')
+        .delete()
+        .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
+
+      // 2. Also sync to profiles.custom_theme.media
+      const authorProfile = users.find(u => u.id === authorId);
+      let updatedTheme = authorProfile?.custom_theme || {};
+      if (authorProfile) {
+        const currentMediaList = authorProfile.custom_theme?.media || [];
+        const updatedMediaList = currentMediaList.filter((m: any) => m.id !== mediaId && m.media_url !== mediaId);
+        
+        updatedTheme = {
+          ...authorProfile.custom_theme,
+          media: updatedMediaList
+        };
+
+        const { error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ custom_theme: updatedTheme })
+          .eq('id', authorId);
+
+        if (profileError && dbError) {
+          throw new Error(dbError.message || profileError.message);
+        }
+
+        // Update users state
+        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
+        
+        // If it's my own profile, update profileMedia state
+        if (authorId === user.uid) {
+          setProfileMedia(prev => prev.filter(m => m.id !== mediaId && m.media_url !== mediaId));
+        }
+      } else if (dbError) {
+        throw dbError;
+      }
+
+      // Update feedMedia state instantly
+      setFeedMedia(prev => prev.filter(m => m.id !== mediaId && m.media_url !== mediaId));
+
+      // Broadcast real-time media deletion event
+      try {
+        supabaseClient.channel('media_feed_realtime').send({
+          type: 'broadcast',
+          event: 'media_event',
+          payload: { type: 'DELETE_MEDIA', mediaId }
+        });
+      } catch (bcErr) {
+        console.warn('Realtime media delete broadcast error:', bcErr);
+      }
+
+      toast.success('Media verwijderd!');
+    } catch (err: any) {
+      console.error('Error deleting media:', err);
+      toast.error('Fout bij verwijderen media: ' + err.message);
+    }
+  };
+
+  // Real-time Media Feed Subscription (Supabase Postgres Changes + Instant Broadcasts)
+  useEffect(() => {
+    if (!user || isWhitelisted !== true) return;
+
+    fetchFeedMedia();
+
+    const mediaChannel = supabaseClient
+      .channel('media_feed_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profile_media' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newMedia = payload.new as any;
+            const authorProfile = usersRef.current.find(u => u.id === newMedia.user_id)
+              || (user && newMedia.user_id === user.uid ? profile : null);
+
+            const mappedItem = {
+              ...newMedia,
+              author_name: authorProfile?.display_name || (user && newMedia.user_id === user.uid ? (profile?.display_name || user.displayName) : null) || 'Anoniem',
+              author_photo: authorProfile?.photo_url || (user && newMedia.user_id === user.uid ? (profile?.photo_url || user.photoURL) : null) || null,
+              likes: newMedia.likes || [],
+              comments: newMedia.comments || []
+            };
+
+            setFeedMedia(prev => {
+              if (prev.some(m => m.id === mappedItem.id || m.media_url === mappedItem.media_url)) {
+                return prev.map(m => (m.id === mappedItem.id || m.media_url === mappedItem.media_url) ? { ...m, ...mappedItem } : m);
+              }
+              const updated = [mappedItem, ...prev];
+              return updated.sort((a, b) => {
+                const aLikes = (a.likes || []).length;
+                const bLikes = (b.likes || []).length;
+                if (bLikes !== aLikes) return bLikes - aLikes;
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+              });
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as any;
+            setFeedMedia(prev => {
+              const next = prev.map(m => {
+                if (m.id === updated.id || m.media_url === updated.media_url) {
+                  return {
+                    ...m,
+                    ...updated,
+                    author_name: m.author_name,
+                    author_photo: m.author_photo,
+                    likes: updated.likes || [],
+                    comments: updated.comments || []
+                  };
+                }
+                return m;
+              });
+              return next.sort((a, b) => {
+                const aLikes = (a.likes || []).length;
+                const bLikes = (b.likes || []).length;
+                if (bLikes !== aLikes) return bLikes - aLikes;
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+              });
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old?.id;
+            if (deletedId) {
+              setFeedMedia(prev => prev.filter(m => m.id !== deletedId));
+            }
+          }
+        }
+      )
+      .on('broadcast', { event: 'media_event' }, ({ payload }) => {
+        if (!payload) return;
+        if (payload.type === 'LIKE') {
+          const { mediaId, likes } = payload;
+          setFeedMedia(prev => {
+            const next = prev.map(m => {
+              if (m.id === mediaId || m.media_url === mediaId) {
+                return { ...m, likes };
+              }
+              return m;
+            });
+            return next.sort((a, b) => {
+              const aLikes = (a.likes || []).length;
+              const bLikes = (b.likes || []).length;
+              if (bLikes !== aLikes) return bLikes - aLikes;
+              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            });
+          });
+        } else if (payload.type === 'COMMENT') {
+          const { mediaId, comments } = payload;
+          setFeedMedia(prev => prev.map(m => {
+            if (m.id === mediaId || m.media_url === mediaId) {
+              return { ...m, comments };
+            }
+            return m;
+          }));
+        } else if (payload.type === 'NEW_MEDIA') {
+          const { media } = payload;
+          setFeedMedia(prev => {
+            if (prev.some(m => m.id === media.id || m.media_url === media.media_url)) {
+              return prev.map(m => (m.id === media.id || m.media_url === media.media_url) ? { ...m, ...media } : m);
+            }
+            const next = [media, ...prev];
+            return next.sort((a, b) => {
+              const aLikes = (a.likes || []).length;
+              const bLikes = (b.likes || []).length;
+              if (bLikes !== aLikes) return bLikes - aLikes;
+              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            });
+          });
+        } else if (payload.type === 'DELETE_MEDIA') {
+          const { mediaId } = payload;
+          setFeedMedia(prev => prev.filter(m => m.id !== mediaId && m.media_url !== mediaId));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabaseClient.removeChannel(mediaChannel);
+    };
+  }, [user?.uid, isWhitelisted]);
+
+  useEffect(() => {
+    if (view === 'media_feed') {
+      fetchFeedMedia();
+    }
+  }, [view]);
+
+  const [selectedUserFollowers, setSelectedUserFollowers] = useState<UserProfile[]>([]);
+  const [selectedUserFollowing, setSelectedUserFollowing] = useState<UserProfile[]>([]);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [showFollowersModal, setShowFollowersModal] = useState(false);
+  const [showFollowingModal, setShowFollowingModal] = useState(false);
+  const [followersSearchQuery, setFollowersSearchQuery] = useState('');
+  const [followingSearchQuery, setFollowingSearchQuery] = useState('');
+
+  const filteredFollowers = useMemo(() => {
+    const query = followersSearchQuery.toLowerCase();
+    return selectedUserFollowers.filter(f => 
+      f.display_name?.toLowerCase().includes(query) ||
+      f.bio?.toLowerCase().includes(query) ||
+      f.email?.toLowerCase().includes(query)
+    );
+  }, [selectedUserFollowers, followersSearchQuery]);
+
+  const filteredFollowing = useMemo(() => {
+    const query = followingSearchQuery.toLowerCase();
+    return selectedUserFollowing.filter(f => 
+      f.display_name?.toLowerCase().includes(query) ||
+      f.bio?.toLowerCase().includes(query) ||
+      f.email?.toLowerCase().includes(query)
+    );
+  }, [selectedUserFollowing, followingSearchQuery]);
   
   useEffect(() => {
     if (selectedUser) {
@@ -595,14 +1540,54 @@ export default function App() {
     }
   }, [selectedUser, nicknames]);
 
+  useEffect(() => {
+    if (!selectedUser) {
+      setSelectedUserFollowers([]);
+      setSelectedUserFollowing([]);
+      setShowFollowersModal(false);
+      setShowFollowingModal(false);
+      return;
+    }
+
+    const loadFollows = async () => {
+      try {
+        const { data: followersData, error: followersError } = await supabaseClient
+          .from('profiles')
+          .select('id, display_name, photo_url, custom_theme, bio')
+          .contains('custom_theme', { following: [selectedUser.id] });
+
+        if (!followersError && followersData) {
+          setSelectedUserFollowers(followersData);
+        } else {
+          setSelectedUserFollowers(users.filter(u => u.custom_theme?.following?.includes(selectedUser.id)));
+        }
+
+        const followingIds = selectedUser.custom_theme?.following || [];
+        if (followingIds.length > 0) {
+          const { data: followingData, error: followingError } = await supabaseClient
+            .from('profiles')
+            .select('id, display_name, photo_url, custom_theme, bio')
+            .in('id', followingIds);
+
+          if (!followingError && followingData) {
+            setSelectedUserFollowing(followingData);
+          } else {
+            setSelectedUserFollowing(users.filter(u => followingIds.includes(u.id)));
+          }
+        } else {
+          setSelectedUserFollowing([]);
+        }
+      } catch (err) {
+        console.error('Error loading followers/following:', err);
+      }
+    };
+
+    loadFollows();
+  }, [selectedUser?.id, selectedUser?.custom_theme?.following, users]);
+
   const [reportTarget, setReportTarget] = useState<{ type: 'user' | 'post' | 'message', id: string, userId: string, displayName: string } | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [reportDetails, setReportDetails] = useState('');
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const usersRef = useRef<UserProfile[]>(users);
-  useEffect(() => {
-    usersRef.current = users;
-  }, [users]);
   const [showUserSearch, setShowUserSearch] = useState(false);
   const [showNavDropdown, setShowNavDropdown] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -648,8 +1633,16 @@ export default function App() {
   const hasFetchedStatus = useRef(false);
   const hasFetchedProfile = useRef(false);
   const hasFetchedWhitelist = useRef(false);
-  const [typingStatuses, setTypingStatuses] = useState<Record<string, string[]>>({});
   const [typingUsers, setTypingUsers] = useState<Record<string, Record<string, { name: string, lastSeen: number }>>>({});
+  const typingStatuses = useMemo(() => {
+    const newStatuses: Record<string, string[]> = {};
+    Object.keys(typingUsers).forEach(convId => {
+      newStatuses[convId] = Object.entries(typingUsers[convId]).map(([uid, u]) => {
+        return nicknames[uid] || u.name;
+      });
+    });
+    return newStatuses;
+  }, [typingUsers, nicknames]);
   const [isTyping, setIsTyping] = useState(false);
   const [typingInId, setTypingInId] = useState<string | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -762,6 +1755,23 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [devicePasskeys, setDevicePasskeys] = useState<any[]>([]);
+  const [authStep, setAuthStep] = useState<'email' | 'password'>('email');
+  const [lookupProfile, setLookupProfile] = useState<{ display_name: string; email: string; photo_url: string | null } | null>(null);
+  const [isSearchingProfile, setIsSearchingProfile] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthModalOpen) {
+      setAuthStep('email');
+      setLookupProfile(null);
+      setIsSearchingProfile(false);
+    }
+  }, [isAuthModalOpen]);
+
+  useEffect(() => {
+    setAuthStep('email');
+    setLookupProfile(null);
+    setIsSearchingProfile(false);
+  }, [isRegisterMode]);
 
   useEffect(() => {
     try {
@@ -989,7 +1999,10 @@ export default function App() {
                 notify_mentions: notificationSettings.notify_mentions,
                 message_sound: notificationSettings.message_sound,
                 post_sound: notificationSettings.post_sound,
-                ringtone_url: notificationSettings.ringtone_url
+                ringtone_url: notificationSettings.ringtone_url,
+                discord_webhook_url: notificationSettings.discord_webhook_url,
+                discord_notify_general: notificationSettings.discord_notify_general,
+                discord_notify_dm: notificationSettings.discord_notify_dm
               } 
             })
             .eq('id', user.uid);
@@ -1153,10 +2166,11 @@ export default function App() {
   }, [view]);
 
   // Security & Permissions
+  const isHardwareBanned = rateLimiter.isBanned();
   const isAdmin = profile?.role === 'admin' || user?.email === 'markohoksen@gmail.com';
-  const isBlocked = profile?.is_blocked === true;
+  const isBlocked = profile?.is_blocked === true || isHardwareBanned;
 
-  const notesData = parseAdminNotes(profile?.admin_notes);
+  const notesData = parseAdminNotes(profile?.admin_notes, profile?.custom_theme);
   const isTempBanned = !!(notesData.banned_until && new Date(notesData.banned_until) > new Date());
   const activeWarning = notesData.warnings?.find(w => !w.read) || null;
 
@@ -1241,14 +2255,7 @@ export default function App() {
             action: {
               label: 'Bekijken',
               onClick: () => {
-                if (newNotif.type === 'dm') {
-                  setView('messages');
-                  handleSetActiveConversation(conversationsRef.current.find(c => c.id === newNotif.resource_id) || null);
-                } else if (newNotif.resource_type === 'post') {
-                  setView('chat');
-                } else {
-                  setView('forum');
-                }
+                handleNotificationClickRef.current(newNotif);
               }
             }
           });
@@ -1420,7 +2427,10 @@ export default function App() {
                   notify_mentions: notificationSettings.notify_mentions,
                   message_sound: notificationSettings.message_sound,
                   post_sound: notificationSettings.post_sound,
-                  ringtone_url: notificationSettings.ringtone_url
+                  ringtone_url: notificationSettings.ringtone_url,
+                  discord_webhook_url: notificationSettings.discord_webhook_url,
+                  discord_notify_general: notificationSettings.discord_notify_general,
+                  discord_notify_dm: notificationSettings.discord_notify_dm
                 },
                 custom_theme: {
                   ...customTheme,
@@ -1744,7 +2754,7 @@ export default function App() {
       let oldAdminNotes = currentProfile?.admin_notes;
       let oldCustomTheme = currentProfile?.custom_theme || {};
 
-      let adminNotesObj = parseAdminNotes(oldAdminNotes);
+      let adminNotesObj = parseAdminNotes(oldAdminNotes, oldCustomTheme);
       let existingLogs: any[] = adminNotesObj.telemetry || [];
 
       if (existingLogs.length === 0 && oldCustomTheme) {
@@ -1810,30 +2820,45 @@ export default function App() {
 
       const telemetryString = JSON.stringify(structuredAdminNotes);
 
-      // Probeer admin_notes bij te werken in de database
-      const { error: updateError } = await supabaseClient
-        .from('profiles')
-        .update({ admin_notes: telemetryString })
-        .eq('id', user.uid);
+      const updatedCustomTheme = {
+        ...oldCustomTheme,
+        admin_notes: structuredAdminNotes,
+        user_telemetry: updatedLogs // Keep for legacy if any
+      };
 
-      if (updateError) {
-        console.warn('Kon admin_notes kolom niet bijwerken (mogelijk geen kolom of RLS restrictie), proberen in custom_theme op te slaan:', updateError);
-        // Fallback: sla telemetrie op binnen custom_theme (een JSON-kolom)
-        const fallbackTheme = {
-          ...oldCustomTheme,
-          user_telemetry: updatedLogs
-        };
-
-        await supabaseClient
+      let saveError = null;
+      try {
+        const { error: firstError } = await supabaseClient
           .from('profiles')
-          .update({ custom_theme: fallbackTheme })
+          .update({ 
+            admin_notes: telemetryString,
+            custom_theme: updatedCustomTheme
+          })
           .eq('id', user.uid);
-        
-          setProfile(prev => prev ? { ...prev, custom_theme: fallbackTheme, admin_notes: null } : null);
-          setCustomTheme(fallbackTheme);
+
+        if (firstError) {
+          console.warn('Kon admin_notes kolom niet direct bijwerken, proberen in custom_theme op te slaan:', firstError);
+          const { error: fallbackError } = await supabaseClient
+            .from('profiles')
+            .update({ custom_theme: updatedCustomTheme })
+            .eq('id', user.uid);
+
+          if (fallbackError) saveError = fallbackError;
+        }
+      } catch (e) {
+        saveError = e;
+      }
+
+      if (saveError) {
+        console.error('Fout bij het opslaan van telemetrie:', saveError);
       } else {
-        console.log('Telemetrie succesvol geregistreerd in admin_notes!');
-        setProfile(prev => prev ? { ...prev, admin_notes: telemetryString } : null);
+        console.log('Telemetrie succesvol geregistreerd!');
+        setProfile(prev => prev ? { 
+          ...prev, 
+          admin_notes: telemetryString, 
+          custom_theme: updatedCustomTheme 
+        } : null);
+        setCustomTheme(updatedCustomTheme);
       }
     } catch (err) {
       console.error('Fout bij het verzamelen of opslaan van telemetrie:', err);
@@ -1899,9 +2924,10 @@ export default function App() {
             }
           };
 
-          const [wRes, uRes] = await Promise.all([
+          const [wRes, uRes, rRes] = await Promise.all([
             supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
-            fetchProfilesWithFallback()
+            fetchProfilesWithFallback(),
+            supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
           ]);
           
           if (wRes.error) {
@@ -1911,6 +2937,9 @@ export default function App() {
           if (uRes.error) {
             console.error('Admin: Error fetching users:', uRes.error);
           }
+          if (rRes.error) {
+            console.error('Admin: Error fetching reports:', rRes.error);
+          }
 
           if (wRes.data) {
             setWhitelist(wRes.data);
@@ -1919,6 +2948,9 @@ export default function App() {
           if (uRes.data) {
             const sorted = [...uRes.data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
             setUsers(sorted);
+          }
+          if (rRes.data) {
+            setReports(rRes.data.filter((r: any) => r.status !== 'deleted'));
           }
           hasFetchedAdminData.current = true;
         } catch (err) {
@@ -1975,22 +3007,48 @@ export default function App() {
         }
       };
 
-      const [wRes, uRes] = await Promise.all([
+      const [wRes, uRes, rRes] = await Promise.all([
         supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
-        fetchProfilesWithFallback()
+        fetchProfilesWithFallback(),
+        supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
       ]);
       
       if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
       if (uRes.error) console.error('Admin: Error fetching users:', uRes.error);
+      if (rRes.error) console.error('Admin: Error fetching reports:', rRes.error);
 
       if (wRes.data) {
         setWhitelist(wRes.data);
         localStorage.setItem('cached_whitelist', JSON.stringify(wRes.data));
       }
-      if (uRes.data) {
-        const sorted = [...uRes.data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+      let fetchedUsers = uRes.data ? [...uRes.data] : [];
+
+      if (rRes.data) {
+        setReports(rRes.data.filter((r: any) => r.status !== 'deleted'));
+        
+        // Fetch missing users for reports so they don't show as "Onbekend"
+        const missingIds = new Set<string>();
+        rRes.data.forEach((r: any) => {
+          if (r.reporter_id && !fetchedUsers.find(u => u.id === r.reporter_id)) missingIds.add(r.reporter_id);
+          if (r.reported_id && !fetchedUsers.find(u => u.id === r.reported_id)) missingIds.add(r.reported_id);
+        });
+
+        if (missingIds.size > 0) {
+          const { data: missingUsers } = await supabaseClient
+            .from('profiles')
+            .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme, name_locked_until, bio_locked_until')
+            .in('id', Array.from(missingIds));
+          if (missingUsers) {
+            fetchedUsers = [...fetchedUsers, ...missingUsers];
+          }
+        }
+      }
+
+      if (fetchedUsers.length > 0) {
+        const sorted = fetchedUsers.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
         setUsers(sorted);
       }
+
       hasFetchedAdminData.current = true;
     } catch (err) {
       console.error('Admin: Unexpected error fetching data:', err);
@@ -2294,6 +3352,8 @@ export default function App() {
                 const profileObj = otherParticipantUid ? usersRef.current.find(u => u.id === otherParticipantUid) : null;
                 senderName = profileObj?.display_name || (otherParticipantUid ? updatedConv.participant_names[otherParticipantUid] : 'Iemand');
               }
+              
+              sendDiscordNotification('dm', senderName, updatedConv.last_message || '');
               
               if (notificationSettingsRef.current.notify_new_messages && (activeConversationRef.current?.id !== updatedConv.id || viewRef.current !== 'messages')) {
                 toast.success(updatedConv.is_group ? `Groepsbericht` : `Nieuw bericht van ${senderName}`, {
@@ -2705,7 +3765,6 @@ export default function App() {
   // Real-time typing indicators sync via Broadcast
   useEffect(() => {
     if (!user || !supabaseClient) {
-      setTypingStatuses({});
       setTypingUsers({});
       setIsTypingSubscribed(false);
       return;
@@ -2799,17 +3858,6 @@ export default function App() {
       clearInterval(interval);
     };
   }, [user?.uid]);
-
-  // Derive typingStatuses from typingUsers
-  useEffect(() => {
-    const newStatuses: Record<string, string[]> = {};
-    Object.keys(typingUsers).forEach(convId => {
-      newStatuses[convId] = Object.entries(typingUsers[convId]).map(([uid, u]) => {
-        return nicknames[uid] || u.name;
-      });
-    });
-    setTypingStatuses(newStatuses);
-  }, [typingUsers, nicknames]);
 
   // Track typing status via Broadcast
   useEffect(() => {
@@ -3032,6 +4080,7 @@ export default function App() {
           if (lastPostId.current && latestPost && latestPost.id !== lastPostId.current && 
               latestPost.author_id !== user.uid && 
               new Date(latestPost.created_at).getTime() > new Date(initialLoadTime.current).getTime()) {
+            sendDiscordNotification('general', latestPost.author_name, latestPost.content);
             if (notificationSettingsRef.current.notify_new_posts) {
               toast.info(`Nieuw bericht van ${latestPost.author_name}`, {
                 description: latestPost.content.substring(0, 50) + (latestPost.content.length > 50 ? '...' : ''),
@@ -3072,6 +4121,7 @@ export default function App() {
         if (lastPostId.current && latestPost && latestPost.id !== lastPostId.current && 
             latestPost.author_id !== user.uid && 
             new Date(latestPost.created_at).getTime() > new Date(initialLoadTime.current).getTime()) {
+          sendDiscordNotification('general', latestPost.author_name, latestPost.content);
           if (notificationSettingsRef.current.notify_new_posts) {
             toast.info(`Nieuw bericht van ${latestPost.author_name}`, {
               description: latestPost.content.substring(0, 50) + (latestPost.content.length > 50 ? '...' : ''),
@@ -3315,6 +4365,59 @@ export default function App() {
     }
   }, [messages.length]);
 
+  const sendDiscordNotification = async (type: 'general' | 'dm', authorName: string, content: string) => {
+    const settings = notificationSettingsRef.current;
+    const webhookUrl = settings.discord_webhook_url;
+    if (!webhookUrl || !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+      return;
+    }
+
+    if (type === 'general' && !settings.discord_notify_general) {
+      return;
+    }
+
+    if (type === 'dm' && !settings.discord_notify_dm) {
+      return;
+    }
+
+    const title = type === 'general' ? `💬 Nieuw bericht in General Chat` : `✉️ Nieuw Privébericht (DM)`;
+    const description = content;
+    const body = {
+      embeds: [
+        {
+          title: title,
+          description: description.length > 2000 ? description.substring(0, 1997) + '...' : description,
+          color: type === 'general' ? 3447003 : 10181046,
+          fields: [
+            {
+              name: "Afzender",
+              value: authorName || "Anoniem",
+              inline: true
+            },
+            {
+              name: "App",
+              value: "FTJM Chat & Arcade 🎮",
+              inline: true
+            }
+          ],
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (err) {
+      console.error('Failed to send Discord notification:', err);
+    }
+  };
+
   const handleLogin = async () => {
     setIsAuthModalOpen(true);
     setAuthError(null);
@@ -3347,6 +4450,7 @@ export default function App() {
     if (!user || !supabaseClient) return;
     setSaving(true);
     try {
+      secureLocalStorage.setItem('has_agreed_terms_v2', 'true');
       const currentTheme = profile?.custom_theme || {};
       const updatedTheme = { ...currentTheme, agreed_terms_v2: true };
       
@@ -3357,7 +4461,7 @@ export default function App() {
         
       if (error) throw error;
       
-      setCustomTheme(updatedTheme);
+      setCustomTheme(prev => ({ ...prev, ...updatedTheme }));
       setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme } : null);
       
       const updatedProfile = profile ? { ...profile, custom_theme: updatedTheme } : null;
@@ -3382,16 +4486,22 @@ export default function App() {
     setSaving(true);
     isSavingThemeRef.current = true;
     try {
+      const currentTheme = profile?.custom_theme || {};
+      const updatedTheme = {
+        ...currentTheme,
+        ...customTheme,
+        agreed_terms_v2: true
+      };
       const { error } = await supabaseClient
         .from('profiles')
         .update({ 
-          custom_theme: customTheme,
+          custom_theme: updatedTheme,
           use_custom_theme: useCustomTheme
         })
         .eq('id', user.uid);
       
       if (error) throw error;
-      setProfile(prev => prev ? { ...prev, custom_theme: customTheme, use_custom_theme: useCustomTheme } : null);
+      setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme, use_custom_theme: useCustomTheme } : null);
       toast.success('Thema instellingen opgeslagen');
       logAudioEvent('system', 'success', 'Thema bijgewerkt', user.uid, profile?.display_name || user.displayName || 'Anoniem');
     } catch (err) {
@@ -3454,8 +4564,10 @@ export default function App() {
         post_sound: notificationSettings.post_sound
       },
       custom_theme: {
+        ...(profile?.custom_theme || {}),
         ...customTheme,
-        banner_url: bannerURLInput.trim() || null
+        banner_url: bannerURLInput.trim() || null,
+        agreed_terms_v2: true
       },
       use_custom_theme: useCustomTheme,
       custom_sounds: customSounds,
@@ -3633,6 +4745,93 @@ export default function App() {
     toast.info('Google profiel gegevens geladen. Vergeet niet op te slaan!');
   };
 
+  const handleToggleFollow = async (targetUserId: string) => {
+    if (!user || !profile) {
+      toast.error('Je moet ingelogd zijn om gebruikers te volgen');
+      return;
+    }
+    setFollowLoading(true);
+
+    try {
+      const currentFollowing = profile.custom_theme?.following || [];
+      const isCurrentlyFollowing = currentFollowing.includes(targetUserId);
+
+      let updatedFollowing: string[];
+      if (isCurrentlyFollowing) {
+        updatedFollowing = currentFollowing.filter(id => id !== targetUserId);
+      } else {
+        updatedFollowing = [...currentFollowing, targetUserId];
+      }
+
+      const updatedTheme = {
+        ...(profile.custom_theme || {}),
+        following: updatedFollowing
+      };
+
+      const { error } = await supabaseClient
+        .from('profiles')
+        .update({ custom_theme: updatedTheme })
+        .eq('id', user.uid);
+
+      if (error) throw error;
+
+      setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme } : null);
+
+      if (!isCurrentlyFollowing) {
+        await supabaseClient.from('notifications').insert({
+          user_id: targetUserId,
+          actor_id: user.uid,
+          actor_name: profile.display_name,
+          actor_photo: profile.photo_url || null,
+          type: 'follow',
+          resource_type: 'post',
+          resource_id: user.uid,
+          content: `${profile.display_name} is je gaan volgen!`,
+          created_at: new Date().toISOString(),
+          is_read: false
+        }).then(({ error }) => {
+          if (error) console.error('Error sending follow notification:', error);
+        });
+      }
+
+      if (selectedUser && selectedUser.id === targetUserId) {
+        setSelectedUserFollowers(prev => {
+          if (isCurrentlyFollowing) {
+            return prev.filter(p => p.id !== user.uid);
+          } else {
+            const myFollowerProfile: UserProfile = {
+              id: user.uid,
+              display_name: profile.display_name,
+              photo_url: profile.photo_url,
+              email: profile.email,
+              bio: profile.bio,
+              custom_theme: profile.custom_theme,
+              created_at: profile.created_at || new Date().toISOString(),
+              updated_at: profile.updated_at || new Date().toISOString()
+            };
+            return [...prev, myFollowerProfile];
+          }
+        });
+        
+        // Also update selectedUser custom_theme/state so button updates correctly
+        setSelectedUser(prev => prev ? { 
+          ...prev, 
+          custom_theme: { 
+            ...(prev.custom_theme || {}),
+            // if we are following ourselves... but wait we only follow others
+          } 
+        } : null);
+      }
+
+      toast.success(isCurrentlyFollowing ? 'Niet meer volgend' : 'Je volgt nu deze gebruiker!');
+    } catch (err) {
+      console.error('Error toggling follow:', err);
+      toast.error('Kan actie niet uitvoeren');
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
   const handleOpenProfile = async (userId: string) => {
     try {
       let result = await supabaseClient
@@ -3668,7 +4867,7 @@ export default function App() {
     setSending(true);
 
     try {
-      const { error } = await supabaseClient.from('reports').insert({
+      const reportData = {
         reporter_id: user.uid,
         reported_id: reportTarget.userId,
         target_type: reportTarget.type,
@@ -3677,8 +4876,17 @@ export default function App() {
         details: reportDetails.trim(),
         created_at: new Date().toISOString(),
         status: 'pending'
-      });
+      };
+      const { error } = await supabaseClient.from('reports').insert(reportData);
       if (error) throw error;
+
+      // Forward to Discord bot via secure Express API
+      fetch('/api/bot/forward-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reportData)
+      }).catch(err => console.error('Failed to forward report to bot API:', err));
+
       toast.success('Moderatie: Rapport ingediend. Bedankt voor je hulp.', {
         icon: '🛡️'
       });
@@ -3726,7 +4934,7 @@ export default function App() {
       
       // Automatic report for spamming
       if (user) {
-        supabaseClient.from('reports').insert({
+        const autoReportData = {
           reporter_id: 'SYSTEM',
           reported_id: user.uid,
           target_type: 'user',
@@ -3735,8 +4943,18 @@ export default function App() {
           details: `Gebruiker stuurde ${recentTimestamps.length + 1} berichten in minder dan 5 seconden.`,
           created_at: new Date().toISOString(),
           status: 'pending'
-        }).then(({ error }) => {
-          if (error) console.error('Failed to create auto-report:', error);
+        };
+        supabaseClient.from('reports').insert(autoReportData).then(({ error }) => {
+          if (error) {
+            console.error('Failed to create auto-report:', error);
+          } else {
+            // Forward to Discord bot via secure Express API
+            fetch('/api/bot/forward-report', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(autoReportData)
+            }).catch(err => console.error('Failed to forward auto-report to bot API:', err));
+          }
         });
       }
       
@@ -3863,9 +5081,9 @@ export default function App() {
     const content = rawContent;
     
     const hasUpload = content.includes('data:image/') || content.includes('data:audio/');
-    const maxAllowed = hasUpload ? 512000 : MAX_CONTENT_LENGTH;
+    const maxAllowed = hasUpload ? 6000000 : MAX_CONTENT_LENGTH;
     if (content.length > maxAllowed) {
-      toast.error(hasUpload ? "Bestand is te groot (maximaal ~350KB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      toast.error(hasUpload ? "Bestand is te groot (maximaal 4MB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
       isPostingRef.current = false;
       return;
     }
@@ -3899,6 +5117,21 @@ export default function App() {
       }
 
       console.log('Post inserted successfully:', insertData);
+      
+      // Forward to Discord bot via secure Express API
+      if (insertData) {
+        fetch('/api/bot/forward-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            author_id: user.uid,
+            author_name: profile?.display_name || user.displayName || 'Anoniem',
+            content: encryptedContent,
+            created_at: insertData.created_at
+          })
+        }).catch(err => console.error('Failed to forward post to bot API:', err));
+      }
+
       logAudioEvent('system', 'success', 'Bericht succesvol geplaatst', user.uid, profile?.display_name || user.displayName || 'Anoniem');
       playSound(notificationSettingsRef.current.post_sound || SOUND_OPTIONS[1].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
       setPostInput('');
@@ -4076,7 +5309,7 @@ export default function App() {
       setReplyingToComment(null);
       
       // Notify mentioned users
-      handleMentions(decryptedData.content, data.id, 'comment');
+      handleMentions(decryptedData.content, activeThread?.id || data.id, 'thread');
       
       // Notify thread author if they are not the commenter
       if (activeThread && activeThread.author_id !== user.uid) {
@@ -4656,14 +5889,15 @@ export default function App() {
     try {
       const { data: profileVal, error: getError } = await supabaseClient
         .from('profiles')
-        .select('admin_notes')
+        .select('admin_notes, custom_theme')
         .eq('id', userId)
         .single();
 
       if (getError) throw getError;
 
       const oldAdminNotes = profileVal?.admin_notes;
-      const data = parseAdminNotes(oldAdminNotes);
+      const oldCustomTheme = profileVal?.custom_theme || {};
+      const data = parseAdminNotes(oldAdminNotes, oldCustomTheme);
 
       const newWarning = {
         id: 'warn_' + Math.random().toString(36).substring(2, 11),
@@ -4683,22 +5917,47 @@ export default function App() {
         ban_reason: data.ban_reason
       };
 
-      const { error: updateError } = await supabaseClient
-        .from('profiles')
-        .update({
-          admin_notes: JSON.stringify(structuredAdminNotes),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+      const updatedCustomTheme = {
+        ...oldCustomTheme,
+        admin_notes: structuredAdminNotes
+      };
 
-      if (updateError) throw updateError;
+      let saveError = null;
+      try {
+        const { error: firstError } = await supabaseClient
+          .from('profiles')
+          .update({
+            admin_notes: JSON.stringify(structuredAdminNotes),
+            custom_theme: updatedCustomTheme,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', userId);
+
+        if (firstError) {
+          console.warn('[Admin] Direct update failed, trying custom_theme fallback...', firstError);
+          const { error: fallbackError } = await supabaseClient
+            .from('profiles')
+            .update({
+              custom_theme: updatedCustomTheme,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+
+          if (fallbackError) saveError = fallbackError;
+        }
+      } catch (e) {
+        saveError = e;
+      }
+
+      if (saveError) throw saveError;
 
       // Update local state is crucial
       setUsers(prev => {
         return prev.map(u => u.id === userId 
           ? { 
               ...u, 
-              admin_notes: JSON.stringify(structuredAdminNotes)
+              admin_notes: JSON.stringify(structuredAdminNotes),
+              custom_theme: updatedCustomTheme
             } 
           : u
         );
@@ -4740,14 +5999,15 @@ export default function App() {
     try {
       const { data: profileVal, error: getError } = await supabaseClient
         .from('profiles')
-        .select('admin_notes')
+        .select('admin_notes, custom_theme')
         .eq('id', userId)
         .single();
 
       if (getError) throw getError;
 
       const oldAdminNotes = profileVal?.admin_notes;
-      const data = parseAdminNotes(oldAdminNotes);
+      const oldCustomTheme = profileVal?.custom_theme || {};
+      const data = parseAdminNotes(oldAdminNotes, oldCustomTheme);
 
       let bannedUntil: string | null = null;
       if (durationMinutes > 0) {
@@ -4761,22 +6021,47 @@ export default function App() {
         ban_reason: durationMinutes > 0 ? reason : null
       };
 
-      const { error: updateError } = await supabaseClient
-        .from('profiles')
-        .update({
-          admin_notes: JSON.stringify(structuredAdminNotes),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+      const updatedCustomTheme = {
+        ...oldCustomTheme,
+        admin_notes: structuredAdminNotes
+      };
 
-      if (updateError) throw updateError;
+      let saveError = null;
+      try {
+        const { error: firstError } = await supabaseClient
+          .from('profiles')
+          .update({
+            admin_notes: JSON.stringify(structuredAdminNotes),
+            custom_theme: updatedCustomTheme,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', userId);
+
+        if (firstError) {
+          console.warn('[Admin] Direct temp ban update failed, trying custom_theme fallback...', firstError);
+          const { error: fallbackError } = await supabaseClient
+            .from('profiles')
+            .update({
+              custom_theme: updatedCustomTheme,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+
+          if (fallbackError) saveError = fallbackError;
+        }
+      } catch (e) {
+        saveError = e;
+      }
+
+      if (saveError) throw saveError;
 
       // Update local state
       setUsers(prev => {
         return prev.map(u => u.id === userId 
           ? { 
               ...u, 
-              admin_notes: JSON.stringify(structuredAdminNotes)
+              admin_notes: JSON.stringify(structuredAdminNotes),
+              custom_theme: updatedCustomTheme
             } 
           : u
         );
@@ -4813,7 +6098,7 @@ export default function App() {
     if (!profile || !user?.uid) return;
 
     try {
-      const data = parseAdminNotes(profile.admin_notes);
+      const data = parseAdminNotes(profile.admin_notes, profile.custom_theme);
       const updatedWarnings = data.warnings.map(w => w.id === warningId ? { ...w, read: true } : w);
 
       const structuredAdminNotes = {
@@ -4823,17 +6108,45 @@ export default function App() {
         ban_reason: data.ban_reason
       };
 
-      const { error } = await supabaseClient
-        .from('profiles')
-        .update({
-          admin_notes: JSON.stringify(structuredAdminNotes),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.uid);
+      const updatedCustomTheme = {
+        ...(profile.custom_theme || {}),
+        admin_notes: structuredAdminNotes
+      };
 
-      if (error) throw error;
+      let saveError = null;
+      try {
+        const { error: firstError } = await supabaseClient
+          .from('profiles')
+          .update({
+            admin_notes: JSON.stringify(structuredAdminNotes),
+            custom_theme: updatedCustomTheme,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.uid);
 
-      setProfile(prev => prev ? { ...prev, admin_notes: JSON.stringify(structuredAdminNotes) } : null);
+        if (firstError) {
+          console.warn('[Warning] Direct dismiss warning failed, trying custom_theme fallback...', firstError);
+          const { error: fallbackError } = await supabaseClient
+            .from('profiles')
+            .update({
+              custom_theme: updatedCustomTheme,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.uid);
+
+          if (fallbackError) saveError = fallbackError;
+        }
+      } catch (e) {
+        saveError = e;
+      }
+
+      if (saveError) throw saveError;
+
+      setProfile(prev => prev ? { 
+        ...prev, 
+        admin_notes: JSON.stringify(structuredAdminNotes),
+        custom_theme: updatedCustomTheme
+      } : null);
       toast.success('Waarschuwing gemarkeerd als gelezen.');
     } catch (err) {
       console.error('[Warning] Error dismissing warning:', err);
@@ -4882,8 +6195,8 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 800 * 1024) {
-      toast.error('Afbeelding is te groot (max 800KB)');
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('Afbeelding is te groot (max 4MB)');
       return;
     }
 
@@ -4899,8 +6212,8 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 100 * 1024) {
-      toast.error('Profielfoto is te groot (max 100KB)');
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('Profielfoto is te groot (max 4MB)');
       return;
     }
 
@@ -4913,12 +6226,56 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const handleResolveReport = async (reportId: string) => {
-    // Hidden functionality if needed later, but removed from UI
+  const handleUpdateReportStatus = async (reportId: string, status: string) => {
+    if (!isAdmin) {
+      toast.error('Je hebt geen beheerdersrechten.');
+      return;
+    }
+    try {
+      const { error } = await supabaseClient
+        .from('reports')
+        .update({ status })
+        .eq('id', reportId);
+      if (error) throw error;
+      
+      const updatedReport = reports.find(r => r.id === reportId);
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, status } : r));
+      toast.success(`Melding status bijgewerkt naar: ${status}`);
+
+      if (updatedReport && (status === 'resolved' || status === 'reviewed')) {
+         await supabaseClient.from('notifications').insert({
+          user_id: updatedReport.reporter_id,
+          actor_id: user?.uid,
+          actor_name: 'Systeem Admin',
+          type: 'system',
+          content: `Jouw melding over ${updatedReport.target_type || 'een post'} is nu gemarkeerd als: ${status === 'resolved' ? 'Afgehandeld' : 'In Behandeling'}. Bedankt voor het melden!`,
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      }
+    } catch (err: any) {
+      console.error('Error updating report status:', err);
+      toast.error(`Fout bij bijwerken melding: ${err.message}`);
+    }
   };
 
   const handleDeleteReport = async (reportId: string) => {
-    // Hidden functionality if needed later, but removed from UI
+    if (!isAdmin) {
+      toast.error('Je hebt geen beheerdersrechten.');
+      return;
+    }
+    try {
+      const { error } = await supabaseClient
+        .from('reports')
+        .delete()
+        .eq('id', reportId);
+      if (error) throw error;
+      setReports(prev => prev.filter(r => r.id !== reportId));
+      toast.success('Melding is verwijderd.');
+    } catch (err: any) {
+      console.error('Error deleting report:', err);
+      toast.error(`Fout bij verwijderen melding: ${err.message}`);
+    }
   };
 
   const handleStartGroupConversation = async (selectedUsers: UserProfile[], groupName: string) => {
@@ -5060,7 +6417,109 @@ export default function App() {
     }
   };
 
-  const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest', score: number) => {
+  const handleNotificationClick = async (notif: AppNotification) => {
+    // 1. Mark as read
+    if (!notif.is_read) {
+      supabaseClient.from('notifications').update({ is_read: true }).eq('id', notif.id).then();
+      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+    }
+
+    // 2. Direct Messages
+    if (notif.type === 'dm') {
+      setView('messages');
+      const targetConv = conversationsRef.current.find(c => c.id === notif.resource_id) || conversations.find(c => c.id === notif.resource_id);
+      if (targetConv) {
+        handleSetActiveConversation(targetConv);
+        setMobileChatView('chat');
+      } else if (notif.actor_id) {
+        handleStartConversation({ id: notif.actor_id, display_name: notif.actor_name });
+      }
+      return;
+    }
+
+    // 3. Media Feed (media uploads, likes ❤️, comments 💬 on media)
+    if (
+      notif.resource_id === 'media_feed' ||
+      (notif as any).resource_type === 'media' ||
+      notif.content?.includes('foto') ||
+      notif.content?.includes('video') ||
+      notif.content?.includes('GIF') ||
+      notif.content?.includes('Media') ||
+      notif.content?.includes('❤️') ||
+      notif.content?.includes('💬')
+    ) {
+      setView('media_feed');
+      fetchFeedMedia();
+      return;
+    }
+
+    // 4. Follower Notification
+    if (notif.type === 'follow' || notif.content?.includes('is je gaan volgen')) {
+      const targetUid = notif.actor_id || (notif as any).sender_id;
+      if (targetUid) {
+        handleOpenProfile(targetUid);
+      }
+      return;
+    }
+
+    // 5. Forum Thread Notification (reply to thread, or mention in thread/comment)
+    if (
+      notif.resource_type === 'thread' || 
+      notif.type === 'reply' || 
+      (notif.resource_type === 'comment' && notif.resource_id)
+    ) {
+      setView('forum');
+      if (notif.resource_id && notif.resource_id !== 'media_feed') {
+        const existingThread = threadsRef.current.find(t => t.id === notif.resource_id) || threads.find(t => t.id === notif.resource_id);
+        if (existingThread) {
+          setActiveThread(existingThread);
+        } else {
+          try {
+            const { data, error } = await supabaseClient
+              .from('forum_threads')
+              .select('*')
+              .eq('id', notif.resource_id)
+              .single();
+            if (data && !error) {
+              const threadObj: ForumThread = {
+                ...data,
+                title: decryptGeneralChat(data.title),
+                content: decryptGeneralChat(data.content)
+              };
+              setActiveThread(threadObj);
+            }
+          } catch (e) {
+            console.warn('Could not fetch thread for notification:', e);
+          }
+        }
+      }
+      return;
+    }
+
+    // 6. Community Chat Feed (Mentions or General posts)
+    if (notif.resource_type === 'post' || notif.type === 'mention') {
+      setView('chat');
+      return;
+    }
+
+    // 7. System / Admin Reports
+    if (notif.type === 'system') {
+      if (isAdmin) {
+        setView('settings');
+        setSettingsTab('admin');
+      }
+      return;
+    }
+
+    // Default fallback
+    setView('chat');
+  };
+
+  useEffect(() => {
+    handleNotificationClickRef.current = handleNotificationClick;
+  });
+
+  const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => {
     if (!user || isWhitelisted !== true) return;
     
     const currentTheme = profile?.custom_theme || {};
@@ -5103,7 +6562,7 @@ export default function App() {
     }
   };
 
-  const handleShareHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest', score: number, targetType: 'general' | 'dm', conversationId?: string) => {
+  const handleShareHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number, targetType: 'general' | 'dm', conversationId?: string) => {
     if (!user || isWhitelisted !== true) return;
     
     const gameIdLabel = gameId;
@@ -5141,6 +6600,18 @@ export default function App() {
               payload: decryptedPost
             });
           }
+
+          // Forward to Discord bot via secure Express API
+          fetch('/api/bot/forward-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              author_id: user.uid,
+              author_name: profile?.display_name || user.displayName || 'Anoniem',
+              content: encryptedContent,
+              created_at: insertData.created_at
+            })
+          }).catch(err => console.error('Failed to forward arcade post to bot API:', err));
         }
         toast.success(`Highscore gedeeld in Algemene Chat! 🏆`);
       } catch (err) {
@@ -5191,9 +6662,9 @@ export default function App() {
     
     const text = rawText;
     const hasUpload = text.includes('data:image/') || text.includes('data:audio/');
-    const maxAllowed = hasUpload ? 512000 : MAX_CONTENT_LENGTH;
+    const maxAllowed = hasUpload ? 6000000 : MAX_CONTENT_LENGTH;
     if (text.length > maxAllowed) {
-      toast.error(hasUpload ? "Bestand is te groot (maximaal ~350KB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      toast.error(hasUpload ? "Bestand is te groot (maximaal 4MB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
       return;
     }
 
@@ -5515,11 +6986,14 @@ export default function App() {
     }, 3000);
   };
 
-  const filteredUsers = users.filter(u => 
-    u.display_name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-    (nicknames[u.id] && nicknames[u.id].toLowerCase().includes(userSearchQuery.toLowerCase()))
-  );
+  const filteredUsers = useMemo(() => {
+    const q = userSearchQuery.toLowerCase();
+    return users.filter(u => 
+      u.display_name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      (nicknames[u.id] && nicknames[u.id].toLowerCase().includes(q))
+    );
+  }, [users, userSearchQuery, nicknames]);
 
   if (ddosLock.locked) {
     return (
@@ -5541,11 +7015,11 @@ export default function App() {
           
           <div className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-rose-500/10 text-rose-400 rounded-full text-[9px] font-bold uppercase tracking-widest border border-rose-500/20 mb-5">
             <Bot className="w-3 h-3" />
-            <span>DDoS Shield Actief</span>
+            <span>{ddosLock.reason ? ddosLock.reason.split(':')[0] : "DDoS Shield Actief"}</span>
           </div>
 
           <p className="text-[11px] text-zinc-400 leading-normal mb-5">
-            Hoge transactie-frequentie gedetecteerd. Je verbinding is tijdelijk onder quarantine geplaatst om overbelasting te voorkomen.
+            {ddosLock.reason ? ddosLock.reason.split(':').slice(1).join(':').trim() || "Je verbinding is tijdelijk onder quarantine geplaatst om overbelasting te voorkomen." : "Hoge transactie-frequentie gedetecteerd. Je verbinding is tijdelijk onder quarantine geplaatst om overbelasting te voorkomen."}
           </p>
 
           <div className="w-full bg-zinc-950/80 rounded-2xl border border-zinc-850 p-4 mb-5 text-left font-mono text-[9px] space-y-1.5 text-zinc-500">
@@ -5604,7 +7078,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative overflow-x-hidden">
-      {(isBlocked || isTempBanned) && (
+      {(isBlocked || isTempBanned || isHardwareBanned) && (
         <div className="fixed inset-0 z-[1000] bg-zinc-950 flex items-center justify-center p-6 text-center">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
@@ -5615,17 +7089,35 @@ export default function App() {
               <img 
                 src="/logo.png" 
                 alt="FTJM Logo" 
-                className="w-full h-full object-contain"
+                className="w-full h-full object-cover scale-[1.35]"
                 referrerPolicy="no-referrer"
               />
             </div>
             <div className="space-y-4">
               <h1 className="text-4xl font-black text-white uppercase tracking-tight leading-none">
-                {isTempBanned ? 'Tijdelijk Geschorst' : 'Toegang Ontzegd'}
+                {isHardwareBanned ? 'Apparaat Verbannen' : isTempBanned ? 'Tijdelijk Geschorst' : 'Toegang Ontzegd'}
               </h1>
               <div className="h-1 w-20 bg-red-600 mx-auto rounded-full" />
               
-              {isTempBanned ? (
+              {isHardwareBanned ? (
+                <div className="space-y-4 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-left">
+                  <p className="text-zinc-300 font-medium text-sm">
+                    Dit apparaat is permanent geblokkeerd en heeft geen toegang meer tot onze services.
+                  </p>
+                  <div className="border-t border-zinc-800 pt-3 space-y-2 text-xs">
+                    <div>
+                      <span className="text-zinc-500 uppercase font-black tracking-wider block">Reden:</span>
+                      <span className="text-red-500 font-bold text-sm block mt-0.5">Ernstige of herhaaldelijke schending van de platformregels vanaf deze hardware.</span>
+                    </div>
+                    <div className="pt-2">
+                      <span className="text-zinc-500 uppercase font-black tracking-wider block">MAC ADRES:</span>
+                      <span className="text-white font-mono text-sm block mt-0.5">
+                        {rateLimiter.getDeviceFingerprint()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : isTempBanned ? (
                 <div className="space-y-4 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-left">
                   <p className="text-zinc-300 font-medium text-sm">
                     Je account is door een beheerder tijdelijk geschorst wegens overtreding van de platformregels.
@@ -5652,7 +7144,7 @@ export default function App() {
                 onClick={() => handleLogout()}
                 className="px-8 py-4 bg-white text-black rounded-2xl font-bold uppercase tracking-wide hover:bg-zinc-200 transition-all shadow-xl"
               >
-                Log Uit
+                Sluiten / Uitloggen
               </button>
             </div>
           </motion.div>
@@ -5715,7 +7207,7 @@ export default function App() {
       {/* Global Custom Wallpaper Layer */}
       {useCustomTheme && customTheme.wallpaper && (
         <div 
-          className="fixed inset-0 -z-50 bg-cover bg-no-repeat transition-all duration-700 custom-wallpaper"
+          className="fixed inset-0 -z-50 bg-cover bg-no-repeat transition-all duration-700 custom-wallpaper pointer-events-none"
           style={{ 
             backgroundImage: `url(${customTheme.wallpaper})`,
             filter: `blur(${customTheme.blur_amount || 0}px)`,
@@ -5737,9 +7229,9 @@ export default function App() {
       >
       {user && (
         <nav 
-          className={`border-b border-app-border sticky top-0 z-[100] transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : 'bg-app-card/80 backdrop-blur-md'}`}
+          className={`border-b border-app-border sticky top-0 z-[100] transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass bg-app-card/75 backdrop-blur-md' : 'bg-app-card/90 backdrop-blur-md'}`}
           style={useCustomTheme ? { 
-            backgroundColor: customTheme.glass_effect ? undefined : customTheme.header_bg_color,
+            backgroundColor: customTheme.glass_effect ? undefined : (customTheme.header_bg_color || undefined),
           } : {}}
         >
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -5749,7 +7241,7 @@ export default function App() {
                 <img 
                   src="/logo.png" 
                   alt="FTJM Logo" 
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-cover scale-[1.35]"
                   referrerPolicy="no-referrer"
                 />
               </div>
@@ -5788,7 +7280,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v2.3', 'true');
+                      localStorage.setItem('has_seen_menu_v2.4', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -5839,7 +7331,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v2.3', 'true');
+                              localStorage.setItem('has_seen_news_v2.4', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -5892,13 +7384,13 @@ export default function App() {
             {user && isWhitelisted && (
               <>
                 <button 
-                  onClick={unlockAudio}
-                  className={`p-2 rounded-full transition-all group relative ${isAudioUnlocked ? 'hover:bg-app-accent text-app-muted hover:text-app-ink' : 'bg-amber-100 text-amber-600 animate-pulse shadow-lg shadow-amber-500/20'}`}
-                  title={isAudioUnlocked ? "Audio testen" : "Audio herstellen"}
+                  onClick={() => setView('media_feed')}
+                  className={`p-2 rounded-full transition-all group relative ${view === 'media_feed' ? 'bg-app-accent text-cyan-500' : 'hover:bg-app-accent text-app-muted hover:text-app-ink'}`}
+                  title={t("Media Feed")}
                 >
-                  {isAudioUnlocked ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                  <Film className="w-5 h-5" />
                   <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-app-ink text-app-bg text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
-                    {isAudioUnlocked ? "Audio Testen" : "Audio Activeren"}
+                    {t("Media Feed")}
                   </span>
                 </button>
                 <div className="relative">
@@ -5951,14 +7443,7 @@ export default function App() {
                               <button 
                                 key={notif.id}
                                 onClick={() => {
-                                  if (notif.type === 'dm') {
-                                    setView('messages');
-                                    handleSetActiveConversation(conversations.find(c => c.id === notif.resource_id) || null);
-                                  } else if (notif.resource_type === 'post') {
-                                    setView('chat');
-                                  } else {
-                                    setView('forum');
-                                  }
+                                  handleNotificationClick(notif);
                                   setShowNotifications(false);
                                 }}
                                 className={`w-full p-4 text-left border-b border-app-border last:border-0 hover:bg-app-accent/50 transition-colors flex gap-3 ${!notif.is_read ? 'bg-app-accent/20' : ''}`}
@@ -6022,7 +7507,25 @@ export default function App() {
             </button>
             {user ? (
               <div className="flex items-center gap-2 sm:gap-4">
-                <div className="flex items-center gap-2 sm:gap-3 pr-2 sm:pr-4 border-r border-app-border">
+                <div 
+                  onClick={() => {
+                    if (profile) {
+                      setSelectedUser({
+                        id: profile.id || user.uid,
+                        display_name: profile.display_name || 'Anoniem',
+                        email: profile.email || user.email || '',
+                        photo_url: profile.photo_url || user.photoURL || '',
+                        role: profile.role || 'user',
+                        bio: profile.bio || '',
+                        created_at: profile.created_at || new Date().toISOString(),
+                        updated_at: profile.updated_at || new Date().toISOString(),
+                        custom_theme: profile.custom_theme || {}
+                      });
+                    }
+                  }}
+                  className="flex items-center gap-2 sm:gap-3 pr-2 sm:pr-4 border-r border-app-border cursor-pointer hover:opacity-85 active:scale-95 transition-all"
+                  title="Mijn Profiel bekijken"
+                >
                   <div className="text-right hidden lg:block">
                     <p className="text-sm font-medium leading-none text-app-ink">{profile?.display_name || user.displayName || 'Anoniem'}</p>
                     <p className="text-xs text-app-muted mt-1">{user.email}</p>
@@ -6031,7 +7534,7 @@ export default function App() {
                     <img 
                       src={profile?.photo_url || user.photoURL} 
                       alt={profile?.display_name || user.displayName || ''} 
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-app-border"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-app-border object-cover"
                       referrerPolicy="no-referrer"
                     />
                   ) : (
@@ -6093,6 +7596,13 @@ export default function App() {
             <span className="text-[10px] font-bold uppercase tracking-wider">Forum</span>
           </button>
           <button 
+            onClick={() => setView('media_feed')}
+            className={`flex flex-col items-center gap-1 transition-all ${view === 'media_feed' ? 'text-app-ink' : 'text-app-muted'}`}
+          >
+            <Film className={`w-6 h-6 ${view === 'media_feed' ? 'fill-app-ink/10' : ''}`} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Media</span>
+          </button>
+          <button 
             onClick={() => {
               setView('messages');
               setMobileChatView('list');
@@ -6140,7 +7650,7 @@ export default function App() {
                 <img 
                   src="/logo.png" 
                   alt="FTJM Logo" 
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-cover scale-[1.35]"
                   referrerPolicy="no-referrer"
                 />
               </div>
@@ -6267,9 +7777,8 @@ export default function App() {
                           {isAdmin && (
                             <div className="flex justify-between text-sm">
                               <span className="text-app-muted">Rol</span>
-                              <span className="flex items-center gap-1.5 text-app-ink font-bold">
+                              <span className="flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-1 rounded-md">
                                 <ShieldCheck className="w-3.5 h-3.5" />
-                                Admin
                               </span>
                             </div>
                           )}
@@ -6312,6 +7821,118 @@ export default function App() {
                       userProfile={profile}
                     />
                   </div>
+                </div>
+              )}
+
+              {view === 'media_feed' && (
+                <div className="max-w-6xl mx-auto py-4 sm:py-8 px-4">
+                  <div className="flex items-center justify-between mb-8">
+                    <div>
+                      <h3 className="text-2xl sm:text-3xl font-black text-app-ink flex items-center gap-2">
+                        <Film className="w-7 h-7 text-cyan-500 animate-[pulse_2s_infinite]" />
+                        Media Feed
+                      </h3>
+                      <p className="text-xs text-app-muted font-medium mt-1">
+                        Ontdek foto's en video's gedeeld door de community
+                      </p>
+                    </div>
+                    <button 
+                      onClick={fetchFeedMedia}
+                      className="p-2.5 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl border border-app-border hover:scale-105 active:scale-95 transition-all shadow-sm"
+                      title="Feed vernieuwen"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${feedLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+
+                  {/* Share Media Box */}
+                  {user && (
+                    <div className="bg-app-card border border-app-border rounded-3xl p-6 mb-8 shadow-sm relative overflow-hidden">
+                      {profileMediaLoading && (
+                        <div className="absolute inset-0 bg-app-card/60 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-2">
+                          <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
+                          <p className="text-xs text-app-muted font-bold tracking-wider uppercase">Bestand verwerken & uploaden...</p>
+                        </div>
+                      )}
+                      
+                      <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent border border-app-border shrink-0">
+                          {profile?.photo_url ? (
+                            <img src={profile.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <UserIcon className="w-5 h-5 text-app-muted" />
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex-1">
+                          <h4 className="text-sm font-bold text-app-ink">Deel iets met de community!</h4>
+                          <p className="text-[11px] text-app-muted font-medium mt-0.5">
+                            Upload een foto of video die direct in de feed verschijnt.
+                          </p>
+                          
+                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                            {/* File Upload Input */}
+                            <input 
+                              type="file"
+                              id="feed-media-upload"
+                              className="hidden"
+                              accept="image/*,video/*"
+                              onChange={handleProfileMediaUpload}
+                              disabled={profileMediaLoading}
+                            />
+                            
+                            <button
+                              onClick={() => document.getElementById('feed-media-upload')?.click()}
+                              disabled={profileMediaLoading}
+                              className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-black rounded-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center gap-2 shadow-sm shadow-cyan-500/20 cursor-pointer disabled:opacity-50"
+                            >
+                              <Plus className="w-4 h-4 stroke-[3]" />
+                              <span>Foto of Video uploaden</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {feedLoading ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3">
+                      <Loader2 className="w-10 h-10 animate-spin text-cyan-500" />
+                      <p className="text-xs text-app-muted font-bold tracking-wider uppercase">Feed laden...</p>
+                    </div>
+                  ) : feedMedia.length === 0 ? (
+                    <div className="text-center py-20 bg-app-card border border-app-border rounded-3xl p-8">
+                      <Film className="w-12 h-12 text-app-muted mx-auto mb-3 opacity-20" />
+                      <p className="text-sm text-app-muted font-medium italic">Nog geen media geüpload door de community.</p>
+                      <button 
+                        onClick={() => setView('settings')} 
+                        className="mt-4 px-4 py-2 bg-app-ink text-app-bg rounded-xl font-bold text-xs hover:opacity-90 active:scale-95 transition-all shadow"
+                      >
+                        Upload je eerste media onder je Profiel!
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {feedMedia.map((media, idx) => (
+                        <MediaFeedCard
+                          key={media.id || idx}
+                          media={media}
+                          currentUserId={user?.uid}
+                          onLike={handleLikeMedia}
+                          onComment={handleCommentMedia}
+                          onDeleteComment={handleDeleteCommentMedia}
+                          onDeleteMedia={handleDeleteFeedMedia}
+                          onOpenProfile={handleOpenProfile}
+                          onViewFullscreen={setSelectedFullscreenMedia}
+                          nicknames={nicknames}
+                          isAdmin={isAdmin}
+                          profiles={users}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -6393,6 +8014,7 @@ export default function App() {
                   <SettingsView 
                     user={user}
                     profile={profile}
+                    setProfile={setProfile}
                     settingsTab={settingsTab}
                     setSettingsTab={setSettingsTab}
                     isAdmin={isAdmin}
@@ -6451,6 +8073,9 @@ export default function App() {
                       setLanguage(lang);
                       toast.success(lang === 'en' ? 'Language changed to English' : 'Taal gewijzigd naar Nederlands');
                     }}
+                    reports={reports}
+                    onUpdateReportStatus={handleUpdateReportStatus}
+                    onDeleteReport={handleDeleteReport}
                   />
                 </div>
               )}
@@ -6581,8 +8206,8 @@ export default function App() {
                         )}
                       </div>
                     </div>
-                    {selectedUser.role === 'admin' && (
-                      <div className="absolute bottom-2 left-24 bg-emerald-500 text-white p-1.5 rounded-lg shadow-lg border-2 border-app-card">
+                    {(selectedUser.role === 'admin' || selectedUser.email?.toLowerCase() === 'markohoksen@gmail.com') && (
+                      <div className="absolute bottom-2 left-24 bg-red-500 text-white p-1.5 rounded-lg shadow-lg border-2 border-app-card" title="Administrator">
                         <ShieldCheck className="w-4 h-4" />
                       </div>
                     )}
@@ -6592,8 +8217,24 @@ export default function App() {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex-1">
-                          <h3 className="text-2xl font-bold text-app-ink tracking-tight">
-                            {selectedUser.display_name}
+                          <h3 className="text-2xl font-bold text-app-ink tracking-tight flex items-center gap-1.5 flex-wrap">
+                            <span>{selectedUser.display_name}</span>
+                            {isVerifiedEmail(selectedUser) && (
+                              <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 select-none shadow-[0_0_8px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">
+                                <Check className="w-3.5 h-3.5 stroke-[4]" />
+                              </span>
+                            )}
+                            {isBetaTester(selectedUser) && (
+                              <span className="inline-flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                                <FlaskConical className="w-3 h-3 stroke-[2.5]" />
+                                <span>Beta Tester</span>
+                              </span>
+                            )}
+                            {(selectedUser.role === 'admin' || selectedUser.email?.toLowerCase() === 'markohoksen@gmail.com') && (
+                              <span className="inline-flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-1 rounded-md select-none shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Administrator">
+                                <ShieldCheck className="w-4 h-4 text-red-400 stroke-[2.5]" />
+                              </span>
+                            )}
                           </h3>
                         </div>
                         {onlineUsers.has(selectedUser.id) ? (
@@ -6615,6 +8256,69 @@ export default function App() {
                         <Sparkles className="w-3 h-3" />
                         Lid sinds {formatDate(selectedUser.created_at)}
                       </p>
+
+                      {/* Followers & Following Stats and Button */}
+                      <div className="flex flex-col gap-3 mt-4 border-t border-app-border/40 pt-4">
+                        <div className="flex items-center gap-4 text-sm bg-app-accent/25 p-3 sm:p-4 rounded-2xl border border-app-border/40">
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (selectedUserFollowers.length > 0) {
+                                setShowFollowersModal(true);
+                              } else {
+                                toast.info("Deze gebruiker heeft nog geen volgers.");
+                              }
+                            }} 
+                            className="hover:underline text-app-ink font-bold flex items-center gap-1.5 cursor-pointer flex-1 justify-center py-1 rounded-xl hover:bg-app-accent/40 transition-all select-none animate-none"
+                          >
+                            <span className="text-cyan-500 font-extrabold text-lg">{selectedUserFollowers.length}</span> 
+                            <span className="text-app-muted font-medium text-xs">Volgers</span>
+                          </button>
+                          <div className="w-px h-6 bg-app-border/60" />
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const count = (selectedUser.custom_theme?.following || []).length;
+                              if (count > 0) {
+                                setShowFollowingModal(true);
+                              } else {
+                                toast.info("Deze gebruiker volgt nog niemand.");
+                              }
+                            }} 
+                            className="hover:underline text-app-ink font-bold flex items-center gap-1.5 cursor-pointer flex-1 justify-center py-1 rounded-xl hover:bg-app-accent/40 transition-all select-none animate-none"
+                          >
+                            <span className="text-cyan-500 font-extrabold text-lg">{(selectedUser.custom_theme?.following || []).length}</span> 
+                            <span className="text-app-muted font-medium text-xs">Volgend</span>
+                          </button>
+                        </div>
+
+                        {user && user.uid !== selectedUser.id && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFollow(selectedUser.id)}
+                            disabled={followLoading}
+                            className={`w-full py-3 sm:py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 border select-none ${
+                              profile?.custom_theme?.following?.includes(selectedUser.id)
+                                ? 'bg-app-accent border-app-border/50 text-app-ink hover:bg-app-border/30' 
+                                : 'bg-app-ink text-app-bg border-transparent hover:opacity-95'
+                            }`}
+                          >
+                            {followLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
+                            ) : profile?.custom_theme?.following?.includes(selectedUser.id) ? (
+                              <>
+                                <Check className="w-4 h-4 text-emerald-500 font-black" />
+                                <span>✓ Volgend</span>
+                              </>
+                            ) : (
+                              <>
+                                <UserPlus className="w-4 h-4" />
+                                <span>Volg deze persoon</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {selectedUser.bio ? (
@@ -6627,6 +8331,82 @@ export default function App() {
                         <p className="text-sm font-medium italic">Geen bio beschikbaar</p>
                       </div>
                     )}
+
+                    {/* Media Galerij (Foto's & GIFs) */}
+                    <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-widest">
+                          Media Galerij ({profileMedia.length}/10)
+                        </label>
+                        {user && user.uid === selectedUser.id && profileMedia.length < 10 && (
+                          <div className="flex gap-2">
+                            {/* Photo upload button */}
+                            <input 
+                              type="file"
+                              id="profile-media-upload"
+                              className="hidden"
+                              accept="image/*,video/*"
+                              onChange={handleProfileMediaUpload}
+                              disabled={profileMediaLoading}
+                            />
+                            <button
+                              onClick={() => document.getElementById('profile-media-upload')?.click()}
+                              disabled={profileMediaLoading}
+                              className="p-1.5 bg-app-card hover:bg-app-accent border border-app-border rounded-lg text-app-ink transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                              title="Foto of Video uploaden"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {profileMediaLoading ? (
+                        <div className="flex justify-center py-6">
+                          <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
+                        </div>
+                      ) : profileMedia.length === 0 ? (
+                        <div className="py-6 text-center border border-dashed border-app-border rounded-2xl">
+                          <p className="text-xs text-app-muted font-medium italic">Nog geen media geüpload</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2">
+                          {profileMedia.map((media, idx) => (
+                            <div key={media.id || idx} className="group relative aspect-square rounded-xl overflow-hidden border border-app-border bg-app-bg">
+                              {media.media_type === 'video' ? (
+                                <video 
+                                  src={media.media_url} 
+                                  className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all"
+                                  onClick={() => setSelectedFullscreenMedia(media.media_url)}
+                                  muted
+                                  playsInline
+                                />
+                              ) : (
+                                <img 
+                                  src={media.media_url} 
+                                  alt="" 
+                                  className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all"
+                                  onClick={() => setSelectedFullscreenMedia(media.media_url)}
+                                  referrerPolicy="no-referrer"
+                                />
+                              )}
+                              {user && user.uid === selectedUser.id && (
+                                <button
+                                  onClick={() => handleDeleteProfileMedia(media.id, media.media_url)}
+                                  className="absolute top-1 right-1 p-1 bg-red-500/85 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-sm cursor-pointer"
+                                  title="Verwijderen"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                              <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/50 text-[7px] font-black text-white uppercase rounded tracking-widest">
+                                {media.media_type}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     {user && user.uid !== selectedUser.id && (
                       <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
@@ -6823,6 +8603,7 @@ export default function App() {
 
                     <div className="mt-8 pt-6 border-t border-app-border">
                       <button 
+                        type="button"
                         onClick={() => setSelectedUser(null)}
                         className="w-full p-4 bg-app-accent text-app-muted rounded-2xl font-bold hover:text-app-ink transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                       >
@@ -6832,7 +8613,250 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* Followers Sheet Overlay */}
+                <AnimatePresence>
+                  {showFollowersModal && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: '100%' }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: '100%' }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+                      className="absolute inset-0 bg-app-card rounded-[2.5rem] p-6 flex flex-col z-50 overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between border-b border-app-border pb-4 mb-4">
+                        <div>
+                          <h4 className="font-black text-app-ink text-xl tracking-tight">Volgers</h4>
+                          <p className="text-[10px] text-app-muted font-bold uppercase tracking-wider mt-0.5">
+                            {selectedUserFollowers.length} gebruikers volgen {selectedUser.display_name}
+                          </p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setShowFollowersModal(false);
+                            setFollowersSearchQuery('');
+                          }}
+                          className="p-1.5 hover:bg-app-accent rounded-xl text-app-muted hover:text-app-ink transition-all cursor-pointer"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Search Bar */}
+                      <div className="mb-4">
+                        <input 
+                          type="text"
+                          placeholder="Zoek volgers..."
+                          value={followersSearchQuery}
+                          onChange={(e) => setFollowersSearchQuery(e.target.value)}
+                          className="w-full bg-app-bg text-xs font-medium text-app-ink rounded-xl border border-app-border px-3.5 py-2.5 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                        />
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar pr-1">
+                        {filteredFollowers.length === 0 ? (
+                          <div className="text-center py-10">
+                            <p className="text-xs text-app-muted italic font-medium">Geen volgers gevonden</p>
+                          </div>
+                        ) : (
+                          filteredFollowers.map((follower) => {
+                            const isFollowerVerified = isVerifiedEmail(follower);
+                            const isFollowerBeta = isBetaTester(follower);
+                            const isFollowerAdmin = follower.role === 'admin' || follower.email?.toLowerCase() === 'markohoksen@gmail.com';
+                            return (
+                              <div 
+                                key={follower.id}
+                                onClick={() => {
+                                  setSelectedUser(follower);
+                                  setShowFollowersModal(false);
+                                  setFollowersSearchQuery('');
+                                }}
+                                className="flex items-center gap-3 p-3 hover:bg-app-accent/50 rounded-2xl cursor-pointer transition-all border border-app-border/20 hover:border-app-border/60 hover:scale-[1.01] active:scale-95 group/item"
+                              >
+                                <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent flex-shrink-0 border border-app-border">
+                                  {follower.photo_url ? (
+                                    <img src={follower.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <UserIcon className="w-5 h-5 text-app-muted" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0 text-left">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="font-bold text-sm text-app-ink truncate group-hover/item:text-cyan-500 transition-colors">
+                                      {follower.display_name}
+                                    </p>
+                                    {isFollowerVerified && (
+                                      <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_8px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
+                                        <Check className="w-2 h-2 stroke-[4]" />
+                                      </span>
+                                    )}
+                                    {isFollowerBeta && (
+                                      <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                                        <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />
+                                      </span>
+                                    )}
+                                    {isFollowerAdmin && (
+                                      <span className="inline-flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Administrator">
+                                        <ShieldCheck className="w-3 h-3 text-red-400 stroke-[2.5]" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  {follower.bio ? (
+                                    <p className="text-[10px] text-app-muted truncate mt-0.5">{follower.bio}</p>
+                                  ) : (
+                                    <p className="text-[10px] text-app-muted italic truncate mt-0.5">Geen bio</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Following Sheet Overlay */}
+                <AnimatePresence>
+                  {showFollowingModal && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: '100%' }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: '100%' }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+                      className="absolute inset-0 bg-app-card rounded-[2.5rem] p-6 flex flex-col z-50 overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between border-b border-app-border pb-4 mb-4">
+                        <div>
+                          <h4 className="font-black text-app-ink text-xl tracking-tight">Volgend</h4>
+                          <p className="text-[10px] text-app-muted font-bold uppercase tracking-wider mt-0.5">
+                            {selectedUser.display_name} volgt {selectedUserFollowing.length} gebruikers
+                          </p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setShowFollowingModal(false);
+                            setFollowingSearchQuery('');
+                          }}
+                          className="p-1.5 hover:bg-app-accent rounded-xl text-app-muted hover:text-app-ink transition-all cursor-pointer"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Search Bar */}
+                      <div className="mb-4">
+                        <input 
+                          type="text"
+                          placeholder="Zoek volgend..."
+                          value={followingSearchQuery}
+                          onChange={(e) => setFollowingSearchQuery(e.target.value)}
+                          className="w-full bg-app-bg text-xs font-medium text-app-ink rounded-xl border border-app-border px-3.5 py-2.5 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                        />
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar pr-1">
+                        {filteredFollowing.length === 0 ? (
+                          <div className="text-center py-10">
+                            <p className="text-xs text-app-muted italic font-medium">Geen volgend gevonden</p>
+                          </div>
+                        ) : (
+                          filteredFollowing.map((followed) => {
+                            const isFollowedVerified = isVerifiedEmail(followed);
+                            const isFollowedBeta = isBetaTester(followed);
+                            const isFollowedAdmin = followed.role === 'admin' || followed.email?.toLowerCase() === 'markohoksen@gmail.com';
+                            return (
+                              <div 
+                                key={followed.id}
+                                onClick={() => {
+                                  setSelectedUser(followed);
+                                  setShowFollowingModal(false);
+                                  setFollowingSearchQuery('');
+                                }}
+                                className="flex items-center gap-3 p-3 hover:bg-app-accent/50 rounded-2xl cursor-pointer transition-all border border-app-border/20 hover:border-app-border/60 hover:scale-[1.01] active:scale-95 group/item"
+                              >
+                                <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent flex-shrink-0 border border-app-border">
+                                  {followed.photo_url ? (
+                                    <img src={followed.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <UserIcon className="w-5 h-5 text-app-muted" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0 text-left">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="font-bold text-sm text-app-ink truncate group-hover/item:text-cyan-500 transition-colors">
+                                      {followed.display_name}
+                                    </p>
+                                    {isFollowedVerified && (
+                                      <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_8px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
+                                        <Check className="w-2 h-2 stroke-[4]" />
+                                      </span>
+                                    )}
+                                    {isFollowedBeta && (
+                                      <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                                        <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />
+                                      </span>
+                                    )}
+                                    {isFollowedAdmin && (
+                                      <span className="inline-flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Administrator">
+                                        <ShieldCheck className="w-3 h-3 text-red-400 stroke-[2.5]" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  {followed.bio ? (
+                                    <p className="text-[10px] text-app-muted truncate mt-0.5">{followed.bio}</p>
+                                  ) : (
+                                    <p className="text-[10px] text-app-muted italic truncate mt-0.5">Geen bio</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Fullscreen Media Viewer */}
+        <AnimatePresence>
+          {selectedFullscreenMedia && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+              <button 
+                onClick={() => setSelectedFullscreenMedia(null)}
+                className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-2xl transition-all cursor-pointer shadow-lg active:scale-95 z-50"
+                title="Sluiten"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              {selectedFullscreenMedia.startsWith('data:video/') || 
+               selectedFullscreenMedia.endsWith('.mp4') || 
+               selectedFullscreenMedia.endsWith('.mov') || 
+               selectedFullscreenMedia.endsWith('.webm') ? (
+                <video 
+                  src={selectedFullscreenMedia} 
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-[85vh] rounded-3xl object-contain shadow-2xl"
+                />
+              ) : (
+                <img 
+                  src={selectedFullscreenMedia} 
+                  alt="Fullscreen Preview" 
+                  className="max-w-full max-h-[85vh] rounded-3xl object-contain shadow-2xl"
+                  referrerPolicy="no-referrer"
+                />
+              )}
             </div>
           )}
         </AnimatePresence>
@@ -7012,10 +9036,10 @@ export default function App() {
                       </div>
                       <div>
                         <h2 className="text-2xl font-black text-white tracking-tighter uppercase leading-none">
-                          V2.3 Update
+                          V2.4 Update
                         </h2>
                         <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1">
-                          BIOMETRISCHE PASSKEYS & MILITAIR GRADE BEVEILIGING
+                          GELAAGDE VERIFICATIE & CHAT REVAMP BEVEILIGING
                         </p>
                       </div>
                     </div>
@@ -7027,9 +9051,9 @@ export default function App() {
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
                         <Fingerprint className="w-5 h-5 text-cyan-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Biometrische Passkeys (WebAuthn)</h4>
+                          <h4 className="font-extrabold text-sm text-white">Visuele Login Revamp</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Beheer biometrisch inloggen met TouchID, FaceID of Windows Hello. Veilig en flitsend inloggen op ondersteunde hardware.
+                            Het inlogscherm heeft een prachtig nieuw gelaagd ontwerp met vloeiende animaties en dynamische ambient gloed effecten gekregen.
                           </p>
                         </div>
                       </div>
@@ -7037,19 +9061,9 @@ export default function App() {
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
                         <LockIcon className="w-5 h-5 text-amber-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Wachtwoord + Passkey Verplichting</h4>
+                          <h4 className="font-extrabold text-sm text-white">Gelaagde Verificatie</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Zodra je een passkey registreert, wordt deze extra beveiligingsstap direct geactiveerd bij handmatige wachtwoordinlog op dat apparaat.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Activity className="w-5 h-5 text-emerald-400 shrink-0" />
-                        <div>
-                          <h4 className="font-extrabold text-sm text-white">Directe Extreme Snelheid</h4>
-                          <p className="text-xs text-blue-100/70 mt-1">
-                            Nutteloze introductievideo's en laadlussen zijn overal definitief verwijderd. Schermen, tools en media laden direct en flitsend snel.
+                            Tijdens het invoeren van het wachtwoord is de registratielink nu veilig verborgen om onbedoelde invoer te voorkomen en de focus op je actieve sessie te houden.
                           </p>
                         </div>
                       </div>
@@ -7057,9 +9071,19 @@ export default function App() {
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
                         <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">AES-256 & HMAC Beveiliging</h4>
+                          <h4 className="font-extrabold text-sm text-white">Robuuste Decryptie</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Je browser caches zijn cryptografisch verzegeld met sterke AES-encryptie en direct ondertekend met HMAC verificatiehashes.
+                            Onze interne encryptie filters in de chatroom en privéberichten verwerken nu vlekkeloos speciale karakters, emoji's en complexe UTF-8 strings.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                        <Activity className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <div>
+                          <h4 className="font-extrabold text-sm text-white">Bericht Inperking & Lees Meer</h4>
+                          <p className="text-xs text-blue-100/70 mt-1">
+                            Extreem lange berichten worden nu automatisch ingekort met een handige 'Lees meer' knop om de chatroom netjes en overzichtelijk te houden.
                           </p>
                         </div>
                       </div>
@@ -7072,7 +9096,7 @@ export default function App() {
                     <button
                       onClick={() => {
                         setShowWhatsNew(false);
-                        localStorage.setItem('has_seen_whats_new_v2.3', 'true');
+                        localStorage.setItem('has_seen_whats_new_v2.4', 'true');
                       }}
                       className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
                     >
@@ -7108,54 +9132,117 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-md z-[9999] flex items-center justify-center p-4 overflow-y-auto"
+              className="fixed inset-0 bg-black/75 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 overflow-y-auto"
             >
               <motion.div
-                initial={{ scale: 0.95, y: 15 }}
+                initial={{ scale: 0.95, y: 25 }}
                 animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.95, y: 15 }}
-                className="bg-[#002f54] border border-white/10 w-full max-w-md rounded-[2rem] p-8 shadow-2xl relative overflow-hidden"
+                exit={{ scale: 0.95, y: 25 }}
+                className="bg-gradient-to-b from-[#003b68] to-[#00213b] border-2 border-white/10 w-full max-w-md rounded-[2.5rem] p-8 sm:p-10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden"
               >
-                {/* Background glows */}
-                <div className="absolute top-0 right-0 w-[200px] h-[200px] bg-cyan-500/10 rounded-full blur-[50px] pointer-events-none" />
-                <div className="absolute bottom-0 left-0 w-[200px] h-[200px] bg-blue-500/10 rounded-full blur-[50px] pointer-events-none" />
+                {/* Visual Revamp: Glowing Ambient Circles */}
+                <div className="absolute top-0 right-0 w-[250px] h-[250px] bg-gradient-to-br from-cyan-500/20 to-transparent rounded-full blur-[60px] pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-[250px] h-[250px] bg-gradient-to-tr from-blue-600/15 to-transparent rounded-full blur-[60px] pointer-events-none" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[100px] bg-cyan-400/5 rounded-full blur-[80px] pointer-events-none" />
 
                 <button 
                   onClick={() => setIsAuthModalOpen(false)}
-                  className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors"
+                  className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all border border-white/5"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
 
-                <div className="flex flex-col items-center mb-6">
-                  <div className="w-12 h-12 bg-transparent rounded-2xl flex items-center justify-center mb-4 overflow-hidden">
+                <div className="flex flex-col items-center mb-8 relative z-10">
+                  {/* Glowing logo badge */}
+                  <div className="w-16 h-16 bg-white/5 rounded-[1.5rem] p-2 flex items-center justify-center mb-4 overflow-hidden border border-white/10 shadow-lg shadow-black/35 relative group">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <img 
                       src="/logo.png" 
                       alt="FTJM Logo" 
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-cover scale-[1.35] relative z-10"
                     />
                   </div>
-                  <h3 className="text-2xl font-black text-white tracking-tighter">
-                    {isRegisterMode ? 'Account Registreren' : 'Verifieer Identiteit'}
+                  <h3 className="text-3xl font-black text-white tracking-tighter text-center leading-none">
+                    {isRegisterMode 
+                      ? 'Account Registreren' 
+                      : authStep === 'password'
+                        ? 'Wachtwoord Invoeren'
+                        : 'Inloggen'}
                   </h3>
-                  <p className="text-xs text-blue-100/60 mt-1 uppercase tracking-widest text-center">
-                    {isRegisterMode ? 'Meld je aan voor het FTJM Network' : 'Toegang tot het beveiligde platform'}
+                  <p className="text-xs text-cyan-300 font-extrabold mt-1.5 uppercase tracking-widest text-center">
+                    {isRegisterMode 
+                      ? 'Sluit je aan bij FTJM Network' 
+                      : authStep === 'password'
+                        ? 'Beveiligde aanmelding verifiëren'
+                        : 'Toegang tot FTJM Enterprise'}
                   </p>
                 </div>
 
                 <form onSubmit={async (e) => {
                   e.preventDefault();
                   setAuthError(null);
-                  setAuthLoading(true);
 
                   const email = authEmail.trim();
-                  const password = authPassword;
 
-                  if (!email || !password) {
-                    setAuthError('E-mail en wachtwoord zijn verplicht');
-                    setAuthLoading(false);
+                  if (!email) {
+                    setAuthError('E-mail of gebruikersnaam is verplicht');
                     return;
                   }
+
+                  if (!isRegisterMode && authStep === 'email') {
+                    setAuthLoading(true);
+                    try {
+                      const { data: profiles, error: lookupError } = await supabaseClient
+                        .from('profiles')
+                        .select('email, display_name, photo_url')
+                        .or(`email.eq.${email},display_name.eq.${email}`)
+                        .limit(1);
+
+                      if (lookupError) {
+                        console.error('Lookup profile error:', lookupError);
+                      }
+
+                      if (profiles && profiles.length > 0) {
+                        const foundProfile = profiles[0];
+                        setLookupProfile({
+                          display_name: foundProfile.display_name || foundProfile.email || email,
+                          email: foundProfile.email || email,
+                          photo_url: foundProfile.photo_url || null
+                        });
+                        if (foundProfile.email) {
+                          setAuthEmail(foundProfile.email);
+                        }
+                      } else {
+                        // Use fallback so they can still try to log in (e.g. if profile row hasn't been created yet)
+                        setLookupProfile({
+                          display_name: email,
+                          email: email,
+                          photo_url: null
+                        });
+                      }
+                      setAuthStep('password');
+                    } catch (err: any) {
+                      console.error('Profile lookup error:', err);
+                      setLookupProfile({
+                        display_name: email,
+                        email: email,
+                        photo_url: null
+                      });
+                      setAuthStep('password');
+                    } finally {
+                      setAuthLoading(false);
+                    }
+                    return;
+                  }
+
+                  const password = authPassword;
+
+                  if (!password) {
+                    setAuthError('Wachtwoord is verplicht');
+                    return;
+                  }
+
+                  setAuthLoading(true);
 
                   try {
                     const claimAuth = rateLimiter.logAuthAttempt();
@@ -7269,7 +9356,7 @@ export default function App() {
                           }) as PublicKeyCredential | null;
 
                           if (!assertion) {
-                            throw new Error("Passkey verificatie geannuleerd.");
+                            throw new Error("Authenticatie geannuleerd.");
                           }
 
                           const matchingRecord = passkeyList.find(
@@ -7310,110 +9397,215 @@ export default function App() {
                     </div>
                   )}
 
-                  {isRegisterMode && (
-                    <div>
-                      <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                        Weergavenaam
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Bijv. Mark"
-                        autoComplete="name"
-                        value={authDisplayName}
-                        onChange={(e) => setAuthDisplayName(e.target.value)}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                      />
-                    </div>
-                  )}
+                  {isRegisterMode ? (
+                    <>
+                      <div>
+                        <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                          Weergavenaam
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Bijv. Mark"
+                          autoComplete="name"
+                          value={authDisplayName}
+                          onChange={(e) => setAuthDisplayName(e.target.value)}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                      E-mailadres
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="voorbeeld@adres.nl"
-                      autoComplete="username email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                          E-mailadres
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="voorbeeld@adres.nl"
+                          autoComplete="username email"
+                          value={authEmail}
+                          onChange={(e) => setAuthEmail(e.target.value)}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                        />
+                      </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                      Wachtwoord
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••••••"
-                      autoComplete={isRegisterMode ? "new-password" : "current-password"}
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                          Wachtwoord
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••••••"
+                          autoComplete="new-password"
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                        />
+                      </div>
 
-                  {isRegisterMode && (
-                    <div className="flex items-start gap-2.5 mt-2 mb-2 px-1">
-                      <input
-                        id="auth-agree-terms-checkbox"
-                        type="checkbox"
-                        required
-                        checked={authAgreeTerms}
-                        onChange={(e) => setAuthAgreeTerms(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 text-cyan-500 rounded border-white/25 bg-white/10 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-400"
-                      />
-                      <label htmlFor="auth-agree-terms-checkbox" className="text-xs text-blue-100/70 leading-normal select-none cursor-pointer">
-                        Ik ga akkoord met de <span className="text-cyan-400 font-extrabold underline">Algemene Voorwaarden</span> en het <span className="text-cyan-400 font-extrabold underline">Privacybeleid</span> van FTJM Enterprise.
-                      </label>
-                    </div>
-                  )}
+                      <div className="flex items-start gap-2.5 mt-2 mb-2 px-1">
+                        <input
+                          id="auth-agree-terms-checkbox"
+                          type="checkbox"
+                          required
+                          checked={authAgreeTerms}
+                          onChange={(e) => setAuthAgreeTerms(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 text-cyan-500 rounded border-white/25 bg-white/10 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-400"
+                        />
+                        <label htmlFor="auth-agree-terms-checkbox" className="text-xs text-blue-100/70 leading-normal select-none cursor-pointer">
+                          Ik ga akkoord met de <span className="text-cyan-400 font-extrabold underline">Algemene Voorwaarden</span> en het <span className="text-cyan-400 font-extrabold underline">Privacybeleid</span> van FTJM Enterprise.
+                        </label>
+                      </div>
 
-                  <button
-                    type="submit"
-                    disabled={authLoading}
-                    className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {authLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
-                    ) : isRegisterMode ? (
-                      'Registreren & Inloggen'
-                    ) : (
-                      'Inloggen'
-                    )}
-                  </button>
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {authLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
+                        ) : (
+                          'Registreren & Inloggen'
+                        )}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {authStep === 'email' ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="space-y-4"
+                        >
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                              Gebruikersnaam of E-mailadres
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Type je gebruikersnaam of e-mail"
+                              autoComplete="username"
+                              value={authEmail}
+                              onChange={(e) => setAuthEmail(e.target.value)}
+                              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                            />
+                          </div>
 
-                  {!isRegisterMode && (
-                    <button
-                      type="button"
-                      onClick={handlePasskeyLogin}
-                      disabled={authLoading}
-                      className="w-full py-4 bg-[#0a385c] hover:bg-cyan-950 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-300 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
-                    >
-                      <Fingerprint className="w-5 h-5 text-cyan-400 animate-pulse" />
-                      Inloggen met Passkey
-                    </button>
+                          <button
+                            type="submit"
+                            disabled={authLoading}
+                            className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            {authLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
+                            ) : (
+                              'Volgende'
+                            )}
+                          </button>
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="space-y-4"
+                        >
+                          {/* Centered user card */}
+                          <div className="flex flex-col items-center bg-white/5 border border-white/10 rounded-2xl p-4 relative overflow-hidden mb-4">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthStep('email');
+                                setLookupProfile(null);
+                                setAuthPassword('');
+                              }}
+                              className="absolute top-3 left-3 text-white/50 hover:text-white transition-colors flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                              Wissel
+                            </button>
+
+                            <div className="w-16 h-16 rounded-full border-2 border-cyan-400 overflow-hidden shadow-lg shadow-cyan-500/20 mb-2 mt-2 flex items-center justify-center bg-[#0a385c]">
+                              {lookupProfile?.photo_url ? (
+                                <img
+                                  src={lookupProfile.photo_url}
+                                  alt={lookupProfile.display_name}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <UserIcon className="w-8 h-8 text-cyan-300" />
+                              )}
+                            </div>
+
+                            <p className="text-sm font-black text-white text-center tracking-tight">
+                              {lookupProfile?.display_name}
+                            </p>
+                            <p className="text-[10px] text-blue-100/40 text-center font-mono mt-0.5 truncate max-w-xs">
+                              {lookupProfile?.email}
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                              Wachtwoord
+                            </label>
+                            <input
+                              type="password"
+                              required
+                              placeholder="••••••••••••"
+                              autoComplete="current-password"
+                              autoFocus
+                              value={authPassword}
+                              onChange={(e) => setAuthPassword(e.target.value)}
+                              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={authLoading}
+                            className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            {authLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
+                            ) : (
+                              'Inloggen'
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handlePasskeyLogin}
+                            disabled={authLoading}
+                            className="w-full py-4 bg-[#0a385c] hover:bg-cyan-950 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-300 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
+                          >
+                            <Fingerprint className="w-5 h-5 text-cyan-400 animate-pulse" />
+                            Inloggen met Passkey
+                          </button>
+                        </motion.div>
+                      )}
+                    </>
                   )}
                 </form>
 
-                <div className="mt-6 text-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsRegisterMode(!isRegisterMode);
-                      setAuthError(null);
-                    }}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 font-bold transition-colors uppercase tracking-wider cursor-pointer"
-                  >
-                    {isRegisterMode
-                      ? 'Heb je al een account? Log hier in'
-                      : 'Nog geen account? Registreer hier'}
-                  </button>
-                </div>
+                {(isRegisterMode || authStep === 'email') && (
+                  <div className="mt-6 text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRegisterMode(!isRegisterMode);
+                        setAuthError(null);
+                      }}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 font-bold transition-colors uppercase tracking-wider cursor-pointer"
+                    >
+                      {isRegisterMode
+                        ? 'Heb je al een account? Log hier in'
+                        : 'Nog geen account? Registreer hier'}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             </motion.div>
           )}
@@ -7445,7 +9637,7 @@ export default function App() {
                     Voorwaarden & Privacy Update
                   </h2>
                   <p className="text-xs text-zinc-400 uppercase tracking-widest font-mono">
-                    FTJM Enterprise Platform v2.3
+                    FTJM Enterprise Platform v2.4.5
                   </p>
                 </div>
 

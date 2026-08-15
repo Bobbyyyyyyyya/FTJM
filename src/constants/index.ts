@@ -1,5 +1,19 @@
 export const NEWS_ITEMS = [
   {
+    id: 12,
+    title: "FTJM Enterprise Update v2.4.5 🚀",
+    content: "We hebben het platform geüpdatet naar v2.4.5! Deze update brengt de nieuwste optimalisaties, een nog betere weergave van het FTJM logo in icon spaces, en verbeterde systeem- en beveiligingsfuncties door het hele platform.",
+    date: new Date().toISOString().split('T')[0],
+    category: "Update"
+  },
+  {
+    id: 11,
+    title: "FTJM Extreem-Beveiligde Core Update v2.4.0 🧬",
+    content: "Gelaagde Verificatie & Chat Revamp! Met trots introduceren we de v2.4.0 update. In deze versie hebben we het inlogscherm volledig vernieuwd met een modernere, gelaagde look en gestroomlijnde animaties. Daarnaast hebben we de registratielink verborgen tijdens het invoeren van je wachtwoord om de focus op je actieve sessie te houden en fouten te voorkomen. In de algemene chat en privéberichten hebben we de decryptie robuuster gemaakt voor betere verwerking van emoji's en speciale tekens. Ten slotte worden extreem lange berichten voortaan netjes ingekort met een handige 'Lees meer' knop, zodat de chat overzichtelijk blijft!",
+    date: "2026-06-25",
+    category: "Beveiliging"
+  },
+  {
     id: 10,
     title: "FTJM Extreem-Beveiligde Core Update v2.3.0 🧬",
     content: "Biometrische Veiligheid & Privacy! We introduceren de v2.3.0 update. In deze versie lanceren we hardware-beveiligde Passkeys (WebAuthn). Hiermee kun je vliegensvlug inloggen met je vingerafdruk, FaceID of Windows Hello op je eigen apparaat. Ter extra bescherming verplichten we de passkey-scan direct na het handmatig invoeren van je wachtwoord zodra er een sleutel is gekoppeld aan je account op dit apparaat. Daarnaast hebben we de ouderwetse Veiligheidscontrole verwijderd en de Passkeys verhuist naar de nieuwe tab Beveiliging!",
@@ -65,26 +79,16 @@ export const NEWS_ITEMS = [
 ];
 
 export const SOUND_OPTIONS = [
-  { name: 'Ping (Default)', url: '/audio/sounds/ping.mp3' },
-  { name: 'Notification', url: '/audio/sounds/notification.mp3' },
-  { name: 'Chime', url: '/audio/sounds/chime.mp3' },
-  { name: 'Alert', url: '/audio/sounds/alert.wav' },
-  { name: 'Pop', url: '/audio/sounds/pop.mp3' },
-  { name: 'Success', url: '/audio/sounds/success.mp3' },
-  { name: 'Bling', url: '/audio/sounds/bling.mp3' },
-  { name: 'Standaard (Old)', url: '/audio/sounds/default_old.mp3' },
-  { name: 'Melding (Old)', url: '/audio/sounds/notification_old.mp3' },
+  { name: 'Melding (Standaard)', url: '/audio/sounds/notification_o14egLP.mp3' },
+  { name: 'Fears to Fathom', url: '/audio/sounds/fears-to-fathom-notification-sound.mp3' },
+  { name: '007 Text Message', url: '/audio/sounds/007_Text_Message-3875438.mp3' },
+  { name: 'Melding Tone', url: '/audio/sounds/yt1s_nijLeKo.mp3' },
 ];
 
 export const RINGTONE_OPTIONS = [
-  { name: 'Standaard Ringtone (Classic)', url: '/audio/ringtones/classic.mp3' },
-  { name: 'Nieuwe Ringtone 1', url: '/audio/ringtones/ringtone1.mp3' },
-  { name: 'Nieuwe Ringtone 2', url: '/audio/ringtones/ringtone2.mp3' },
-  { name: 'Retro Nokiatune', url: '/audio/ringtones/nokia.mp3' },
-  { name: 'Digitale Telefoon Ring', url: '/audio/ringtones/digital.mp3' },
-  { name: 'Synthesizer Groove', url: '/audio/ringtones/synthesizer.mp3' },
-  { name: 'Zen Chime Loop', url: '/audio/ringtones/zen.mp3' },
-  { name: 'Futuristische Sirene', url: '/audio/ringtones/siren.mp3' },
+  { name: 'Skype Ringtone (New)', url: '/audio/ringtones/skype_ringtone_new.mp3' },
+  { name: 'iPhone Ringtone Remix', url: '/audio/ringtones/iphone-ringtone-remix.mp3' },
+  { name: 'iPhone Trap Remix', url: '/audio/ringtones/iphone_ringtone_trap_remixbigconverter.mp3' },
 ];
 
 export const PATTERNS = [
@@ -101,4 +105,44 @@ import { EMOJI_CATEGORIES, EmojiItem } from './emojis';
 export { EMOJI_CATEGORIES };
 
 export const EMOJI_LIST: EmojiItem[] = EMOJI_CATEGORIES.flatMap(cat => cat.emojis);
+
+export const VERIFIED_EMAILS = [
+  'markohoksen@gmail.com',
+  'zwedenguy@gmail.com'
+];
+
+export const BETA_TESTER_EMAILS = [
+  'samleeuw803@gmail.com'
+];
+
+export const isVerifiedEmail = (
+  emailOrProfile?: string | { email?: string | null; is_verified?: boolean | null } | null,
+  isVerifiedCol?: boolean | null
+): boolean => {
+  if (!emailOrProfile) return isVerifiedCol === true;
+  if (typeof emailOrProfile === 'object') {
+    if (emailOrProfile.is_verified === true) return true;
+    if (emailOrProfile.email) {
+      return VERIFIED_EMAILS.includes(emailOrProfile.email.toLowerCase().trim());
+    }
+    return false;
+  }
+  if (isVerifiedCol === true) return true;
+  return VERIFIED_EMAILS.includes(emailOrProfile.toLowerCase().trim());
+};
+
+export const isBetaTester = (
+  userOrEmail?: string | { email?: string | null; role?: string | null } | null
+): boolean => {
+  if (!userOrEmail) return false;
+  if (typeof userOrEmail === 'object') {
+    if (userOrEmail.role === 'tester' || (userOrEmail as any).is_beta_tester === true) return true;
+    if (userOrEmail.email) {
+      return BETA_TESTER_EMAILS.includes(userOrEmail.email.toLowerCase().trim());
+    }
+    return false;
+  }
+  return BETA_TESTER_EMAILS.includes(userOrEmail.toLowerCase().trim());
+};
+
 

@@ -165,6 +165,16 @@ export const createSupabaseClient = (uid: string | null = null) => {
 
 let defaultSupabase: any = null;
 
+export const invalidateSupabaseCache = (pattern?: string) => {
+  if (!pattern) {
+    Object.keys(getCache).forEach(k => delete getCache[k]);
+  } else {
+    Object.keys(getCache).forEach(k => {
+      if (k.includes(pattern)) delete getCache[k];
+    });
+  }
+};
+
 export const supabase = (() => {
   if (!defaultSupabase) {
     defaultSupabase = createSupabaseClient(null);

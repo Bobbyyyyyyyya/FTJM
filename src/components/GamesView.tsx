@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Gamepad2, Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, Bot, Zap, Play, Smile, Volume2, Star, RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
+import { Gamepad2, Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, Bot, Play, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { HamsterGame } from './HamsterGame';
 import { supabase } from '../utils/supabase';
@@ -78,23 +78,23 @@ interface GameProps {
   onBack: () => void;
   isFullscreen?: boolean;
   userProfile?: any;
-  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => Promise<void>;
-  onShareHighScoreOpen?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => void;
+  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => Promise<void>;
+  onShareHighScoreOpen?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => void;
 }
 
 interface GamesViewProps {
   userProfile?: any;
   conversations?: any[];
-  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number) => Promise<void>;
-  onShareHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster', score: number, targetType: 'general' | 'dm', conversationId?: string) => Promise<void>;
+  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => Promise<void>;
+  onShareHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number, targetType: 'general' | 'dm', conversationId?: string) => Promise<void>;
 }
 
 export function GamesView({ userProfile, conversations = [], onSaveHighScore, onShareHighScore }: GamesViewProps) {
-  const [selectedGame, setSelectedGame] = useState<'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster'>('lobby');
+  const [selectedGame, setSelectedGame] = useState<'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster' | 'breakout'>('lobby');
   const [isGameFullscreen, setIsGameFullscreen] = useState(false);
   const gameWrapperRef = useRef<HTMLDivElement>(null);
 
-  const [activeShareModal, setActiveShareModal] = useState<{ gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster'; score: number } | null>(null);
+  const [activeShareModal, setActiveShareModal] = useState<{ gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout'; score: number } | null>(null);
   const [shareDestination, setShareDestination] = useState<'general' | 'dm'>('general');
   const [selectedConversationId, setSelectedConversationId] = useState<string>('');
 
@@ -120,7 +120,8 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
             snake: [],
             flappy: [],
             sysadmin: [],
-            hamster: []
+            hamster: [],
+            breakout: []
           };
           
           data.forEach((p: any) => {
@@ -156,7 +157,7 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
     fetchLeaderboards();
   }, [selectedGame]);
 
-  const selectGame = (game: 'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster') => {
+  const selectGame = (game: 'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster' | 'breakout') => {
     playRetroSound('click');
     setSelectedGame(game);
   };
@@ -372,6 +373,31 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
               </div>
             </motion.div>
 
+            {/* RETRO BREAKOUT (BRICK BREAKER) CARD */}
+            <motion.div
+              whileHover={{ y: -6, scale: 1.02 }}
+              onClick={() => selectGame('breakout')}
+              className="bg-app-card border border-app-border rounded-[2rem] p-6 shadow-sm hover:shadow-xl cursor-pointer transition-all flex flex-col justify-between text-left relative overflow-hidden"
+              id="game_card_breakout"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
+              <div className="space-y-4">
+                <div className="w-12 h-12 bg-gradient-to-tr from-purple-400 to-indigo-500 rounded-2xl flex items-center justify-center text-white font-extrabold shadow-md shadow-purple-500/10 text-xl">
+                  🧱
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-app-ink uppercase tracking-tight">Retro Breakout</h3>
+                  <p className="text-xs text-app-muted mt-2 leading-relaxed">
+                    Breek de stenen, verzamel vette power-ups (Multi-ball! Lasers! Schild!) en domineer de retro neon-muren!
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 pt-4 border-t border-app-border/40 flex items-center justify-between">
+                <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest bg-purple-500/10 px-2.5 py-1 rounded-full font-mono">Brick Breaker</span>
+                <span className="text-xs font-black text-app-ink flex items-center gap-1 font-primary">Speel Nu <Play className="w-3 h-3 fill-current" /></span>
+              </div>
+            </motion.div>
+
             {/* GLOBAL ARCADE LEADERBOARD */}
             <div className="col-span-1 md:col-span-2 lg:col-span-3 mt-8 bg-app-card border border-app-border rounded-[2.5rem] p-6 sm:p-8 relative overflow-hidden text-left shadow-md">
               <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -392,12 +418,13 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 {[
                   { id: 'snake', name: '🐍 Snake', color: 'border-cyan-500/30 text-cyan-400' },
                   { id: 'flappy', name: '🚀 Flappy', color: 'border-emerald-500/30 text-emerald-400' },
                   { id: 'sysadmin', name: '🔥 SysAdmin', color: 'border-rose-500/30 text-rose-400' },
-                  { id: 'hamster', name: '🐹 Hamster', color: 'border-yellow-500/30 text-yellow-400' }
+                  { id: 'hamster', name: '🐹 Hamster', color: 'border-yellow-500/30 text-yellow-400' },
+                  { id: 'breakout', name: '🧱 Breakout', color: 'border-purple-500/30 text-purple-400' }
                 ].map(game => {
                   const board = leaderboards[game.id] || [];
                   return (
@@ -491,6 +518,15 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
                 onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
               />
             )}
+            {selectedGame === 'breakout' && (
+              <BreakoutGame 
+                onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} 
+                isFullscreen={isGameFullscreen} 
+                userProfile={userProfile}
+                onSaveHighScore={onSaveHighScore}
+                onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
+              />
+            )}
           </div>
         )}
 
@@ -531,6 +567,7 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
                       {activeShareModal.gameId === 'flappy' && '🚀 Flappy'}
                       {activeShareModal.gameId === 'sysadmin' && '🔥 SysAdmin'}
                       {activeShareModal.gameId === 'hamster' && '🐹 Hamster'}
+                      {activeShareModal.gameId === 'breakout' && '🧱 Breakout'}
                     </span>
                   </div>
                   <div className="text-right">
@@ -1318,6 +1355,7 @@ function FlappyGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShar
     }
     if (gameStateRef.current === 'idle') {
       // Start game
+      gameStateRef.current = 'playing';
       setGameState('playing');
       setScore(0);
       setIsPaused(false);
@@ -1330,6 +1368,7 @@ function FlappyGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShar
       playRetroSound('jump');
     } else if (gameStateRef.current === 'gameover') {
       // Reset
+      gameStateRef.current = 'playing';
       setGameState('playing');
       setScore(0);
       setIsPaused(false);
@@ -1414,6 +1453,7 @@ function FlappyGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShar
         // Ground/ceiling collisions
         if (rocketY.current > canvas.height - 25 || rocketY.current < 5) {
           playRetroSound('die');
+          gameStateRef.current = 'gameover';
           setGameState('gameover');
         }
 
@@ -1455,6 +1495,7 @@ function FlappyGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShar
 
           if (hitTop || hitBottom) {
             playRetroSound('die');
+            gameStateRef.current = 'gameover';
             setGameState('gameover');
           }
 
@@ -2324,7 +2365,6 @@ function SysAdminGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onSh
         </div>
 
         <div className="bg-[#0f172a] p-2.5 rounded-xl border border-slate-800 text-[10px] text-app-muted leading-relaxed">
-          <span className="font-bold text-app-ink uppercase block mb-1">🎮 Besturingsopties:</span>
           • <span className="text-amber-500 font-bold">Toetsenbord:</span> A / D of Pijltjestoetsen Links & Rechts.<br />
           • <span className="text-amber-500 font-bold">Muis & Touch:</span> Sleep of tik op het speelveld om je server direct daarheen te bewegen!
         </div>
@@ -2332,4 +2372,959 @@ function SysAdminGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onSh
     </div>
   );
 }
+
+/* ==========================================================================
+   5. RETRO BREAKOUT (BRICK BREAKER) GAME
+   ========================================================================== */
+function BreakoutGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShareHighScoreOpen }: GameProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(() => {
+    const cloudScore = userProfile?.custom_theme?.game_high_scores?.breakout;
+    return typeof cloudScore === 'number' ? cloudScore : Number(localStorage.getItem('ftjm_breakout_highscore') || '0');
+  });
+
+  const [gameState, setGameState] = useState<'idle' | 'playing' | 'gameover'>('idle');
+  const [level, setLevel] = useState(1);
+  const [lives, setLives] = useState(3);
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(isPaused);
+
+  const [breakoutLeaderboard, setBreakoutLeaderboard] = useState<{ name: string; score: number }[]>([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
+
+  const fetchBreakoutLeaderboard = async () => {
+    setLoadingLeaderboard(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('display_name, custom_theme');
+      if (data) {
+        const list: { name: string; score: number }[] = [];
+        data.forEach((p) => {
+          const score = Number(p.custom_theme?.game_high_scores?.breakout || 0);
+          if (score > 0) {
+            list.push({
+              name: p.display_name || 'Anoniem',
+              score
+            });
+          }
+        });
+        list.sort((a, b) => b.score - a.score);
+        setBreakoutLeaderboard(list.slice(0, 5));
+      }
+    } catch (err) {
+      console.warn('Breakout leaderboard fetch skipped: ', err);
+    } finally {
+      setLoadingLeaderboard(false);
+    }
+  };
+
+  useEffect(() => {
+    if (gameState === 'idle' || gameState === 'gameover') {
+      fetchBreakoutLeaderboard();
+    }
+  }, [gameState]);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  // Synchronise high scores to cloud on Game Over
+  useEffect(() => {
+    if (gameState === 'gameover') {
+      if (score > highScore) {
+        setHighScore(score);
+        localStorage.setItem('ftjm_breakout_highscore', String(score));
+      }
+      onSaveHighScore?.('breakout', score);
+    }
+  }, [gameState, score]);
+
+  // Audio synthesis helper for retro game sounds
+  const playSound = (type: 'bounce' | 'break' | 'powerup' | 'shoot' | 'lose' | 'victory' | 'start') => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'bounce') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.11);
+      } else if (type === 'break') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(400, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.16);
+      } else if (type === 'powerup') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.setValueAtTime(450, ctx.currentTime + 0.08);
+        osc.frequency.setValueAtTime(600, ctx.currentTime + 0.16);
+        osc.frequency.setValueAtTime(900, ctx.currentTime + 0.24);
+        gain.gain.setValueAtTime(0.06, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.36);
+      } else if (type === 'shoot') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.04, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.09);
+      } else if (type === 'lose') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(50, ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.41);
+      } else if (type === 'start') {
+        const notes = [261.63, 329.63, 392.00, 523.25];
+        notes.forEach((freq, i) => {
+          const noteOsc = ctx.createOscillator();
+          const noteGain = ctx.createGain();
+          noteOsc.connect(noteGain);
+          noteGain.connect(ctx.destination);
+          noteOsc.type = 'triangle';
+          noteOsc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.1);
+          noteGain.gain.setValueAtTime(0.06, ctx.currentTime + i * 0.1);
+          noteGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.15);
+          noteOsc.start(ctx.currentTime + i * 0.1);
+          noteOsc.stop(ctx.currentTime + i * 0.1 + 0.18);
+        });
+      } else if (type === 'victory') {
+        const notes = [392.00, 523.25, 659.25, 783.99, 1046.50];
+        notes.forEach((freq, i) => {
+          const noteOsc = ctx.createOscillator();
+          const noteGain = ctx.createGain();
+          noteOsc.connect(noteGain);
+          noteGain.connect(ctx.destination);
+          noteOsc.type = 'sine';
+          noteOsc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.08);
+          noteGain.gain.setValueAtTime(0.06, ctx.currentTime + i * 0.08);
+          noteGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + 0.25);
+          noteOsc.start(ctx.currentTime + i * 0.08);
+          noteOsc.stop(ctx.currentTime + i * 0.08 + 0.28);
+        });
+      }
+    } catch (e) {
+      console.warn('Audio synthesis blocked by browser autoplay sandbox policies:', e);
+    }
+  };
+
+  // Game references
+  const engineRef = useRef({
+    paddle: { x: 200, y: 440, width: 80, height: 12, speed: 6, targetWidth: 80 },
+    balls: [] as { x: number; y: number; dx: number; dy: number; radius: number; speed: number; powerBall?: boolean }[],
+    bricks: [] as { x: number; y: number; width: number; height: number; color: string; strength: number; maxStrength: number; value: number }[],
+    powerups: [] as { x: number; y: number; width: number; height: number; dy: number; type: 'multiball' | 'wide' | 'laser' | 'shield'; emoji: string; color: string }[],
+    bullets: [] as { x: number; y: number; dy: number; radius: number }[],
+    particles: [] as { x: number; y: number; dx: number; dy: number; color: string; size: number; alpha: number; decay: number }[],
+    shakeTime: 0,
+    shakeIntensity: 0,
+    hasShield: false,
+    laserTimer: 0,
+    keys: { Left: false, Right: false, Space: false },
+    shootCooldown: 0,
+    score: 0,
+    level: 1,
+    lives: 3,
+    frameCount: 0
+  });
+
+  // Level layouts
+  const loadLevel = (lvl: number) => {
+    const engine = engineRef.current;
+    engine.bricks = [];
+    engine.bullets = [];
+    engine.powerups = [];
+    engine.hasShield = false;
+    engine.laserTimer = 0;
+    engine.paddle.width = 80;
+    engine.paddle.targetWidth = 80;
+
+    // Grid details
+    const rows = 4 + Math.min(lvl, 4);
+    const cols = 8;
+    const brickWidth = 52;
+    const brickHeight = 18;
+    const offsetX = 24;
+    const offsetY = 50;
+
+    const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7'];
+
+    for (let r = 0; r < rows; r++) {
+      const rowColor = colors[r % colors.length];
+      for (let c = 0; c < cols; c++) {
+        const x = offsetX + c * (brickWidth + 4);
+        const y = offsetY + r * (brickHeight + 4);
+
+        // Gold bricks on Level 2+ take 2 hits, Titanium on Level 4+ take 3 hits
+        let strength = 1;
+        let finalColor = rowColor;
+        if (lvl >= 4 && r === 0) {
+          strength = 3;
+          finalColor = '#dc2626'; // Red Titanium
+        } else if (lvl >= 2 && r === 0) {
+          strength = 2;
+          finalColor = '#d97706'; // Gold/Amber
+        } else if (lvl >= 3 && (r + c) % 5 === 0) {
+          strength = 2;
+          finalColor = '#d97706';
+        }
+
+        engine.bricks.push({
+          x,
+          y,
+          width: brickWidth,
+          height: brickHeight,
+          color: finalColor,
+          strength,
+          maxStrength: strength,
+          value: strength * 100
+        });
+      }
+    }
+
+    // Spawn a clean starting ball with progressive speed ramping
+    engine.balls = [{
+      x: 240,
+      y: 400,
+      dx: 3 * (Math.random() > 0.5 ? 1 : -1),
+      dy: -4,
+      radius: 6,
+      speed: 4.5 + Math.min(lvl * 0.5, 3.5)
+    }];
+
+    engine.paddle.x = 240 - engine.paddle.width / 2;
+  };
+
+  const startGame = () => {
+    const engine = engineRef.current;
+    engine.score = 0;
+    engine.level = 1;
+    engine.lives = 3;
+    setScore(0);
+    setLevel(1);
+    setLives(3);
+    loadLevel(1);
+    playSound('start');
+    setGameState('playing');
+  };
+
+  // Keyboard events listeners
+  useEffect(() => {
+    const engine = engineRef.current;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (gameState !== 'playing' || isPausedRef.current) return;
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        engine.keys.Left = true;
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        engine.keys.Right = true;
+      } else if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        engine.keys.Space = true;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        engine.keys.Left = false;
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        engine.keys.Right = false;
+      } else if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        engine.keys.Space = false;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [gameState]);
+
+  // Touch and Mouse Move Control Helper
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (gameState !== 'playing' || isPausedRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX;
+    const xOnCanvas = ((clientX - rect.left) / rect.width) * 480;
+    const engine = engineRef.current;
+    engine.paddle.x = Math.max(0, Math.min(480 - engine.paddle.width, xOnCanvas - engine.paddle.width / 2));
+  };
+
+  // Game loops
+  useEffect(() => {
+    let animId: number;
+
+    const gameLoop = () => {
+      if (gameState !== 'playing' || isPausedRef.current) {
+        animId = requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const engine = engineRef.current;
+      engine.frameCount++;
+
+      // 1. CLEAR CANVAS
+      ctx.clearRect(0, 0, 480, 480);
+
+      // Apply screen shake
+      ctx.save();
+      if (engine.shakeTime > 0) {
+        const dx = (Math.random() - 0.5) * engine.shakeIntensity;
+        const dy = (Math.random() - 0.5) * engine.shakeIntensity;
+        ctx.translate(dx, dy);
+        engine.shakeTime--;
+      }
+
+      // 2. BACKGROUND DECORATION
+      ctx.fillStyle = '#09090b';
+      ctx.fillRect(0, 0, 480, 480);
+
+      // Subtle background scanlines
+      ctx.fillStyle = 'rgba(255,255,255,0.02)';
+      for (let i = 0; i < 480; i += 4) {
+        ctx.fillRect(0, i, 480, 1.5);
+      }
+
+      // 2.5 BRICKS RENDER (Neat retro bricks with crack marks for multiple hits)
+      engine.bricks.forEach((brick) => {
+        ctx.save();
+        ctx.fillStyle = brick.color;
+        
+        // Draw brick with rounded corners if supported, otherwise standard rect
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(brick.x, brick.y, brick.width, brick.height, 3);
+          ctx.fill();
+        } else {
+          ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
+        }
+
+        // Shine highlights
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillRect(brick.x + 2, brick.y + 2, brick.width - 4, 3);
+
+        // Dark contour outline
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
+
+        // Dynamic cracks on tougher bricks (strength > 1)
+        if (brick.strength > 1) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          if (brick.strength === 2) {
+            // Gold diagonal crack line
+            ctx.moveTo(brick.x + 4, brick.y + 4);
+            ctx.lineTo(brick.x + brick.width - 4, brick.y + brick.height - 4);
+          } else if (brick.strength === 3) {
+            // Titanium cross/star crack lines
+            ctx.moveTo(brick.x + 4, brick.y + 4);
+            ctx.lineTo(brick.x + brick.width - 4, brick.y + brick.height - 4);
+            ctx.moveTo(brick.x + brick.width - 4, brick.y + 4);
+            ctx.lineTo(brick.x + 4, brick.y + brick.height - 4);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      });
+
+      // Draw Shield indicator if active
+      if (engine.hasShield) {
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#22c55e';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(0, 478);
+        ctx.lineTo(480, 478);
+        ctx.stroke();
+        ctx.shadowBlur = 0; // reset
+      }
+
+      // 3. PADDLE LOGIC & RENDER
+      // Interpolate wide paddle width
+      if (engine.paddle.width < engine.paddle.targetWidth) {
+        engine.paddle.width += 2;
+      } else if (engine.paddle.width > engine.paddle.targetWidth) {
+        engine.paddle.width -= 2;
+      }
+
+      // Keyboard movement
+      if (engine.keys.Left) {
+        engine.paddle.x = Math.max(0, engine.paddle.x - engine.paddle.speed);
+      }
+      if (engine.keys.Right) {
+        engine.paddle.x = Math.min(480 - engine.paddle.width, engine.paddle.x + engine.paddle.speed);
+      }
+
+      // Laser timers
+      if (engine.laserTimer > 0) {
+        engine.laserTimer--;
+        if (engine.laserTimer === 0) {
+          toast.error("Lasers leeg! 🔋");
+        }
+
+        // Automatic/cooldown shooting
+        if (engine.shootCooldown > 0) {
+          engine.shootCooldown--;
+        }
+
+        if (engine.keys.Space && engine.shootCooldown === 0) {
+          engine.bullets.push(
+            { x: engine.paddle.x + 10, y: engine.paddle.y, dy: -6, radius: 3 },
+            { x: engine.paddle.x + engine.paddle.width - 10, y: engine.paddle.y, dy: -6, radius: 3 }
+          );
+          engine.shootCooldown = 20;
+          playSound('shoot');
+        }
+      }
+
+      // Render Paddle with glowing neon border
+      ctx.fillStyle = '#1e1b4b';
+      ctx.fillRect(engine.paddle.x, engine.paddle.y, engine.paddle.width, engine.paddle.height);
+
+      ctx.strokeStyle = engine.laserTimer > 0 ? '#f43f5e' : '#a855f7';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = engine.laserTimer > 0 ? '#f43f5e' : '#a855f7';
+      ctx.shadowBlur = 8;
+      ctx.strokeRect(engine.paddle.x + 1, engine.paddle.y + 1, engine.paddle.width - 2, engine.paddle.height - 2);
+      ctx.shadowBlur = 0; // reset
+
+      // Draw little guns if laser active
+      if (engine.laserTimer > 0) {
+        ctx.fillStyle = '#f43f5e';
+        ctx.fillRect(engine.paddle.x + 4, engine.paddle.y - 4, 6, 4);
+        ctx.fillRect(engine.paddle.x + engine.paddle.width - 10, engine.paddle.y - 4, 6, 4);
+      }
+
+      // 4. BULLETS PHYSICS & RENDERING
+      engine.bullets.forEach((bullet, bIdx) => {
+        bullet.y += bullet.dy;
+
+        // Draw bullet
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius || 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Brick collisions with bullet
+        engine.bricks.forEach((brick, brIdx) => {
+          if (
+            bullet.x >= brick.x &&
+            bullet.x <= brick.x + brick.width &&
+            bullet.y >= brick.y &&
+            bullet.y <= brick.y + brick.height
+          ) {
+            // Hit!
+            engine.bullets.splice(bIdx, 1);
+            brick.strength--;
+            playSound('break');
+
+            // Particles
+            for (let i = 0; i < 4; i++) {
+              engine.particles.push({
+                x: bullet.x,
+                y: bullet.y,
+                dx: (Math.random() - 0.5) * 3,
+                dy: (Math.random() - 0.5) * 3,
+                color: brick.color,
+                size: 2 + Math.random() * 2,
+                alpha: 1,
+                decay: 0.02 + Math.random() * 0.03
+              });
+            }
+
+            if (brick.strength <= 0) {
+              engine.bricks.splice(brIdx, 1);
+              engine.score += brick.value;
+              setScore(engine.score);
+
+              // Chance to spawn powerup
+              if (Math.random() < 0.18) {
+                spawnPowerup(brick.x + brick.width / 2, brick.y + brick.height / 2);
+              }
+            }
+          }
+        });
+      });
+
+      // Clear offscreen bullets
+      engine.bullets = engine.bullets.filter(b => b.y > 0);
+
+      // 5. BALLS PHYSICS & RENDERING
+      engine.balls.forEach((ball, ballIdx) => {
+        // Apply motion
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        // Left/Right walls bounce
+        if (ball.x - ball.radius <= 0) {
+          ball.x = ball.radius;
+          ball.dx = -ball.dx;
+          playSound('bounce');
+        } else if (ball.x + ball.radius >= 480) {
+          ball.x = 480 - ball.radius;
+          ball.dx = -ball.dx;
+          playSound('bounce');
+        }
+
+        // Top wall bounce
+        if (ball.y - ball.radius <= 0) {
+          ball.y = ball.radius;
+          ball.dy = -ball.dy;
+          playSound('bounce');
+        }
+
+        // Paddle bounce
+        if (
+          ball.y + ball.radius >= engine.paddle.y &&
+          ball.y - ball.radius <= engine.paddle.y + engine.paddle.height &&
+          ball.x + ball.radius >= engine.paddle.x &&
+          ball.x - ball.radius <= engine.paddle.x + engine.paddle.width
+        ) {
+          // Snap ball to top of paddle to avoid gluing glitch
+          ball.y = engine.paddle.y - ball.radius;
+          ball.dy = -Math.abs(ball.dy);
+
+          // Dynamic bounce angle based on where the ball hits the paddle
+          const hitPoint = (ball.x - (engine.paddle.x + engine.paddle.width / 2)) / (engine.paddle.width / 2);
+          
+          // Gradually speed up ball on paddle strikes for dynamic difficulty
+          ball.speed = Math.min(ball.speed + 0.25, 12);
+          ball.dx = hitPoint * ball.speed;
+          
+          // Make sure it goes upwards nicely
+          ball.dy = -Math.sqrt(Math.max(4, ball.speed * ball.speed - ball.dx * ball.dx));
+          playSound('bounce');
+        }
+
+        // Brick collisions with Ball
+        engine.bricks.forEach((brick, brickIdx) => {
+          if (
+            ball.x + ball.radius >= brick.x &&
+            ball.x - ball.radius <= brick.x + brick.width &&
+            ball.y + ball.radius >= brick.y &&
+            ball.y - ball.radius <= brick.y + brick.height
+          ) {
+            // Ball bounced off brick. Let's find out which side it hit
+            const overlapX = Math.min(ball.x + ball.radius - brick.x, brick.x + brick.width - (ball.x - ball.radius));
+            const overlapY = Math.min(ball.y + ball.radius - brick.y, brick.y + brick.height - (ball.y - ball.radius));
+
+            if (overlapX < overlapY) {
+              ball.dx = ball.x < brick.x + brick.width / 2 ? -Math.abs(ball.dx) : Math.abs(ball.dx);
+            } else {
+              ball.dy = ball.y < brick.y + brick.height / 2 ? -Math.abs(ball.dy) : Math.abs(ball.dy);
+            }
+
+            brick.strength--;
+            playSound('break');
+            engine.shakeTime = 6;
+            engine.shakeIntensity = 3;
+
+            // Spawn particles
+            for (let i = 0; i < 6; i++) {
+              engine.particles.push({
+                x: ball.x,
+                y: ball.y,
+                dx: (Math.random() - 0.5) * 5,
+                dy: (Math.random() - 0.5) * 5,
+                color: brick.color,
+                size: 2.5 + Math.random() * 2.5,
+                alpha: 1,
+                decay: 0.015 + Math.random() * 0.02
+              });
+            }
+
+            if (brick.strength <= 0) {
+              engine.bricks.splice(brickIdx, 1);
+              engine.score += brick.value;
+              setScore(engine.score);
+
+              // Chance to spawn powerup (18%)
+              if (Math.random() < 0.18) {
+                spawnPowerup(brick.x + brick.width / 2, brick.y + brick.height / 2);
+              }
+            }
+          }
+        });
+
+        // Bottom boundary check
+        if (ball.y + ball.radius >= 480) {
+          if (engine.hasShield) {
+            // Save player with shield
+            engine.hasShield = false;
+            ball.dy = -Math.abs(ball.dy);
+            ball.y = 470;
+            playSound('bounce');
+            toast.success("Schild verbruikt! Gered! 🛡️");
+          } else {
+            // Drop ball
+            engine.balls.splice(ballIdx, 1);
+            playSound('lose');
+          }
+        }
+
+        // Draw Ball
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Neon ball halo
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+
+      // If all balls lost, lose a life
+      if (engine.balls.length === 0 && gameState === 'playing') {
+        engine.lives--;
+        setLives(engine.lives);
+
+        if (engine.lives <= 0) {
+          setGameState('gameover');
+        } else {
+          // Respawn ball on paddle
+          engine.balls.push({
+            x: 240,
+            y: 400,
+            dx: 3 * (Math.random() > 0.5 ? 1 : -1),
+            dy: -4.5,
+            radius: 6,
+            speed: 5 + Math.min(engine.level * 0.3, 1.5)
+          });
+          engine.paddle.x = 240 - engine.paddle.width / 2;
+          toast.error("Bal verloren! 💔");
+        }
+      }
+
+      // Check level win condition
+      if (engine.bricks.length === 0 && gameState === 'playing') {
+        playSound('victory');
+        engine.level++;
+        setLevel(engine.level);
+        toast.success(`Level ${engine.level} Gehaald! 🎉`);
+        loadLevel(engine.level);
+      }
+
+      // 6. POWERUPS RUN TIME
+      engine.powerups.forEach((power, pIdx) => {
+        power.y += power.dy;
+
+        // Render powerup item
+        ctx.fillStyle = power.color;
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(power.emoji, power.x, power.y);
+
+        // Circular bounding box
+        ctx.strokeStyle = power.color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(power.x, power.y, 10, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Paddle intercept
+        if (
+          power.y + 10 >= engine.paddle.y &&
+          power.y - 10 <= engine.paddle.y + engine.paddle.height &&
+          power.x >= engine.paddle.x &&
+          power.x <= engine.paddle.x + engine.paddle.width
+        ) {
+          // Collected!
+          engine.powerups.splice(pIdx, 1);
+          applyPowerup(power.type);
+        }
+      });
+
+      // Remove offscreen powerups
+      engine.powerups = engine.powerups.filter(p => p.y < 480);
+
+      // 7. PARTICLES RENDER
+      engine.particles.forEach((part, pIdx) => {
+        part.x += part.dx;
+        part.y += part.dy;
+        part.alpha -= part.decay;
+
+        ctx.fillStyle = part.color;
+        ctx.globalAlpha = part.alpha;
+        ctx.fillRect(part.x, part.y, part.size, part.size);
+        ctx.globalAlpha = 1.0; // reset
+
+        if (part.alpha <= 0) {
+          engine.particles.splice(pIdx, 1);
+        }
+      });
+
+      ctx.restore(); // restores state from shake translate
+
+      animId = requestAnimationFrame(gameLoop);
+    };
+
+    // Helper functions inside loop scope
+    const spawnPowerup = (x: number, y: number) => {
+      const engine = engineRef.current;
+      const types: ('multiball' | 'wide' | 'laser' | 'shield')[] = ['multiball', 'wide', 'laser', 'shield'];
+      const type = types[Math.floor(Math.random() * types.length)];
+
+      let emoji = '🪩';
+      let color = '#22c55e';
+      if (type === 'wide') {
+        emoji = '📏';
+        color = '#3b82f6';
+      } else if (type === 'laser') {
+        emoji = '🔫';
+        color = '#ef4444';
+      } else if (type === 'shield') {
+        emoji = '🛡️';
+        color = '#eab308';
+      }
+
+      engine.powerups.push({
+        x,
+        y,
+        width: 20,
+        height: 20,
+        dy: 1.8,
+        type,
+        emoji,
+        color
+      });
+    };
+
+    const applyPowerup = (type: 'multiball' | 'wide' | 'laser' | 'shield') => {
+      const engine = engineRef.current;
+      playSound('powerup');
+
+      if (type === 'multiball') {
+        toast.success("Multi-Ball geactiveerd! 🪩");
+        const baseBall = engine.balls[0] || { x: 240, y: 400, dx: 3, dy: -3, radius: 6, speed: 5 };
+        // Add 2 extra balls
+        engine.balls.push(
+          {
+            x: baseBall.x,
+            y: baseBall.y,
+            dx: baseBall.dx + (Math.random() - 0.5) * 2,
+            dy: -Math.abs(baseBall.dy),
+            radius: 6,
+            speed: baseBall.speed
+          },
+          {
+            x: baseBall.x,
+            y: baseBall.y,
+            dx: baseBall.dx - (Math.random() - 0.5) * 2,
+            dy: -Math.abs(baseBall.dy),
+            radius: 6,
+            speed: baseBall.speed
+          }
+        );
+      } else if (type === 'wide') {
+        toast.success("Bredere Paddle! 📏");
+        engine.paddle.targetWidth = 130;
+        // Reset after 10 seconds
+        setTimeout(() => {
+          if (gameState === 'playing') {
+            engine.paddle.targetWidth = 80;
+          }
+        }, 10000);
+      } else if (type === 'laser') {
+        toast.success("Lasers Geladen! Druk SPATIE om lasers te schieten! 🔫💥", { duration: 4000 });
+        engine.laserTimer = 500; // ~8 seconds
+      } else if (type === 'shield') {
+        toast.success("Schild Actief! 🛡️");
+        engine.hasShield = true;
+      }
+    };
+
+    animId = requestAnimationFrame(gameLoop);
+    return () => cancelAnimationFrame(animId);
+  }, [gameState]);
+
+  return (
+    <div className="flex flex-col items-center bg-zinc-900 border border-zinc-800 p-6 rounded-[2.5rem] w-full max-w-md shadow-2xl relative overflow-hidden" id="breakout_game_wrapper" ref={containerRef}>
+      <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full flex items-center justify-between mb-4 pb-3 border-b border-zinc-800 relative z-10">
+        <button
+          onClick={onBack}
+          className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold uppercase cursor-pointer border border-transparent hover:border-zinc-800"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Terug
+        </button>
+
+        <div className="text-center">
+          <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono flex items-center gap-1">
+            🧱 Retro Breakout
+          </h3>
+          <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">
+            Level {level} • Lives: {"❤️".repeat(Math.max(0, lives))}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {gameState === 'playing' && (
+            <button
+              onClick={() => setIsPaused(!isPaused)}
+              className="p-1.5 bg-zinc-800 hover:bg-zinc-750 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer border border-zinc-700/50"
+            >
+              {isPaused ? 'Hervat' : 'Pauze'}
+            </button>
+          )}
+          <span className="text-[10px] font-black font-mono px-2.5 py-1 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20">
+            {highScore} MAX
+          </span>
+        </div>
+      </div>
+
+      <div className="relative aspect-square w-full rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden flex items-center justify-center">
+        <canvas
+          ref={canvasRef}
+          onPointerMove={handlePointerMove}
+          width={480}
+          height={480}
+          className="w-full h-full block"
+          id="breakout_canvas"
+        />
+
+        {/* Start Game Overlay */}
+        {gameState === 'idle' && (
+          <div className="absolute inset-0 bg-zinc-950/95 backdrop-blur-xs flex flex-col items-center justify-center text-center p-5">
+            <motion.div
+              animate={{ y: [0, -6, 0] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="w-14 h-14 bg-gradient-to-tr from-purple-400 to-indigo-500 rounded-2xl flex items-center justify-center text-white text-2xl font-extrabold shadow-lg shadow-purple-500/20 mb-3"
+            >
+              🧱
+            </motion.div>
+            <h4 className="text-lg font-black text-white uppercase tracking-tight">RETRO BREAKOUT</h4>
+            <p className="text-[10px] text-zinc-400 max-w-[260px] mt-1.5 leading-relaxed">
+              Sleep de paddle met je muis/vinger of gebruik <span className="text-purple-400 font-bold">A/D</span>. Schiet lasers met de <span className="text-purple-400 font-bold">SPATIEBALK</span>!
+            </p>
+
+            <button
+              onClick={startGame}
+              className="mt-4 px-5 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest cursor-pointer shadow-lg shadow-purple-500/25 active:scale-95 transition-all"
+            >
+              🎮 SPEEL STARTEN
+            </button>
+
+            {/* REAL-TIME BREAKOUT SCOREBOARD */}
+            <div className="mt-4 w-full max-w-[260px] bg-zinc-900/65 p-2.5 rounded-xl border border-zinc-800 text-left">
+              <h5 className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                🏆 TOP BREAKOUT SPELERS
+              </h5>
+              {loadingLeaderboard ? (
+                <p className="text-[9px] text-zinc-500 animate-pulse">Laden...</p>
+              ) : breakoutLeaderboard.length === 0 ? (
+                <p className="text-[9px] text-zinc-500">Geen highscores bekend.</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {breakoutLeaderboard.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-[9px] text-zinc-300 font-mono">
+                      <span className="truncate max-w-[170px]"><span className="text-zinc-500 font-bold">{idx + 1}.</span> {item.name}</span>
+                      <span className="font-bold text-cyan-400">{item.score}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Game Over Overlay */}
+        {gameState === 'gameover' && (
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-xs flex flex-col items-center justify-center text-center p-5">
+            <h4 className="text-red-500 text-lg font-black uppercase tracking-widest animate-pulse">💥 GAME OVER 💥</h4>
+            <p className="text-zinc-400 text-xs mt-1">Je behaalde een score van <span className="text-white font-black">{score}</span></p>
+
+            {score >= highScore && score > 0 && (
+              <span className="mt-2 text-[9px] font-black uppercase bg-yellow-500/15 border border-yellow-500/30 px-2.5 py-0.5 text-yellow-500 rounded-full animate-bounce">
+                👑 NIEUWE HIGHSCORE!
+              </span>
+            )}
+
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={startGame}
+                className="px-4 py-2 bg-white text-zinc-950 hover:bg-zinc-200 rounded-xl font-black text-[10px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all shadow-md"
+              >
+                🔄 Opnieuw
+              </button>
+
+              {onShareHighScoreOpen && score > 0 && (
+                <button
+                  onClick={() => onShareHighScoreOpen('breakout', score)}
+                  className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer shadow-lg active:scale-95 transition-all"
+                >
+                  <Trophy className="w-3.5 h-3.5" /> Deel
+                </button>
+              )}
+            </div>
+
+            {/* REAL-TIME BREAKOUT SCOREBOARD ON GAMEOVER */}
+            <div className="mt-4 w-full max-w-[260px] bg-zinc-900/65 p-2.5 rounded-xl border border-zinc-800 text-left">
+              <h5 className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                🏆 TOP BREAKOUT SPELERS
+              </h5>
+              {loadingLeaderboard ? (
+                <p className="text-[9px] text-zinc-500 animate-pulse">Laden...</p>
+              ) : breakoutLeaderboard.length === 0 ? (
+                <p className="text-[9px] text-zinc-500">Geen highscores bekend.</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {breakoutLeaderboard.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-[9px] text-zinc-300 font-mono">
+                      <span className="truncate max-w-[170px]"><span className="text-zinc-500 font-bold">{idx + 1}.</span> {item.name}</span>
+                      <span className="font-bold text-cyan-400">{item.score}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 w-full text-center">
+        <p className="text-[10px] text-zinc-500 uppercase tracking-widest leading-relaxed">
+          TIP: Pak power-ups zoals Multi-ball (🪩), Bredere Paddle (📏) en Lasers (🔫) om de stenen sneller kapot te knallen!
+        </p>
+      </div>
+    </div>
+  );
+}
+
 

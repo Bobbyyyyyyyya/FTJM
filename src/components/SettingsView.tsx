@@ -1,12 +1,11 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, CloudOff, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
 import { rateLimiter } from '../utils/rateLimiter';
-import { secureLocalStorage } from '../utils/encryption';
 import CryptoJS from 'crypto-js';
-import { UserProfile, CustomTheme, NotificationSettings, User } from '../types';
-import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS } from '../constants';
+import { UserProfile, CustomTheme, NotificationSettings, User, Report } from '../types';
+import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, isVerifiedEmail, isBetaTester } from '../constants';
 import { formatDate, convertEmoticons, maskEmail, parseAdminNotes } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
 import { supabase } from '../utils/supabase';
@@ -15,8 +14,9 @@ import { Language, t } from '../utils/translations';
 interface SettingsViewProps {
   user: User;
   profile: UserProfile | null;
-  settingsTab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security';
-  setSettingsTab: (tab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security') => void;
+  setProfile?: React.Dispatch<React.SetStateAction<UserProfile | null>>;
+  settingsTab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security' | 'discord';
+  setSettingsTab: (tab: 'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security' | 'discord') => void;
   isAdmin: boolean;
   displayNameInput: string;
   setDisplayNameInput: (input: string) => void;
@@ -69,6 +69,9 @@ interface SettingsViewProps {
   handleCancelMaintenance?: () => void;
   language: Language;
   onChangeLanguage: (lang: Language) => void;
+  reports?: Report[];
+  onUpdateReportStatus?: (reportId: string, status: string) => Promise<void>;
+  onDeleteReport?: (reportId: string) => Promise<void>;
 }
 
 const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: any }> = {
@@ -415,6 +418,7 @@ const compressImage = (file: File, maxWidth: number, maxHeight: number, quality:
 export const SettingsView: React.FC<SettingsViewProps> = ({
   user,
   profile,
+  setProfile,
   settingsTab,
   setSettingsTab,
   isAdmin,
@@ -468,11 +472,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   handleScheduleMaintenance,
   handleCancelMaintenance,
   language,
-  onChangeLanguage
+  onChangeLanguage,
+  reports = [],
+  onUpdateReportStatus,
+  onDeleteReport
 }) => {
-  const [adminSubTab, setAdminSubTab] = React.useState<'overview' | 'users' | 'security'>('overview');
+  const [adminSubTab, setAdminSubTab] = React.useState<'overview' | 'users' | 'reports' | 'security'>('overview');
   const [adminUserSearch, setAdminUserSearch] = React.useState('');
   const [adminWhitelistSearch, setAdminWhitelistSearch] = React.useState('');
+  const [reportFilter, setReportFilter] = React.useState<'all' | 'open' | 'reviewed' | 'resolved'>('all');
+
+
 
   // Warning Modal State
   const [showWarnModal, setShowWarnModal] = React.useState(false);
@@ -647,6 +657,189 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setPasskeys(updatedList);
     toast.success("Passkey is verwijderd van dit apparaat.");
   };
+
+  // Password Change State
+  const [currentPasswordInput, setCurrentPasswordInput] = React.useState('');
+  const [newPasswordInput, setNewPasswordInput] = React.useState('');
+  const [confirmNewPasswordInput, setConfirmNewPasswordInput] = React.useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
+  const [showNewPassword, setShowNewPassword] = React.useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = React.useState(false);
+  const [changingPassword, setChangingPassword] = React.useState(false);
+
+  const handleChangePassword = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
+    const currentTrimmed = currentPasswordInput.trim();
+    const newTrimmed = newPasswordInput.trim();
+    const confirmTrimmed = confirmNewPasswordInput.trim();
+
+    if (!currentTrimmed) {
+      toast.error("Voer eerst je huidige wachtwoord in.");
+      return;
+    }
+    if (!newTrimmed) {
+      toast.error("Voer een nieuw wachtwoord in.");
+      return;
+    }
+    if (newTrimmed.length < 6) {
+      toast.error("Het nieuwe wachtwoord moet minimaal 6 tekens lang zijn.");
+      return;
+    }
+    if (newTrimmed !== confirmTrimmed) {
+      toast.error("De nieuwe wachtwoorden komen niet overeen.");
+      return;
+    }
+    if (currentTrimmed === newTrimmed) {
+      toast.error("Het nieuwe wachtwoord moet anders zijn dan je huidige wachtwoord.");
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      // 1. Controleer eerst of het huidige wachtwoord correct is
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email!,
+        password: currentTrimmed,
+      });
+
+      if (authError) {
+        toast.error("Huidig wachtwoord is onjuist: " + (authError.message || "Verificatie mislukt"));
+        setChangingPassword(false);
+        return;
+      }
+
+      // 2. Controleer of er een Passkey actief is voor deze gebruiker op dit apparaat
+      const rawKeys = localStorage.getItem('ftjm_device_passkeys');
+      const passkeyList = rawKeys ? JSON.parse(rawKeys) : [];
+      const userPasskey = passkeyList.find((pk: any) => pk.email?.toLowerCase() === user.email?.toLowerCase());
+
+      if (userPasskey) {
+        toast.info("Huidig wachtwoord geverifieerd. Bevestig nu met je Passkey...");
+        if (!window.PublicKeyCredential) {
+          throw new Error("WebAuthn (Passkeys) wordt niet ondersteund in deze browser om de biometrische controle te voltooien.");
+        }
+
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        const assertion = await navigator.credentials.get({
+          publicKey: {
+            challenge: challenge,
+            timeout: 60000,
+            userVerification: "required"
+          }
+        }) as PublicKeyCredential | null;
+
+        if (!assertion) {
+          throw new Error("Passkey verificatie geannuleerd.");
+        }
+
+        const matchingRecord = passkeyList.find(
+          (pk: any) => pk.credentialId === assertion.id && pk.email?.toLowerCase() === user.email?.toLowerCase()
+        );
+
+        if (!matchingRecord) {
+          throw new Error("Deze passkey hoort niet bij dit account.");
+        }
+      }
+
+      // 3. Update het wachtwoord in Supabase Auth
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newTrimmed,
+      });
+
+      if (updateError) {
+        throw new Error(updateError.message || "Fout bij het updaten van het wachtwoord.");
+      }
+
+      // 4. Als er een passkey gekoppeld is, update de versleutelde credentials in localStorage zodat inloggen met passkey blijft werken
+      if (userPasskey) {
+        const secretKey = userPasskey.credentialId + "_secure_passkey";
+        const newEncryptedPayload = CryptoJS.AES.encrypt(
+          JSON.stringify({ email: user.email, password: newTrimmed }),
+          secretKey
+        ).toString();
+
+        const updatedList = passkeyList.map((pk: any) => {
+          if (pk.credentialId === userPasskey.credentialId) {
+            return { ...pk, payload: newEncryptedPayload, updatedAt: new Date().toISOString() };
+          }
+          return pk;
+        });
+        localStorage.setItem('ftjm_device_passkeys', JSON.stringify(updatedList));
+        setPasskeys(updatedList);
+      }
+
+      toast.success("Wachtwoord succesvol gewijzigd!");
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmNewPasswordInput('');
+    } catch (err: any) {
+      console.error("Change password error:", err);
+      toast.error(err.message || "Er is een fout opgetreden bij het wijzigen van je wachtwoord.");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const [testingWebhook, setTestingWebhook] = React.useState(false);
+  const handleTestDiscordWebhook = async () => {
+    const url = notificationSettings.discord_webhook_url;
+    if (!url || !url.startsWith('https://discord.com/api/webhooks/')) {
+      toast.error("Voer eerst een geldige Discord Webhook URL in.");
+      return;
+    }
+
+    setTestingWebhook(true);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          embeds: [
+            {
+              title: "✅ Discord Webhook Test",
+              description: "Gefeliciteerd! De Discord notificatie-integratie is correct geconfigureerd. 🎉\nJe ontvangt nu meldingen van de app direct op Discord!",
+              color: 3066993,
+              fields: [
+                {
+                  name: "Gebruiker",
+                  value: profile?.display_name || user.email || "Onbekend",
+                  inline: true
+                },
+                {
+                  name: "Status",
+                  value: "Verbonden & Werkend 🚀",
+                  inline: true
+                }
+              ],
+              timestamp: new Date().toISOString()
+            }
+          ]
+        })
+      });
+
+      if (response.ok) {
+        toast.success("Testbericht succesvol verzonden naar Discord! Check je Discord kanaal. 🎉");
+      } else {
+        toast.error(`Discord API reageerde met status: ${response.status}`);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Fout bij het verbinden met de Discord Webhook. Controleer je internetverbinding en de URL.");
+    } finally {
+      setTestingWebhook(false);
+    }
+  };
+
+  const filteredReports = reports.filter(report => {
+    if (reportFilter === 'all') return true;
+    if (reportFilter === 'open') {
+      return report.status === 'open' || report.status === 'pending';
+    }
+    return report.status === reportFilter;
+  });
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -1198,8 +1391,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
-                                if (file.size > 2.5 * 1024 * 1024) {
-                                  toast.error("Geluidsbestand is te groot (maximaal 2.5MB).");
+                                if (file.size > 4 * 1024 * 1024) {
+                                  toast.error("Geluidsbestand is te groot (maximaal 4MB).");
                                   return;
                                 }
                                 
@@ -1259,6 +1452,92 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="space-y-6 pt-6 border-t border-app-border animate-fadeIn">
+                  <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
+                    <span className="text-lg">🤖</span>
+                    Discord Webhook Integratie
+                  </h4>
+                  
+                  <div className="bg-app-accent/30 p-6 rounded-2xl border border-app-border space-y-4">
+                    <p className="text-xs text-app-muted font-medium leading-relaxed">
+                      Koppel een Discord kanaal via een webhook om direct meldingen te ontvangen op Discord wanneer er nieuwe berichten zijn! Handig om pings te ontvangen op je pc of mobiel.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-1.5 ml-1">Discord Webhook URL</label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input 
+                            type="password"
+                            value={notificationSettings.discord_webhook_url || ''}
+                            onChange={(e) => setNotificationSettings({
+                              ...notificationSettings,
+                              discord_webhook_url: e.target.value
+                            })}
+                            placeholder="https://discord.com/api/webhooks/..."
+                            className="flex-1 px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink transition-all text-app-ink font-mono"
+                          />
+                          <button 
+                            type="button"
+                            onClick={handleTestDiscordWebhook}
+                            disabled={testingWebhook || !notificationSettings.discord_webhook_url}
+                            className="px-4 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all shadow-md shrink-0 flex items-center justify-center gap-1.5"
+                          >
+                            {testingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🔌'}
+                            Test Verbinding
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                        <div 
+                          className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 cursor-pointer select-none ${
+                            notificationSettings.discord_notify_general 
+                              ? 'bg-app-accent border-app-ink/30' 
+                              : 'bg-app-card/65 border-app-border hover:bg-app-accent/20'
+                          }`}
+                          onClick={() => setNotificationSettings({
+                            ...notificationSettings,
+                            discord_notify_general: !notificationSettings.discord_notify_general
+                          })}
+                        >
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-bold text-app-ink">General Chat</span>
+                            <p className="text-[10px] text-app-muted font-medium">Berichten in de openbare chat doorsturen</p>
+                          </div>
+                          <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                            notificationSettings.discord_notify_general ? 'bg-app-ink border-app-ink text-app-bg' : 'border-app-muted'
+                          }`}>
+                            {notificationSettings.discord_notify_general && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                        </div>
+
+                        <div 
+                          className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 cursor-pointer select-none ${
+                            notificationSettings.discord_notify_dm 
+                              ? 'bg-app-accent border-app-ink/30' 
+                              : 'bg-app-card/65 border-app-border hover:bg-app-accent/20'
+                          }`}
+                          onClick={() => setNotificationSettings({
+                            ...notificationSettings,
+                            discord_notify_dm: !notificationSettings.discord_notify_dm
+                          })}
+                        >
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-bold text-app-ink">Privéberichten (DM)</span>
+                            <p className="text-[10px] text-app-muted font-medium">Directe berichten en groepschats doorsturen</p>
+                          </div>
+                          <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                            notificationSettings.discord_notify_dm ? 'bg-app-ink border-app-ink text-app-bg' : 'border-app-muted'
+                          }`}>
+                            {notificationSettings.discord_notify_dm && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="pt-6 border-t border-app-border flex justify-end">
@@ -1463,14 +1742,76 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       {/* Wallpaper & Pattern */}
                       <div className="p-6 bg-app-bg rounded-2xl border border-app-border space-y-6">
                         <div className="space-y-4">
-                          <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-2 ml-1">Wallpaper Backdrop</label>
-                          <input 
-                            type="text"
-                            value={customTheme.wallpaper || ''}
-                            onChange={(e) => setCustomTheme({...customTheme, wallpaper: e.target.value})}
-                            placeholder="Direct Image URL (png/jpg/webp)"
-                            className="w-full px-4 py-3 bg-app-card border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink transition-all text-sm text-app-ink"
-                          />
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1">
+                            <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide ml-1">Wallpaper / Achtergrond</label>
+                            <div className="flex flex-wrap items-center gap-1.5 ml-1 sm:ml-0 text-[10px]">
+                              <span className="text-app-muted font-bold uppercase tracking-wider flex items-center gap-1">
+                                <Link className="w-2.5 h-2.5" /> Of via:
+                              </span>
+                              <a 
+                                href="https://postimages.org/" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                              >
+                                postimages.org
+                              </a>
+                              <a 
+                                href="https://imgbb.com/" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-cyan-500 hover:text-cyan-400 font-bold transition-colors uppercase tracking-wider flex items-center gap-0.5 bg-cyan-950/20 px-1.5 py-0.5 rounded border border-cyan-800/30"
+                              >
+                                imgbb.com
+                              </a>
+                            </div>
+                          </div>
+                          
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <div className="relative flex-1">
+                              <input 
+                                type="text"
+                                value={customTheme.wallpaper || ''}
+                                onChange={(e) => setCustomTheme({...customTheme, wallpaper: e.target.value})}
+                                placeholder="Direct Image URL (png/jpg/webp) of upload..."
+                                className="w-full pl-4 pr-10 py-3 bg-app-card border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink transition-all text-sm text-app-ink"
+                              />
+                              {customTheme.wallpaper && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomTheme({ ...customTheme, wallpaper: '' })}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-red-500 transition-colors"
+                                  title="Achtergrond wissen"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                            <label className="flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl cursor-pointer transition-all shadow-md text-xs sm:text-sm shrink-0 select-none">
+                              <Upload className="w-4 h-4" />
+                              <span>Achtergrond Uploaden</span>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden" 
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  toast.promise(
+                                    compressImage(file, 1920, 1080, 0.75).then((dataUrl) => {
+                                      setCustomTheme({ ...customTheme, wallpaper: dataUrl });
+                                      return "Achtergrond succesvol geladen!";
+                                    }),
+                                    {
+                                      loading: "Achtergrond optimaliseren...",
+                                      success: (msg) => msg,
+                                      error: "Kon achtergrond niet verwerken."
+                                    }
+                                  );
+                                }}
+                              />
+                            </label>
+                          </div>
                           {customTheme.wallpaper && (
                             <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2">
                               <div>
@@ -1638,6 +1979,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           )}
 
 
+
+
+
           {settingsTab === 'app' && (
             <motion.div
               key="app-settings"
@@ -1789,7 +2133,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-app-muted">Versie</span>
-                      <span className="font-bold text-app-ink">1.8.0</span>
+                      <span className="font-bold text-app-ink">2.4.5</span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-app-muted">Platform</span>
@@ -1825,140 +2169,277 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm space-y-8"
+              className="space-y-8"
             >
-              <div className="flex items-center gap-4 border-b border-app-border pb-6">
-                <div className="w-16 h-16 bg-app-accent rounded-2xl flex items-center justify-center">
-                  <Fingerprint className="w-8 h-8 text-cyan-500" />
+              {/* Header */}
+              <div className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm">
+                <div className="flex items-center gap-4 border-b border-app-border pb-6">
+                  <div className="w-16 h-16 bg-app-accent rounded-2xl flex items-center justify-center">
+                    <ShieldCheck className="w-8 h-8 text-cyan-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Beveiliging & Wachtwoord</h3>
+                    <p className="text-app-muted text-sm font-medium">Beheer je accountwachtwoord en biometrisch inloggen met Passkeys.</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Beveiliging</h3>
-                  <p className="text-app-muted text-sm font-medium">Beheer biometrisch inloggen met TouchID, FaceID of Windows Hello via Passkeys.</p>
+
+                {/* Password Change Card */}
+                <div className="pt-6 space-y-6">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <Key className="w-5 h-5 text-cyan-500" />
+                      <h4 className="text-lg font-bold text-app-ink uppercase tracking-tight">Wachtwoord Wijzigen</h4>
+                    </div>
+                    {passkeys.some(p => p.email.toLowerCase() === user.email?.toLowerCase()) ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <Fingerprint className="w-3.5 h-3.5" />
+                        Passkey Verificatie Actief
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-app-accent text-app-muted border border-app-border">
+                        <LockIcon className="w-3.5 h-3.5" />
+                        Wachtwoordbeveiliging
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-app-accent/30 border border-app-border text-xs text-app-muted leading-relaxed space-y-1">
+                    <p className="font-bold text-app-ink flex items-center gap-1.5">
+                      <Info className="w-4 h-4 text-cyan-500 shrink-0" />
+                      Veiligheidsprocedure
+                    </p>
+                    <p>
+                      Voer ter authenticatie eerst je <strong>huidige wachtwoord</strong> in. {passkeys.some(p => p.email.toLowerCase() === user.email?.toLowerCase()) ? 'Omdat er een biometrische Passkey aan je account is gekoppeld, volgt direct hierna een vingerafdruk- of gezichtsscan om de wijziging definitief te autoriseren.' : 'Nadat je huidige wachtwoord is gevalideerd, wordt je nieuwe wachtwoord direct geactiveerd.'}
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleChangePassword} className="space-y-4 max-w-xl">
+                    <div>
+                      <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wider mb-2 ml-1">
+                        Huidig Wachtwoord
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showCurrentPassword ? "text" : "password"}
+                          placeholder="••••••••••••"
+                          value={currentPasswordInput}
+                          onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                          className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl text-sm text-app-ink focus:outline-none focus:ring-2 focus:ring-app-ink transition-all font-mono pr-12"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-app-ink transition-colors p-1"
+                        >
+                          {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wider mb-2 ml-1">
+                          Nieuw Wachtwoord (min. 6 tekens)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showNewPassword ? "text" : "password"}
+                            placeholder="••••••••••••"
+                            value={newPasswordInput}
+                            onChange={(e) => setNewPasswordInput(e.target.value)}
+                            className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl text-sm text-app-ink focus:outline-none focus:ring-2 focus:ring-app-ink transition-all font-mono pr-12"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-app-ink transition-colors p-1"
+                          >
+                            {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wider mb-2 ml-1">
+                          Herhaal Nieuw Wachtwoord
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmNewPassword ? "text" : "password"}
+                            placeholder="••••••••••••"
+                            value={confirmNewPasswordInput}
+                            onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
+                            className="w-full px-4 py-3 bg-app-bg border border-app-border rounded-xl text-sm text-app-ink focus:outline-none focus:ring-2 focus:ring-app-ink transition-all font-mono pr-12"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-app-ink transition-colors p-1"
+                          >
+                            {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={changingPassword || !currentPasswordInput.trim() || !newPasswordInput.trim() || !confirmNewPasswordInput.trim()}
+                        className="w-full sm:w-auto px-7 py-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg active:scale-95 text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {changingPassword ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Wachtwoord verifiëren & bijwerken...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LockIcon className="w-4 h-4" />
+                            <span>Wachtwoord Wijzigen</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </div>
 
-              <div className="space-y-6">
-                {!window.PublicKeyCredential ? (
-                  <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-2xl text-xs flex items-center gap-3">
-                    <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
-                    <div>
-                      <p className="font-bold">Passkeys worden niet ondersteund</p>
-                      <p className="text-[11px] text-amber-300/80 mt-0.5">Je huidige browser of netwerkomgeving (zoals een cross-origin iframe) ondersteunt de WebAuthn API niet. Open de applicatie in een nieuw fysiek tabblad via HTTPS om passkeys te registreren.</p>
-                    </div>
+              {/* Passkey (WebAuthn) Card */}
+              <div className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm space-y-6">
+                <div className="flex items-center gap-4 border-b border-app-border pb-6">
+                  <div className="w-12 h-12 bg-app-accent rounded-2xl flex items-center justify-center">
+                    <Fingerprint className="w-6 h-6 text-cyan-500" />
                   </div>
-                ) : (
-                  <>
-                    {passkeys.some(p => p.email.toLowerCase() === user.email?.toLowerCase()) ? (
-                      (() => {
-                        const userPasskey = passkeys.find(p => p.email.toLowerCase() === user.email?.toLowerCase());
-                        return (
-                          <div className="border border-emerald-500/20 bg-emerald-500/5 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-start gap-4">
-                              <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center shrink-0">
-                                <ShieldCheck className="w-6 h-6 text-emerald-400" />
-                              </div>
-                              <div className="space-y-1">
-                                <h4 className="font-bold text-app-ink text-sm flex items-center gap-1.5">
-                                  Passkey is Actief
-                                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Dit apparaat</span>
-                                </h4>
-                                <p className="text-xs text-app-muted">Gekoppeld aan e-mailadres: <span className="font-mono text-app-ink font-semibold">{user.email}</span></p>
-                                <p className="text-[11px] text-app-muted">Geregistreerd op: {userPasskey?.createdAt ? new Date(userPasskey.createdAt).toLocaleString('nl-NL') : 'Onbekende datum'}</p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => handleRemovePasskeyForEmail(user.email!)}
-                              className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 text-rose-300 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Passkey Verwijderen
-                            </button>
-                          </div>
-                        );
-                      })()
-                    ) : (
-                      <div className="border border-app-border bg-app-accent/20 rounded-2xl p-6 space-y-4">
-                        <div className="flex items-start gap-4">
-                          <div className="w-12 h-12 bg-app-accent rounded-xl flex items-center justify-center shrink-0">
-                            <Fingerprint className="w-6 h-6 text-app-ink" />
-                          </div>
-                          <div className="space-y-1">
-                            <h4 className="font-bold text-app-ink text-sm">Geen passkey geactiveerd</h4>
-                            <p className="text-xs text-app-muted leading-relaxed">
-                              Je hebt momenteel geen passkey geconfigureerd op dit apparaat. Door een passkey te koppelen kun je de volgende keer direct en veilig inloggen met je biometrische gegevens (vingerafdruk of gezichtsscan) zonder handmatig je wachtwoord in te voeren.
-                            </p>
-                          </div>
-                        </div>
+                  <div>
+                    <h4 className="text-xl font-bold text-app-ink uppercase tracking-tight">Biometrische Passkeys (WebAuthn)</h4>
+                    <p className="text-app-muted text-xs font-medium">Log in of autoriseer acties met TouchID, FaceID of Windows Hello op dit apparaat.</p>
+                  </div>
+                </div>
 
-                        {!showPasswordPrompt ? (
-                          <button
-                            onClick={() => {
-                              setShowPasswordPrompt(true);
-                              setPasswordConfirm('');
-                            }}
-                            className="px-5 py-3 bg-app-ink text-app-bg hover:bg-app-ink/90 font-bold rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
-                          >
-                            <Plus className="w-4 h-4" />
-                            Passkey registreren op dit apparaat
-                          </button>
-                        ) : (
-                          <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="border-t border-app-border pt-4 mt-2 space-y-4"
-                          >
-                            <div className="bg-app-accent/40 rounded-xl p-4 text-xs text-app-muted leading-relaxed space-y-1.5 border border-app-border">
-                              <p className="font-bold text-app-ink flex items-center gap-2">
-                                <Key className="w-4 h-4 text-cyan-500" /> Wachtwoord-verificatie vereist
-                              </p>
-                              <p>Om je accountgegevens veilig en versleuteld lokaal op te slaan, voer je ter controle je huidige account-wachtwoord in.</p>
-                            </div>
-
-                            <div className="flex flex-col sm:flex-row gap-3 items-end">
-                              <div className="flex-1 w-full space-y-1.5">
-                                <label className="text-[10px] font-bold text-app-muted uppercase tracking-wider">
-                                  Voer je huidige wachtwoord in
-                                </label>
-                                <input
-                                  type="password"
-                                  placeholder="••••••••••••"
-                                  value={passwordConfirm}
-                                  onChange={(e) => setPasswordConfirm(e.target.value)}
-                                  className="w-full px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm text-app-ink focus:outline-none focus:border-cyan-400 transition-all font-mono"
-                                />
-                              </div>
-                              <div className="flex gap-2 shrink-0 w-full sm:w-auto">
-                                <button
-                                  onClick={() => setShowPasswordPrompt(false)}
-                                  className="flex-1 sm:flex-none px-4 py-3 bg-app-accent hover:bg-app-border text-app-ink font-bold rounded-xl text-xs transition-colors cursor-pointer"
-                                >
-                                  Annuleren
-                                </button>
-                                <button
-                                  disabled={registeringPasskey}
-                                  onClick={handleAddPasskey}
-                                  className="flex-1 sm:flex-none px-5 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                                >
-                                  {registeringPasskey ? (
-                                    <>
-                                      <Loader2 className="w-4 h-4 animate-spin animate-infinite" />
-                                      Registreren...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Fingerprint className="w-4 h-4" />
-                                      Scan biometrie & activeer
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
+                <div className="space-y-6">
+                  {!window.PublicKeyCredential ? (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-2xl text-xs flex items-center gap-3">
+                      <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
+                      <div>
+                        <p className="font-bold">Passkeys worden niet ondersteund</p>
+                        <p className="text-[11px] text-amber-300/80 mt-0.5">Je huidige browser of netwerkomgeving (zoals een cross-origin iframe) ondersteunt de WebAuthn API niet. Open de applicatie in een nieuw fysiek tabblad via HTTPS om passkeys te registreren.</p>
                       </div>
-                    )}
-                  </>
-                )}
+                    </div>
+                  ) : (
+                    <>
+                      {passkeys.some(p => p.email.toLowerCase() === user.email?.toLowerCase()) ? (
+                        (() => {
+                          const userPasskey = passkeys.find(p => p.email.toLowerCase() === user.email?.toLowerCase());
+                          return (
+                            <div className="border border-emerald-500/20 bg-emerald-500/5 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div className="flex items-start gap-4">
+                                <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center shrink-0">
+                                  <ShieldCheck className="w-6 h-6 text-emerald-400" />
+                                </div>
+                                <div className="space-y-1">
+                                  <h4 className="font-bold text-app-ink text-sm flex items-center gap-1.5">
+                                    Passkey is Actief
+                                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Dit apparaat</span>
+                                  </h4>
+                                  <p className="text-xs text-app-muted">Gekoppeld aan e-mailadres: <span className="font-mono text-app-ink font-semibold">{user.email}</span></p>
+                                  <p className="text-[11px] text-app-muted">Geregistreerd op: {userPasskey?.createdAt ? new Date(userPasskey.createdAt).toLocaleString('nl-NL') : 'Onbekende datum'}</p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleRemovePasskeyForEmail(user.email!)}
+                                className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 text-rose-300 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Passkey Verwijderen
+                              </button>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <div className="border border-app-border bg-app-accent/20 rounded-2xl p-6 space-y-4">
+                          <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 bg-app-accent rounded-xl flex items-center justify-center shrink-0">
+                              <Fingerprint className="w-6 h-6 text-app-ink" />
+                            </div>
+                            <div className="space-y-1">
+                              <h4 className="font-bold text-app-ink text-sm">Geen passkey geactiveerd</h4>
+                              <p className="text-xs text-app-muted leading-relaxed">
+                                Je hebt momenteel geen passkey geconfigureerd op dit apparaat. Door een passkey te koppelen kun je de volgende keer direct en veilig inloggen met je biometrische gegevens (vingerafdruk of gezichtsscan) zonder handmatig je wachtwoord in te voeren.
+                              </p>
+                            </div>
+                          </div>
+
+                          {!showPasswordPrompt ? (
+                            <button
+                              onClick={() => {
+                                setShowPasswordPrompt(true);
+                                setPasswordConfirm('');
+                              }}
+                              className="px-5 py-3 bg-app-ink text-app-bg hover:bg-app-ink/90 font-bold rounded-xl text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
+                            >
+                              <Plus className="w-4 h-4" />
+                              Passkey registreren op dit apparaat
+                            </button>
+                          ) : (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="border-t border-app-border pt-4 mt-2 space-y-4"
+                            >
+                              <div className="bg-app-accent/40 rounded-xl p-4 text-xs text-app-muted leading-relaxed space-y-1.5 border border-app-border">
+                                <p className="font-bold text-app-ink flex items-center gap-2">
+                                  <Key className="w-4 h-4 text-cyan-500" /> Wachtwoord-verificatie vereist
+                                </p>
+                                <p>Om je accountgegevens veilig en versleuteld lokaal op te slaan, voer je ter controle je huidige account-wachtwoord in.</p>
+                              </div>
+
+                              <div className="flex flex-col sm:flex-row gap-3 items-end">
+                                <div className="flex-1 w-full space-y-1.5">
+                                  <label className="text-[10px] font-bold text-app-muted uppercase tracking-wider">
+                                    Voer je huidige wachtwoord in
+                                  </label>
+                                  <input
+                                    type="password"
+                                    placeholder="••••••••••••"
+                                    value={passwordConfirm}
+                                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                                    className="w-full px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm text-app-ink focus:outline-none focus:border-cyan-400 transition-all font-mono"
+                                  />
+                                </div>
+                                <div className="flex gap-2 shrink-0 w-full sm:w-auto">
+                                  <button
+                                    onClick={() => setShowPasswordPrompt(false)}
+                                    className="flex-1 sm:flex-none px-4 py-3 bg-app-accent hover:bg-app-border text-app-ink font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                                  >
+                                    Annuleren
+                                  </button>
+                                  <button
+                                    disabled={registeringPasskey}
+                                    onClick={handleAddPasskey}
+                                    className="flex-1 sm:flex-none px-5 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                                  >
+                                    {registeringPasskey ? (
+                                      <>
+                                        <Loader2 className="w-4 h-4 animate-spin animate-infinite" />
+                                        Registreren...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Fingerprint className="w-4 h-4" />
+                                        Scan biometrie & activeer
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
@@ -2009,6 +2490,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {[
                     { id: 'overview', icon: Activity, label: 'Dashboard' },
                     { id: 'users', icon: UserIcon, label: 'Gebruikers' },
+                    { id: 'reports', icon: Flag, label: 'Meldingen' },
                     { id: 'security', icon: LockIcon, label: 'Audit & SPF' }
                   ].map(tab => (
                     <button
@@ -2179,7 +2661,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                     
                     {(() => {
-                      const notesData = parseAdminNotes(profile?.admin_notes);
+                      const notesData = parseAdminNotes(profile?.admin_notes, profile?.custom_theme);
                       let ownTelArray: any[] = notesData.telemetry;
                       if (ownTelArray.length === 0 && profile?.custom_theme && (profile.custom_theme as any).user_telemetry) {
                         const ut = (profile.custom_theme as any).user_telemetry;
@@ -2369,7 +2851,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         }
 
                         return filteredUsers.map(u => {
-                          const notesData = parseAdminNotes(u.admin_notes);
+                          const notesData = parseAdminNotes(u.admin_notes, u.custom_theme);
                           let telArray: any[] = notesData.telemetry;
                           if (telArray.length === 0 && u.custom_theme && (u.custom_theme as any).user_telemetry) {
                             const ut = (u.custom_theme as any).user_telemetry;
@@ -2395,6 +2877,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   <div className="min-w-0">
                                     <div className="text-xs font-bold text-app-ink uppercase tracking-tight truncate flex flex-wrap items-center gap-1.5">
                                       <span>{u.display_name}</span>
+                                      {isVerifiedEmail(u) && (
+                                        <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_6px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
+                                          <Check className="w-2 h-2 stroke-[4]" />
+                                        </span>
+                                      )}
+                                      {isBetaTester(u) && (
+                                        <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_6px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                                          <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />
+                                        </span>
+                                      )}
                                       {u.role === 'admin' && (
                                         <span className="text-[7.5px] font-extrabold uppercase bg-emerald-50 text-emerald-600 px-1 py-0.2 rounded font-sans border border-emerald-100">Admin</span>
                                       )}
@@ -2654,6 +3146,223 @@ CREATE TRIGGER tr_secure_profile_updates
                       <div className="text-[8.5px] font-bold text-rose-800 uppercase flex justify-between items-center bg-rose-150 p-2 rounded-lg">
                         <span>💡 Tip: Selecteer alles in het code-vak en kopieer direct naar de Supabase Console editor!</span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. REPORTS TAB */}
+              {adminSubTab === 'reports' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Reports Stats Summary Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-amber-50/40 border border-amber-200/60 rounded-2xl p-4 flex items-center justify-between">
+                      <div>
+                        <span className="text-[9px] font-black uppercase text-amber-800 tracking-wider">Open Meldingen</span>
+                        <h4 className="text-2xl font-black text-amber-900 mt-1">
+                          {reports?.filter(r => r.status === 'open' || r.status === 'pending').length || 0}
+                        </h4>
+                      </div>
+                      <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                        <Flag className="w-5 h-5 text-amber-600 animate-pulse" />
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50/40 border border-blue-200/60 rounded-2xl p-4 flex items-center justify-between">
+                      <div>
+                        <span className="text-[9px] font-black uppercase text-blue-800 tracking-wider">In Behandeling</span>
+                        <h4 className="text-2xl font-black text-blue-900 mt-1">
+                          {reports?.filter(r => r.status === 'reviewed').length || 0}
+                        </h4>
+                      </div>
+                      <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                        <Activity className="w-5 h-5 text-blue-600" />
+                      </div>
+                    </div>
+
+                    <div className="bg-emerald-50/40 border border-emerald-200/60 rounded-2xl p-4 flex items-center justify-between">
+                      <div>
+                        <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider">Afgehandeld</span>
+                        <h4 className="text-2xl font-black text-emerald-900 mt-1">
+                          {reports?.filter(r => r.status === 'resolved').length || 0}
+                        </h4>
+                      </div>
+                      <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+                        <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reports list wrapper */}
+                  <div className="bg-app-card rounded-3xl border border-app-border overflow-hidden">
+                    <div className="p-5 border-b border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-app-bg/10">
+                      <div>
+                        <h4 className="text-sm font-black text-app-ink uppercase tracking-tight">Rapportages & Meldingen</h4>
+                        <p className="text-[10px] text-app-muted mt-0.5">Overzicht van gerapporteerde berichten, media, of gebruikers.</p>
+                      </div>
+                      {/* Filter dropdown */}
+                      <div className="flex gap-2">
+                        <select
+                          value={reportFilter}
+                          onChange={(e) => setReportFilter(e.target.value as any)}
+                          className="px-3 py-1.5 bg-app-bg border border-app-border rounded-xl text-xs text-app-ink font-bold outline-none"
+                        >
+                          <option value="all">Alle meldingen</option>
+                          <option value="open">Alleen open / pending</option>
+                          <option value="reviewed">In behandeling</option>
+                          <option value="resolved">Afgehandeld</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-app-border max-h-[600px] overflow-y-auto custom-scrollbar">
+                      {filteredReports.length === 0 ? (
+                        <div className="p-12 text-center">
+                          <Flag className="w-10 h-10 text-app-muted/30 mx-auto mb-3" />
+                          <p className="text-xs text-app-muted font-bold uppercase tracking-wider">Geen meldingen gevonden</p>
+                          <p className="text-[10px] text-app-muted/80 mt-1">Er zijn momenteel geen meldingen die aan dit filter voldoen.</p>
+                        </div>
+                      ) : (
+                        filteredReports.map((report) => {
+                          const reporter = users.find(u => u.id === report.reporter_id);
+                          const reportedUser = users.find(u => u.id === report.reported_id);
+                          
+                          return (
+                            <div key={report.id} className="p-5 hover:bg-app-bg/25 transition-colors space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                {/* Left Section: Metadata, target, reason */}
+                                <div className="space-y-1.5">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded-md tracking-wider border ${
+                                      report.status === 'open' || report.status === 'pending'
+                                        ? 'bg-rose-50 text-rose-600 border-rose-200'
+                                        : report.status === 'reviewed'
+                                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                                        : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                    }`}>
+                                      {report.status}
+                                    </span>
+                                    <span className="px-2 py-0.5 bg-app-accent/80 text-[9px] font-black uppercase text-app-ink border border-app-border rounded-md tracking-wider">
+                                      Type: {report.target_type || (report.reported_post_id ? 'post' : 'overig')}
+                                    </span>
+                                    {report.target_id && (
+                                      <span className="text-[9px] text-app-muted font-mono bg-app-bg/60 px-1 py-0.5 rounded border border-app-border">
+                                        Target ID: {report.target_id.substring(0, 8)}...
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] text-app-muted font-mono">{formatDate(report.created_at)}</span>
+                                  </div>
+                                  
+                                  <h5 className="text-xs font-extrabold text-app-ink">
+                                    Reden: <span className="text-red-500 font-bold">{report.reason || 'Geen reden opgegeven'}</span>
+                                  </h5>
+
+                                  {report.details && (
+                                    <p className="text-[11px] text-app-ink/80 bg-app-bg/40 p-2.5 rounded-xl border border-app-border leading-relaxed font-medium">
+                                      {report.details}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* Right Section: Status controls & action buttons */}
+                                <div className="flex flex-col sm:items-end gap-2 shrink-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9px] font-extrabold text-app-muted uppercase">Status aanpassen:</span>
+                                    <select
+                                      value={report.status}
+                                      onChange={(e) => onUpdateReportStatus?.(report.id, e.target.value)}
+                                      className="px-2 py-1 bg-app-bg border border-app-border rounded-lg text-[10px] text-app-ink font-bold outline-none"
+                                    >
+                                      <option value="open">Open</option>
+                                      <option value="pending">Pending</option>
+                                      <option value="reviewed">In Behandeling</option>
+                                      <option value="resolved">Afgehandeld</option>
+                                    </select>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    {onDeleteReport && (
+                                      <button
+                                        onClick={() => {
+                                          onDeleteReport(report.id);
+                                        }}
+                                        className="px-2.5 py-1 text-[10px] font-black uppercase bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-lg transition-colors flex items-center gap-1"
+                                      >
+                                        <Trash2 className="w-3 h-3" /> Verwijder
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Connections / Parties Involved */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-app-border/40 text-[10px]">
+                                {/* Reporter details */}
+                                <div className="bg-app-bg/30 p-2.5 rounded-xl border border-app-border/40 space-y-1">
+                                  <span className="font-extrabold text-app-muted uppercase tracking-wider text-[8px]">Melder:</span>
+                                  <div className="flex items-center gap-2">
+                                    {reporter?.photo_url && (
+                                      <img src={reporter.photo_url} alt="" className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                    )}
+                                    <div>
+                                      <p className="font-black text-app-ink">{reporter?.display_name || 'Onbekend'}</p>
+                                      <p className="text-[8.5px] text-app-muted font-mono">{reporter?.email || 'Geen e-mail'}</p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Reported target details */}
+                                <div className="bg-app-bg/30 p-2.5 rounded-xl border border-app-border/40 space-y-1">
+                                  <span className="font-extrabold text-app-muted uppercase tracking-wider text-[8px]">Gerapporteerde Partij:</span>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      {reportedUser?.photo_url && (
+                                        <img src={reportedUser.photo_url} alt="" className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                      )}
+                                      <div>
+                                        <p className="font-black text-app-ink">{reportedUser?.display_name || 'Onbekend'}</p>
+                                        <p className="text-[8.5px] text-app-muted font-mono">{reportedUser?.email || 'Geen e-mail'}</p>
+                                      </div>
+                                    </div>
+
+                                    {reportedUser && (
+                                      <div className="flex gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setWarnUserId(reportedUser.id);
+                                            setWarnDisplayName(reportedUser.display_name);
+                                            setWarnReason('Storend gedrag');
+                                            setWarnDetails(`Gerapporteerd in melding: ${report.reason || ''}`);
+                                            setShowWarnModal(true);
+                                          }}
+                                          className="p-1 bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors"
+                                          title="Waarschuw gebruiker"
+                                        >
+                                          <Bell className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setBanUserId(reportedUser.id);
+                                            setBanDisplayName(reportedUser.display_name);
+                                            setBanReasonText(`Tijdelijke verbanning n.a.v. melding ID: ${report.id}`);
+                                            setShowBanModal(true);
+                                          }}
+                                          className="p-1 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors"
+                                          title="Ban gebruiker"
+                                        >
+                                          <ShieldAlert className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 </div>

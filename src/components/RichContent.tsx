@@ -39,6 +39,8 @@ const highlightMatch = (text: string, query?: string) => {
 };
 
 export const RichContent: React.FC<RichContentProps> = React.memo(({ content, searchQuery }) => {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+
   // Attempt to decrypt if it looks like an encrypted general chat message
   const safeContent = (content && typeof content === 'string') ? content : '';
   const decryptedContent = decryptGeneralChat(safeContent) || '';
@@ -75,6 +77,12 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
             name: 'Hamster Vodka Run 🐹',
             color: 'border-yellow-500 bg-yellow-950/25 text-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.15)] hover:shadow-[0_0_25px_rgba(234,179,8,0.3)]',
             accent: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+          };
+        case 'breakout':
+          return {
+            name: 'Retro Brick Breaker 🧱',
+            color: 'border-purple-500 bg-purple-950/25 text-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_25px_rgba(168,85,247,0.3)]',
+            accent: 'bg-purple-500/10 text-purple-400 border-purple-500/20'
           };
         case 'conquest':
           return {
@@ -138,6 +146,10 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
   const combinedRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|@[a-zA-Z0-9_]+)/g;
   const parts = safeDecryptedContent.split(combinedRegex);
 
+  // Calculate actual text length excluding base64 media attachments to avoid counting image data
+  const textOnlyForLengthCheck = safeDecryptedContent.replace(/data:(image|audio)\/[a-zA-Z0-9+.-]+;base64,[^\s]+/g, '');
+  const isLongMessage = textOnlyForLengthCheck.length > 350;
+
   const getYoutubeId = (url: string) => {
     if (!url || typeof url !== 'string') return null;
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -152,6 +164,7 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
     const imageHosts = [
       'giphy.com/media',
       'tenor.com/view',
+      'klipy.co',
       'supabase.co/storage/v1/object/public',
       'images.unsplash.com',
       'i.imgur.com',
@@ -179,35 +192,90 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
     return matched ? true : false;
   };
 
+  const renderSinglePart = (part: string, i: number) => {
+    if (!part || typeof part !== 'string') return null;
+    if (part.match(urlRegex)) {
+      if (part.startsWith('data:')) {
+        return null; // Don't render raw base64 data strings as text
+      }
+      return (
+        <a 
+          key={i} 
+          href={part} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-blue-500 hover:underline break-all"
+        >
+          {part}
+        </a>
+      );
+    }
+    if (part.match(mentionRegex)) {
+      return (
+        <span key={i} className="px-1.5 py-0.5 bg-app-accent text-app-ink font-bold rounded-md border border-app-border/30 shadow-sm">
+          {part}
+        </span>
+      );
+    }
+    return <React.Fragment key={i}>{highlightMatch(part, searchQuery)}</React.Fragment>;
+  };
+
+  const renderParts = () => {
+    if (!isLongMessage || isExpanded) {
+      return parts.map((part, i) => renderSinglePart(part, i));
+    }
+
+    let charCount = 0;
+    const maxChars = 250;
+    const result: React.ReactNode[] = [];
+    let truncated = false;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part) continue;
+
+      if (part.match(urlRegex)) {
+        if (part.startsWith('data:')) {
+          continue; // skip base64 strings in character budgeting
+        }
+        result.push(renderSinglePart(part, i));
+        charCount += part.length;
+      } else if (part.match(mentionRegex)) {
+        result.push(renderSinglePart(part, i));
+        charCount += part.length;
+      } else {
+        if (charCount + part.length > maxChars) {
+          const remainingBudget = maxChars - charCount;
+          if (remainingBudget > 0) {
+            const truncatedText = part.substring(0, remainingBudget) + '...';
+            result.push(<React.Fragment key={i}>{highlightMatch(truncatedText, searchQuery)}</React.Fragment>);
+          } else if (result.length === 0 || !truncated) {
+            result.push(<span key={i}>...</span>);
+          }
+          truncated = true;
+          break;
+        } else {
+          result.push(renderSinglePart(part, i));
+          charCount += part.length;
+        }
+      }
+    }
+
+    return result;
+  };
+
   return (
     <div className="space-y-2 break-words">
-      <div className="whitespace-pre-wrap">{parts.map((part, i) => {
-        if (!part || typeof part !== 'string') return null;
-        if (part.match(urlRegex)) {
-          if (part.startsWith('data:')) {
-            return null; // Don't render raw base64 data strings as text
-          }
-          return (
-            <a 
-              key={i} 
-              href={part} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="text-blue-500 hover:underline break-all"
-            >
-              {part}
-            </a>
-          );
-        }
-        if (part.match(mentionRegex)) {
-          return (
-            <span key={i} className="px-1.5 py-0.5 bg-app-accent text-app-ink font-bold rounded-md border border-app-border/30 shadow-sm">
-              {part}
-            </span>
-          );
-        }
-        return <React.Fragment key={i}>{highlightMatch(part, searchQuery)}</React.Fragment>;
-      })}</div>
+      <div className="whitespace-pre-wrap">{renderParts()}</div>
+      
+      {isLongMessage && (
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="mt-1 text-[10px] font-black text-cyan-400 hover:text-cyan-300 transition-colors uppercase tracking-widest flex items-center gap-1 cursor-pointer bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-1.5 rounded-xl border border-cyan-500/25 w-fit font-mono"
+        >
+          {isExpanded ? 'Inklappen ⬆️' : 'Lees meer ⬇️'}
+        </button>
+      )}
       
       <div className="flex flex-col gap-4 mt-2">
         {safeDecryptedContent.match(urlRegex)?.map((url, i) => {
@@ -236,6 +304,8 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
                   alt="Embedded content" 
                   className="w-full h-auto"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                 />
               </div>
             );

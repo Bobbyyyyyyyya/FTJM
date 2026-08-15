@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, PhoneCall, Volume2, User, Maximize2, Minimize2, Video, VideoOff } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, Maximize2, Minimize2, Video, VideoOff, ScreenShare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CallState, CallData, CallLayout } from '../hooks/useVoiceCall';
 
@@ -20,6 +20,9 @@ interface VoiceCallUIProps {
   endCall: () => void;
   toggleMute: () => void;
   toggleVideo?: () => void;
+  isScreenSharing?: boolean;
+  isRemoteScreenSharing?: boolean;
+  toggleScreenShare?: () => void;
   remoteAudioRef: React.RefObject<HTMLAudioElement | null>;
 }
 
@@ -50,7 +53,10 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
   rejectCall,
   endCall,
   toggleMute,
-  toggleVideo
+  toggleVideo,
+  isScreenSharing = false,
+  isRemoteScreenSharing = false,
+  toggleScreenShare
 }) => {
   const [duration, setDuration] = useState(0);
 
@@ -189,18 +195,28 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
             {/* Floating Picture-in-Picture Local Camera Stream */}
             {isVideoCall && isConnected && localStream && (
               <div id="webrtc-local-pip" className="absolute top-6 right-6 w-32 h-44 md:w-36 md:h-48 rounded-2xl border border-white/10 bg-neutral-950/80 shadow-2xl overflow-hidden z-30 pointer-events-auto backdrop-blur-md">
-                <VideoStream 
-                  stream={localStream} 
-                  muted 
-                  className={`w-full h-full object-cover transition-all duration-700 ${
-                    isVideoMuted ? 'filter blur-2xl scale-110 opacity-30 shadow-none' : ''
-                  }`} 
-                />
-                {isVideoMuted && (
-                  <div className="absolute inset-0 bg-neutral-950/50 backdrop-blur-xl flex flex-col items-center justify-center">
-                    <VideoOff className="w-6 h-6 text-white/40" />
-                    <span className="text-[9px] font-bold tracking-wider text-white/30 uppercase mt-1">Gedempt</span>
+                {isScreenSharing ? (
+                  <div className="absolute inset-0 bg-neutral-950 flex flex-col items-center justify-center p-3 text-center">
+                    <ScreenShare className="w-8 h-8 text-emerald-400 animate-pulse mb-2" />
+                    <span className="text-[10px] font-bold tracking-wider text-emerald-300 uppercase">Scherm delen</span>
+                    <span className="text-[8px] text-white/40 mt-1">Feedback-lus voorkomen</span>
                   </div>
+                ) : (
+                  <>
+                    <VideoStream 
+                      stream={localStream} 
+                      muted 
+                      className={`w-full h-full object-cover transition-all duration-700 ${
+                        isVideoMuted ? 'filter blur-2xl scale-110 opacity-30 shadow-none' : ''
+                      }`} 
+                    />
+                    {isVideoMuted && (
+                      <div className="absolute inset-0 bg-neutral-950/50 backdrop-blur-xl flex flex-col items-center justify-center">
+                        <VideoOff className="w-6 h-6 text-white/40" />
+                        <span className="text-[9px] font-bold tracking-wider text-white/30 uppercase mt-1">Gedempt</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -325,21 +341,21 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
                 <motion.div 
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="grid grid-cols-3 gap-6 w-full max-w-sm mt-4 p-4 rounded-3xl bg-white/[0.03] border border-white/5 backdrop-blur-xl"
+                  className="grid grid-cols-4 gap-4 w-full max-w-sm mt-4 p-4 rounded-3xl bg-white/[0.03] border border-white/5 backdrop-blur-xl"
                 >
                   {/* Mute action */}
                   <button 
                     onClick={toggleMute}
                     className="flex flex-col items-center gap-1.5 group cursor-pointer border-none bg-transparent"
                   >
-                    <div className={`w-13 h-13 rounded-2xl flex items-center justify-center transition-all duration-300 border ${
+                    <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center transition-all duration-300 border ${
                       isMuted 
                         ? 'bg-amber-500/20 border-amber-500/35 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]' 
                         : 'bg-white/5 border-white/10 text-white/80 group-hover:bg-white/10 group-hover:text-white'
                     }`}>
                       {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                     </div>
-                    <span className="text-[9px] font-medium tracking-wide text-white/40 uppercase group-hover:text-white/60">
+                    <span className="text-[9px] font-medium tracking-wide text-white/40 uppercase group-hover:text-white/60 text-center">
                       Dempen
                     </span>
                   </button>
@@ -350,14 +366,14 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
                       onClick={toggleVideo}
                       className="flex flex-col items-center gap-1.5 group cursor-pointer border-none bg-transparent"
                     >
-                      <div className={`w-13 h-13 rounded-2xl flex items-center justify-center transition-all duration-300 border ${
+                      <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center transition-all duration-300 border ${
                         isVideoMuted 
                           ? 'bg-amber-500/20 border-amber-500/35 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]' 
                           : 'bg-white/5 border-white/10 text-white/80 group-hover:bg-white/10 group-hover:text-white'
                       }`}>
                         {isVideoMuted ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
                       </div>
-                      <span className="text-[9px] font-medium tracking-wide text-white/40 uppercase group-hover:text-white/60">
+                      <span className="text-[9px] font-medium tracking-wide text-white/40 uppercase group-hover:text-white/60 text-center">
                         Camera
                       </span>
                     </button>
@@ -366,11 +382,42 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
                       className="flex flex-col items-center gap-1.5 group cursor-pointer border-none bg-transparent opacity-40 cursor-not-allowed"
                       disabled
                     >
-                      <div className="w-13 h-13 rounded-2xl flex items-center justify-center border bg-white/5 border-white/5 text-white/30">
+                      <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center border bg-white/5 border-white/5 text-white/30">
                         <VideoOff className="w-5 h-5" />
                       </div>
-                      <span className="text-[9px] font-medium tracking-wide text-white/30 uppercase">
+                      <span className="text-[9px] font-medium tracking-wide text-white/30 uppercase text-center">
                         Video uit
+                      </span>
+                    </button>
+                  )}
+
+                  {/* Screenshare toggle button */}
+                  {isConnected && toggleScreenShare ? (
+                    <button 
+                      onClick={toggleScreenShare}
+                      className="flex flex-col items-center gap-1.5 group cursor-pointer border-none bg-transparent"
+                    >
+                      <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center transition-all duration-300 border ${
+                        isScreenSharing 
+                          ? 'bg-emerald-500/20 border-emerald-500/35 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
+                          : 'bg-white/5 border-white/10 text-white/80 group-hover:bg-white/10 group-hover:text-white'
+                      }`}>
+                        <ScreenShare className="w-5 h-5" />
+                      </div>
+                      <span className="text-[9px] font-medium tracking-wide text-white/40 uppercase group-hover:text-white/60 text-center">
+                        {isScreenSharing ? 'Stoppen' : 'Scherm'}
+                      </span>
+                    </button>
+                  ) : (
+                    <button 
+                      className="flex flex-col items-center gap-1.5 group cursor-pointer border-none bg-transparent opacity-40 cursor-not-allowed"
+                      disabled
+                    >
+                      <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center border bg-white/5 border-white/5 text-white/30">
+                        <ScreenShare className="w-5 h-5" />
+                      </div>
+                      <span className="text-[9px] font-medium tracking-wide text-white/30 uppercase text-center">
+                        Scherm
                       </span>
                     </button>
                   )}
@@ -379,10 +426,10 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
                   <button 
                     className="flex flex-col items-center gap-1.5 group cursor-pointer border-none bg-transparent"
                   >
-                    <div className="w-13 h-13 rounded-2xl flex items-center justify-center transition-all duration-300 border bg-white/5 border-white/10 text-white/80 group-hover:bg-white/10 group-hover:text-white">
+                    <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center transition-all duration-300 border bg-white/5 border-white/10 text-white/80 group-hover:bg-white/10 group-hover:text-white">
                       <Volume2 className="w-5 h-5" />
                     </div>
-                    <span className="text-[9px] font-medium tracking-wide text-white/40 uppercase group-hover:text-white/60">
+                    <span className="text-[9px] font-medium tracking-wide text-white/40 uppercase group-hover:text-white/60 text-center">
                       Kanaal
                     </span>
                   </button>
@@ -471,7 +518,9 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
                       'border-emerald-500'
                     } bg-neutral-900 overflow-hidden relative shadow-lg`}
                   >
-                    {isVideoCall && isConnected && localStream ? (
+                    {isVideoCall && isConnected && remoteStream && !isRemoteVideoMuted ? (
+                      <VideoStream stream={remoteStream} className="w-full h-full object-cover" />
+                    ) : isVideoCall && isConnected && localStream && !isScreenSharing ? (
                       <VideoStream stream={localStream} muted className="w-full h-full object-cover" />
                     ) : peerAvatar ? (
                       <img 

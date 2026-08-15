@@ -161,34 +161,51 @@ export const playSound = (url: string, enabled: boolean, userId?: string, userNa
   
   // Dynamic fallback mapping for old/remote audio URLs to local downloaded assets
   const urlMapping: Record<string, string> = {
-    // Presets
-    'https://image2url.com/r2/default/audio/1775756671546-6f36bf87-4347-477b-a2da-1af03009fdcf.mp3': '/audio/sounds/ping.mp3',
-    'https://www.image2url.com/r2/default/audio/1775756671546-6f36bf87-4347-477b-a2da-1af03009fdcf.mp3': '/audio/sounds/ping.mp3',
-    'https://image2url.com/r2/default/audio/1775755636867-f3aa78d1-03e7-48c2-b75a-a5f990f517e9.mp3': '/audio/sounds/notification.mp3',
-    'https://www.image2url.com/r2/default/audio/1775755636867-f3aa78d1-03e7-48c2-b75a-a5f990f517e9.mp3': '/audio/sounds/notification.mp3',
-    'https://image2url.com/r2/default/audio/1775756302748-a840da24-e9d3-47a0-9e14-2a582fc0e093.mp3': '/audio/sounds/chime.mp3',
-    'https://www.image2url.com/r2/default/audio/1775756302748-a840da24-e9d3-47a0-9e14-2a582fc0e093.mp3': '/audio/sounds/chime.mp3',
-    'https://image2url.com/r2/default/audio/1775754319337-0525bbd3-8adb-4c26-ae70-842ba5769e7f.wav': '/audio/sounds/alert.wav',
-    'https://www.image2url.com/r2/default/audio/1775754319337-0525bbd3-8adb-4c26-ae70-842ba5769e7f.wav': '/audio/sounds/alert.wav',
-    'https://image2url.com/r2/default/audio/1775755973661-157bd979-8f6e-4d86-9e32-74761db166d9.mp3': '/audio/sounds/pop.mp3',
-    'https://www.image2url.com/r2/default/audio/1775755973661-157bd979-8f6e-4d86-9e32-74761db166d9.mp3': '/audio/sounds/pop.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2366/2366-preview.mp3': '/audio/sounds/success.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2372/2372-preview.mp3': '/audio/sounds/bling.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3': '/audio/sounds/default_old.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3': '/audio/sounds/notification_old.mp3',
+    // Presets & Old Sounds mapped to new sounds
+    '/audio/sounds/ping.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    '/audio/sounds/notification.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    '/audio/sounds/chime.mp3': '/audio/sounds/fears-to-fathom-notification-sound.mp3',
+    '/audio/sounds/alert.wav': '/audio/sounds/yt1s_nijLeKo.mp3',
+    '/audio/sounds/pop.mp3': '/audio/sounds/007_Text_Message-3875438.mp3',
+    '/audio/sounds/success.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    '/audio/sounds/bling.mp3': '/audio/sounds/007_Text_Message-3875438.mp3',
+    '/audio/sounds/default_old.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    '/audio/sounds/notification_old.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    'https://image2url.com/r2/default/audio/1775756671546-6f36bf87-4347-477b-a2da-1af03009fdcf.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    'https://www.image2url.com/r2/default/audio/1775756671546-6f36bf87-4347-477b-a2da-1af03009fdcf.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    'https://image2url.com/r2/default/audio/1775755636867-f3aa78d1-03e7-48c2-b75a-a5f990f517e9.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    'https://www.image2url.com/r2/default/audio/1775755636867-f3aa78d1-03e7-48c2-b75a-a5f990f517e9.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    'https://image2url.com/r2/default/audio/1775756302748-a840da24-e9d3-47a0-9e14-2a582fc0e093.mp3': '/audio/sounds/fears-to-fathom-notification-sound.mp3',
+    'https://www.image2url.com/r2/default/audio/1775756302748-a840da24-e9d3-47a0-9e14-2a582fc0e093.mp3': '/audio/sounds/fears-to-fathom-notification-sound.mp3',
+    'https://image2url.com/r2/default/audio/1775754319337-0525bbd3-8adb-4c26-ae70-842ba5769e7f.wav': '/audio/sounds/yt1s_nijLeKo.mp3',
+    'https://www.image2url.com/r2/default/audio/1775754319337-0525bbd3-8adb-4c26-ae70-842ba5769e7f.wav': '/audio/sounds/yt1s_nijLeKo.mp3',
+    'https://image2url.com/r2/default/audio/1775755973661-157bd979-8f6e-4d86-9e32-74761db166d9.mp3': '/audio/sounds/007_Text_Message-3875438.mp3',
+    'https://www.image2url.com/r2/default/audio/1775755973661-157bd979-8f6e-4d86-9e32-74761db166d9.mp3': '/audio/sounds/007_Text_Message-3875438.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/2366/2366-preview.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/2372/2372-preview.mp3': '/audio/sounds/007_Text_Message-3875438.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3': '/audio/sounds/notification_o14egLP.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3': '/audio/sounds/notification_o14egLP.mp3',
 
-    // Ringtones
-    'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3': '/audio/ringtones/classic.mp3',
-    'https://image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3': '/audio/ringtones/classic.mp3',
-    'https://www.image2url.com/r2/default/audio/1779892149416-1b7cd84d-217e-48d2-8263-4867b8800b27.mp3': '/audio/ringtones/ringtone1.mp3',
-    'https://image2url.com/r2/default/audio/1779892149416-1b7cd84d-217e-48d2-8263-4867b8800b27.mp3': '/audio/ringtones/ringtone1.mp3',
-    'https://www.image2url.com/r2/default/audio/1779892243173-6df7f26d-7f4e-4060-ba80-c0ed72a81f99.mp3': '/audio/ringtones/ringtone2.mp3',
-    'https://image2url.com/r2/default/audio/1779892243173-6df7f26d-7f4e-4060-ba80-c0ed72a81f99.mp3': '/audio/ringtones/ringtone2.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/1353/1353-preview.mp3': '/audio/ringtones/nokia.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/1230/1230-preview.mp3': '/audio/ringtones/digital.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3': '/audio/ringtones/synthesizer.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3': '/audio/ringtones/zen.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3': '/audio/ringtones/siren.mp3',
+    // Ringtones mapped to new ringtones
+    '/audio/ringtones/classic.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    '/audio/ringtones/ringtone1.mp3': '/audio/ringtones/iphone-ringtone-remix.mp3',
+    '/audio/ringtones/ringtone2.mp3': '/audio/ringtones/iphone_ringtone_trap_remixbigconverter.mp3',
+    '/audio/ringtones/nokia.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    '/audio/ringtones/digital.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    '/audio/ringtones/synthesizer.mp3': '/audio/ringtones/iphone-ringtone-remix.mp3',
+    '/audio/ringtones/zen.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    '/audio/ringtones/siren.mp3': '/audio/ringtones/iphone_ringtone_trap_remixbigconverter.mp3',
+    'https://www.image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    'https://image2url.com/r2/default/audio/1778154498754-b7ccab40-dfb2-4e0d-9748-a6edc19e720f.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    'https://www.image2url.com/r2/default/audio/1779892149416-1b7cd84d-217e-48d2-8263-4867b8800b27.mp3': '/audio/ringtones/iphone-ringtone-remix.mp3',
+    'https://image2url.com/r2/default/audio/1779892149416-1b7cd84d-217e-48d2-8263-4867b8800b27.mp3': '/audio/ringtones/iphone-ringtone-remix.mp3',
+    'https://www.image2url.com/r2/default/audio/1779892243173-6df7f26d-7f4e-4060-ba80-c0ed72a81f99.mp3': '/audio/ringtones/iphone_ringtone_trap_remixbigconverter.mp3',
+    'https://image2url.com/r2/default/audio/1779892243173-6df7f26d-7f4e-4060-ba80-c0ed72a81f99.mp3': '/audio/ringtones/iphone_ringtone_trap_remixbigconverter.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/1353/1353-preview.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/1230/1230-preview.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3': '/audio/ringtones/iphone-ringtone-remix.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3': '/audio/ringtones/skype_ringtone_new.mp3',
+    'https://assets.mixkit.co/active_storage/sfx/911/911-preview.mp3': '/audio/ringtones/iphone_ringtone_trap_remixbigconverter.mp3',
 
     // Calls
     'https://www.image2url.com/r2/default/audio/1778251393856-e7883015-89e0-4fdd-b691-55e72fa929c6.mp3': '/audio/calls/dialing.mp3',
@@ -496,31 +513,101 @@ export const isDarkColor = (color: string): boolean => {
   return hsp < 127.5;
 };
 
-export const parseAdminNotes = (notesStr: string | null | undefined): AdminNotesData => {
+export const parseAdminNotes = (notesStr: string | null | undefined, customTheme?: any): AdminNotesData => {
   const fallback: AdminNotesData = {
     telemetry: [],
     warnings: [],
     banned_until: null,
     ban_reason: null
   };
-  if (!notesStr) return fallback;
-  try {
-    const parsed = JSON.parse(notesStr);
-    if (Array.isArray(parsed)) {
+  
+  // Helper to parse a single admin notes string or object safely
+  const parseSingle = (input: any): AdminNotesData | null => {
+    if (!input) return null;
+    if (typeof input === 'object') {
       return {
-        ...fallback,
-        telemetry: parsed
-      };
-    } else if (parsed && typeof parsed === 'object') {
-      return {
-        telemetry: Array.isArray(parsed.telemetry) ? parsed.telemetry : [],
-        warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
-        banned_until: parsed.banned_until || null,
-        ban_reason: parsed.ban_reason || null
+        telemetry: Array.isArray(input.telemetry) ? input.telemetry : (Array.isArray(input.user_telemetry) ? input.user_telemetry : []),
+        warnings: Array.isArray(input.warnings) ? input.warnings : [],
+        banned_until: input.banned_until || null,
+        ban_reason: input.ban_reason || null
       };
     }
-  } catch (e) {
-    console.warn('[parseAdminNotes] Error parsing admin notes:', e);
+    try {
+      const parsed = JSON.parse(input);
+      if (Array.isArray(parsed)) {
+        return {
+          ...fallback,
+          telemetry: parsed
+        };
+      } else if (parsed && typeof parsed === 'object') {
+        return {
+          telemetry: Array.isArray(parsed.telemetry) ? parsed.telemetry : (Array.isArray(parsed.user_telemetry) ? parsed.user_telemetry : []),
+          warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+          banned_until: parsed.banned_until || null,
+          ban_reason: parsed.ban_reason || null
+        };
+      }
+    } catch (e) {
+      console.warn('[parseAdminNotes] Error parsing input:', e);
+    }
+    return null;
+  };
+
+  const fromTheme = customTheme && typeof customTheme === 'object' && customTheme.admin_notes
+    ? parseSingle(customTheme.admin_notes)
+    : null;
+    
+  const fromNotes = parseSingle(notesStr);
+
+  if (fromNotes && fromTheme) {
+    // Merge them! Give precedence to whatever has warnings/bans, or the one with more telemetry
+    return {
+      telemetry: fromNotes.telemetry.length >= fromTheme.telemetry.length ? fromNotes.telemetry : fromTheme.telemetry,
+      warnings: fromNotes.warnings.length >= fromTheme.warnings.length ? fromNotes.warnings : fromTheme.warnings,
+      banned_until: fromNotes.banned_until || fromTheme.banned_until || null,
+      ban_reason: fromNotes.ban_reason || fromTheme.ban_reason || null
+    };
   }
-  return fallback;
+
+  return fromNotes || fromTheme || fallback;
 };
+
+export const VERIFIED_EMAILS = [
+  'markohoksen@gmail.com',
+  'zwedenguy@gmail.com'
+];
+
+export const BETA_TESTER_EMAILS = [
+  'samleeuw803@gmail.com'
+];
+
+export const isVerifiedEmail = (
+  emailOrProfile?: string | { email?: string | null; is_verified?: boolean | null } | null,
+  isVerifiedCol?: boolean | null
+): boolean => {
+  if (!emailOrProfile) return isVerifiedCol === true;
+  if (typeof emailOrProfile === 'object') {
+    if (emailOrProfile.is_verified === true) return true;
+    if (emailOrProfile.email) {
+      return VERIFIED_EMAILS.includes(emailOrProfile.email.toLowerCase().trim());
+    }
+    return false;
+  }
+  if (isVerifiedCol === true) return true;
+  return VERIFIED_EMAILS.includes(emailOrProfile.toLowerCase().trim());
+};
+
+export const isBetaTester = (
+  userOrEmail?: string | { email?: string | null; role?: string | null } | null
+): boolean => {
+  if (!userOrEmail) return false;
+  if (typeof userOrEmail === 'object') {
+    if (userOrEmail.role === 'tester' || (userOrEmail as any).is_beta_tester === true) return true;
+    if (userOrEmail.email) {
+      return BETA_TESTER_EMAILS.includes(userOrEmail.email.toLowerCase().trim());
+    }
+    return false;
+  }
+  return BETA_TESTER_EMAILS.includes(userOrEmail.toLowerCase().trim());
+};
+

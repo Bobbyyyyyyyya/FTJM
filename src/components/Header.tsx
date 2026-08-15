@@ -13,7 +13,7 @@ interface HeaderProps {
   websiteStatus: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header: React.FC<HeaderProps> = React.memo(({
   user,
   profile,
   isAdmin,
@@ -81,4 +81,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </nav>
   );
-};
+});

@@ -13,7 +13,7 @@ interface SidebarProps {
   formatDate: (date: string) => string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
+export const Sidebar: React.FC<SidebarProps> = React.memo(({ 
   user, 
   profile, 
   isAdmin, 
@@ -73,4 +73,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, User as UserIcon, ShieldCheck, Mail, MessageSquare, Calendar } from 'lucide-react';
+import { X, User as UserIcon, ShieldCheck, Mail, MessageSquare, Calendar, Check, FlaskConical } from 'lucide-react';
 import { UserProfile } from '../types';
 import { formatDate } from '../utils/helpers';
+import { isVerifiedEmail, isBetaTester } from '../constants';
 
 interface UserProfileModalProps {
   user: UserProfile | null;
@@ -69,12 +70,23 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               </div>
 
               <div className="text-center space-y-2">
-                <div className="flex items-center justify-center gap-2">
+                <div className="flex items-center justify-center flex-wrap gap-2">
                   <h3 className="text-2xl font-bold text-app-ink tracking-tight uppercase">{user.display_name || 'Anoniem'}</h3>
-                  {user.role === 'admin' && (
-                    <div className="p-1 bg-app-ink text-app-bg rounded-md" title="Admin">
-                      <ShieldCheck className="w-4 h-4" />
-                    </div>
+                  {isVerifiedEmail(user) && (
+                    <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-1 select-none shadow-[0_0_12px_rgba(6,182,212,0.6)]" title="Geverifieerd Account">
+                      <Check className="w-3.5 h-3.5 stroke-[4]" />
+                    </span>
+                  )}
+                  {isBetaTester(user) && (
+                    <span className="inline-flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-lg text-xs font-black uppercase tracking-wider select-none shadow-[0_0_12px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                      <FlaskConical className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Beta Tester</span>
+                    </span>
+                  )}
+                  {(user.role === 'admin' || user.email?.toLowerCase() === 'markohoksen@gmail.com') && (
+                    <span className="inline-flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-1.5 rounded-md select-none shadow-[0_0_12px_rgba(239,68,68,0.3)]" title="Administrator">
+                      <ShieldCheck className="w-4 h-4 text-red-400 stroke-[2.5]" />
+                    </span>
                   )}
                 </div>
                 <p className="text-app-muted text-sm font-medium">{user.email}</p>
@@ -96,6 +108,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <span className="text-[10px] font-bold uppercase tracking-wide">Lid Sinds</span>
                   <span className="text-xs font-bold text-app-ink">{formatDate(user.created_at)}</span>
                 </div>
+                {user.custom_theme?.discord_id && (
+                  <div className="flex flex-col items-center border-l border-app-border pl-6">
+                    <span className="text-sm mb-1">🤖</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide">Discord</span>
+                    <span className="text-xs font-bold text-[#5865F2]">@{user.custom_theme.discord_username}</span>
+                  </div>
+                )}
               </div>
 
               {!isMe && (

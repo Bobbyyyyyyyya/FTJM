@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
-import { LogIn, Shield, ArrowRight, MessageSquare, Zap, Lock, Users, Globe, ChevronRight, FileText, Scale, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { LogIn, ArrowRight, MessageSquare, Zap, Lock, Users, Globe, ChevronRight, FileText, Scale, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
 interface LandingPageProps {
   onLogin: () => void;
@@ -47,7 +47,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             <img 
               src="/logo.png" 
               alt="FTJM Logo" 
-              className="w-full h-full object-contain"
+              className="w-full h-full object-cover scale-[1.35]"
               referrerPolicy="no-referrer"
             />
             <div className="absolute inset-0 border border-white/40 rounded-2xl scale-110 opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-500" />
@@ -239,7 +239,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
                   <img 
                     src="/logo.png" 
                     alt="FTJM Logo" 
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-cover scale-[1.35]"
                     referrerPolicy="no-referrer"
                   />
                 </div>
@@ -338,7 +338,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
                     <img 
                       src="/logo.png" 
                       alt="FTJM Logo" 
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-cover scale-[1.35]"
                       referrerPolicy="no-referrer"
                     />
                  </div>
@@ -564,7 +564,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
                 <img 
                   src="/logo.png" 
                   alt="FTJM Logo" 
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-cover scale-[1.35]"
                   referrerPolicy="no-referrer"
                 />
               </div>

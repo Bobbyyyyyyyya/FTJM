@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Search, User as UserIcon, Users, Mail, Loader2, Check, Plus } from 'lucide-react';
+import { X, Search, User as UserIcon, Users, Mail, Check, ShieldCheck, FlaskConical } from 'lucide-react';
 import { UserProfile } from '../types';
+import { isVerifiedEmail, isBetaTester } from '../constants';
 
 interface UserSearchModalProps {
   show: boolean;
@@ -167,7 +168,24 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`font-bold truncate ${isSelected ? 'text-app-ink' : 'text-app-ink'}`}>{u.display_name || 'Anoniem'}</p>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className={`font-bold truncate ${isSelected ? 'text-app-ink' : 'text-app-ink'}`}>{u.display_name || 'Anoniem'}</p>
+                            {isVerifiedEmail(u) && (
+                              <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_6px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
+                                <Check className="w-2.5 h-2.5 stroke-[4]" />
+                              </span>
+                            )}
+                            {isBetaTester(u) && (
+                              <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_6px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                                <FlaskConical className="w-2.5 h-2.5 stroke-[2.5]" />
+                              </span>
+                            )}
+                            {(u.role === 'admin' || u.email?.toLowerCase() === 'markohoksen@gmail.com') && (
+                              <span className="inline-flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-0.5 rounded shrink-0 select-none" title="Administrator">
+                                <ShieldCheck className="w-3 h-3 text-red-400 stroke-[2.5]" />
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-app-muted truncate">{u.email}</p>
                         </div>
                         {mode === 'group' ? (

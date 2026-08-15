@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, X, Clock } from 'lucide-react';
+import { Search, Clock } from 'lucide-react';
 import { EMOJI_CATEGORIES } from '../constants';
 
 interface EmojiItem {

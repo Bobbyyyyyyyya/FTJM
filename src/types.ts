@@ -13,6 +13,9 @@ export interface NotificationSettings {
   message_sound: string;
   post_sound: string;
   ringtone_url?: string;
+  discord_webhook_url?: string;
+  discord_notify_general?: boolean;
+  discord_notify_dm?: boolean;
 }
 
 export interface AppNotification {
@@ -21,9 +24,9 @@ export interface AppNotification {
   actor_id: string;
   actor_name: string;
   actor_photo?: string;
-  type: 'mention' | 'reply' | 'dm';
+  type: 'mention' | 'reply' | 'dm' | 'follow' | 'system' | 'like' | 'comment';
   resource_id: string;
-  resource_type: 'post' | 'comment' | 'thread';
+  resource_type: 'post' | 'comment' | 'thread' | 'media' | 'profile';
   content: string;
   is_read: boolean;
   created_at: string;
@@ -32,13 +35,14 @@ export interface AppNotification {
 export interface Report {
   id: string;
   reporter_id: string;
-  reported_id: string;
-  target_type: 'user' | 'post' | 'message';
+  reported_id?: string;
+  reported_post_id?: string;
+  target_type?: string;
   target_id?: string;
-  reason: string;
+  reason?: string;
   details?: string;
   created_at: string;
-  status: 'pending' | 'reviewed' | 'resolved';
+  status: string;
 }
 
 export interface CustomTheme {
@@ -65,6 +69,11 @@ export interface CustomTheme {
   user_telemetry?: any;
   game_high_scores?: Record<string, number>;
   banner_url?: string;
+  discord_id?: string;
+  discord_username?: string;
+  discord_link_code?: string;
+  following?: string[];
+  media?: any[];
 }
 
 export interface UserProfile {
@@ -76,6 +85,7 @@ export interface UserProfile {
   bio?: string;
   banner_url?: string;
   role?: 'user' | 'admin';
+  is_verified?: boolean;
   notification_settings?: NotificationSettings;
   custom_theme?: CustomTheme;
   use_custom_theme?: boolean;

@@ -1,6 +1,6 @@
 import React, { ErrorInfo, ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, RefreshCw, Shield, Home } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -59,7 +59,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
                 <img 
                   src="/logo.png" 
                   alt="FTJM Logo" 
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-cover scale-[1.35]"
                   referrerPolicy="no-referrer"
                 />
               </div>

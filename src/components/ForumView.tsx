@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Layout, Plus, ChevronLeft, MessageSquare, Clock, User as UserIcon, Loader2, X, Smile, Link, Send } from 'lucide-react';
+import { Layout, Plus, ChevronLeft, MessageSquare, Clock, User as UserIcon, Loader2, X, Smile, Link, Send, Check, ShieldCheck, FlaskConical } from 'lucide-react';
 import { ForumThread, ForumComment, UserProfile } from '../types';
 import { formatDate } from '../utils/helpers';
+import { isVerifiedEmail, isBetaTester } from '../constants';
 import { RichContent } from './RichContent';
 
 interface ForumViewProps {
@@ -36,7 +37,7 @@ interface ForumViewProps {
   userProfile?: UserProfile | null;
 }
 
-export const ForumView: React.FC<ForumViewProps> = ({
+export const ForumView: React.FC<ForumViewProps> = React.memo(({
   threads,
   activeThread,
   setActiveThread,
@@ -122,8 +123,23 @@ export const ForumView: React.FC<ForumViewProps> = ({
                             <UserIcon className="w-4 h-4 text-app-muted" />
                           </div>
                         )}
-                        <div className="flex items-center gap-2 text-xs text-app-muted">
+                        <div className="flex items-center gap-1.5 flex-wrap text-xs text-app-muted">
                           <span className="font-bold text-app-ink">{nicknames[activeThread!.author_id] || threadAuthorName}</span>
+                          {isVerifiedEmail(threadAuthorProfile || threadAuthorProfile?.email) && (
+                            <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_8px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">
+                              <Check className="w-2 h-2 stroke-[4]" />
+                            </span>
+                          )}
+                          {isBetaTester(threadAuthorProfile || threadAuthorProfile?.email) && (
+                            <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                              <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />
+                            </span>
+                          )}
+                          {(threadAuthorProfile?.role === 'admin' || threadAuthorProfile?.email?.toLowerCase() === 'markohoksen@gmail.com') && (
+                            <span className="inline-flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(239,68,68,0.2)]" title="Administrator">
+                              <ShieldCheck className="w-3 h-3 text-red-400 stroke-[2.5]" />
+                            </span>
+                          )}
                           <span>•</span>
                           <span>{formatDate(activeThread!.created_at)}</span>
                         </div>
@@ -266,8 +282,23 @@ export const ForumView: React.FC<ForumViewProps> = ({
                                   })()}
                                 </div>
                               )}
-                              <div className="flex items-center gap-2 text-xs">
+                              <div className="flex items-center gap-1.5 flex-wrap text-xs">
                                 <span className="font-bold text-app-ink">{nicknames[comment.author_id] || commentAuthorName}</span>
+                                {isVerifiedEmail(commentAuthor || commentAuthor?.email) && (
+                                  <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_6px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">
+                                    <Check className="w-2 h-2 stroke-[4]" />
+                                  </span>
+                                )}
+                                {isBetaTester(commentAuthor || commentAuthor?.email) && (
+                                  <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_6px_rgba(245,158,11,0.25)]" title="Beta Tester">
+                                    <FlaskConical className="w-2 h-2 text-amber-400 stroke-[2.5]" />
+                                  </span>
+                                )}
+                                {(commentAuthor?.role === 'admin' || commentAuthor?.email?.toLowerCase() === 'markohoksen@gmail.com') && (
+                                  <span className="inline-flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_6px_rgba(239,68,68,0.2)]" title="Administrator">
+                                    <ShieldCheck className="w-2.5 h-2.5 text-red-400 stroke-[2.5]" />
+                                  </span>
+                                )}
                                 <span className="text-app-muted">{formatDate(comment.created_at)}</span>
                               </div>
                             </div>
@@ -433,4 +464,4 @@ export const ForumView: React.FC<ForumViewProps> = ({
       )}
     </div>
   );
-};
+});

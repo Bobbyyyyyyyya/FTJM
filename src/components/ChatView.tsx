@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Loader2, X, ChevronLeft, Smile, Link, Paperclip, Volume2 } from 'lucide-react';
+import { MessageSquare, Send, Loader2, X, ChevronLeft, Smile, Paperclip, Volume2 } from 'lucide-react';
 import { Post, CustomTheme, UserProfile } from '../types';
 import { PostItem } from './PostItem';
 
@@ -37,7 +37,7 @@ interface ChatViewProps {
   userProfile?: UserProfile | null;
 }
 
-export const ChatView: React.FC<ChatViewProps> = ({
+export const ChatView: React.FC<ChatViewProps> = React.memo(({
   user,
   posts,
   isAdmin,
@@ -71,6 +71,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 }) => {
   const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | null>(null);
+  const [isCompressing, setIsCompressing] = React.useState<boolean>(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const compressImage = (file: File): Promise<string> => {
@@ -82,7 +83,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const MAX_DIM = 800;
+          const MAX_DIM = 720; // Highly optimized dimension for mobile/web speed & low data egress
           if (width > MAX_DIM || height > MAX_DIM) {
             if (width > height) {
               height = Math.round((height * MAX_DIM) / width);
@@ -97,7 +98,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL('image/jpeg', 0.7);
+            const compressed = canvas.toDataURL('image/jpeg', 0.62); // 0.62 quality provides a dramatic footprint shrink with pristine visual clarity
             resolve(compressed);
           } else {
             resolve(event.target?.result as string);
@@ -113,28 +114,31 @@ export const ChatView: React.FC<ChatViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 8 * 1024 * 1024) {
-      alert("Bestand is te groot. Selecteer een bestand kleiner dan 8MB.");
+    if (file.size > 15 * 1024 * 1024) { // Increased limit but we optimize strongly
+      alert("Bestand is te groot. Selecteer een bestand kleiner dan 15MB.");
       return;
     }
 
+    setIsCompressing(true);
     try {
-      if (file.type.startsWith('image/')) {
-        const compressed = await compressImage(file);
-        setSelectedFile(compressed);
-        setSelectedFileType('image');
-      } else if (file.type.startsWith('audio/')) {
+      if (file.type.startsWith('audio/')) {
         const reader = new FileReader();
         reader.onload = (evt) => {
           setSelectedFile(evt.target?.result as string);
           setSelectedFileType('audio');
         };
         reader.readAsDataURL(file);
+      } else if (file.type.startsWith('image/')) {
+        const compressed = await compressImage(file);
+        setSelectedFile(compressed);
+        setSelectedFileType('image');
       } else {
-        alert("Ongeldig bestandstype. Selecteer een afbeelding of audiobestand.");
+        alert("Selecteer een geldig audiobestand of afbeelding.");
       }
     } catch (err) {
       console.error("Error reading file:", err);
+    } finally {
+      setIsCompressing(false);
     }
   };
 
@@ -220,6 +224,27 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
         {/* POLISHED FILE PREVIEW CARD */}
         <AnimatePresence>
+          {isCompressing && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center gap-4 backdrop-blur-md"
+            >
+              <div className="w-12 h-12 rounded-xl bg-app-card border border-app-border flex items-center justify-center flex-shrink-0">
+                <Loader2 className="w-6 h-6 text-app-muted animate-spin" />
+              </div>
+              <div>
+                <p className="text-xs font-black text-app-ink uppercase tracking-wider">
+                  Bestand Verwerken
+                </p>
+                <p className="text-[10px] text-app-muted font-mono mt-0.5">
+                  Bestand optimaliseren voor snelle verzending...
+                </p>
+              </div>
+            </motion.div>
+          )}
+
           {selectedFile && (
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -267,7 +292,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             onChange={(e) => handleTyping(e, 'forum')}
             placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Deel een bericht..."}
             disabled={cooldownRemaining > 0}
-            className="w-full pl-4 sm:pl-6 pr-36 sm:pr-48 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
+            className="w-full pl-4 sm:pl-6 pr-28 sm:pr-36 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
             style={useCustomTheme ? { 
               backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
               borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
@@ -280,7 +305,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept="image/*,audio/*"
+              accept="audio/*,image/*"
               className="hidden"
             />
             <button 
@@ -288,18 +313,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
               onClick={() => fileInputRef.current?.click()}
               disabled={cooldownRemaining > 0}
               className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all"
-              title="Foto of audio uploaden"
+              title="Afbeelding of audiobestand uploaden"
             >
               <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <button 
-              type="button"
-              onClick={handleImageUrl}
-              disabled={uploading || cooldownRemaining > 0}
-              className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all disabled:opacity-50"
-              title="Afbeelding via URL"
-            >
-              <Link className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <button 
               type="button"
@@ -372,4 +388,4 @@ export const ChatView: React.FC<ChatViewProps> = ({
       )}
     </div>
   );
-};
+});

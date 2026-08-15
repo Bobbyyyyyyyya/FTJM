@@ -22,25 +22,26 @@ class AntiHardwareAbuseEngine {
 
   private isLocked: boolean = false;
   private lockUntil: number = 0;
-  private onLockdownChange: ((locked: boolean, durationLeftSec: number) => void) | null = null;
+  private lockReason: string = '';
+  private onLockdownChange: ((locked: boolean, durationLeftSec: number, reason: string) => void) | null = null;
   private intervalId: any = null;
 
   // DDoS Complete Gateway Limits
-  private readonly MAX_REQ_PER_10_SEC = 120; // Human safeguard threshold URL actions
-  private readonly TRIGGER_LOCKDOWN_LIMIT = 250; // Automated bot lockout barrier
-  private readonly LOCKDOWN_DURATION_MS = 30000; // 30 seconds hold for flooding
+  private readonly MAX_REQ_PER_10_SEC = 300; // Human safeguard threshold URL actions
+  private readonly TRIGGER_LOCKDOWN_LIMIT = 600; // Automated bot lockout barrier
+  private readonly LOCKDOWN_DURATION_MS = 10000; // 10 seconds hold for flooding (reduced from 30s)
 
   // Device Authentication Limit
-  private readonly MAX_AUTH_ATTEMPTS_PER_5_MIN = 8; // Prevents credential stuffing
-  private readonly AUTH_LOCK_MS = 300000; // 5 minutes suspension block
+  private readonly MAX_AUTH_ATTEMPTS_PER_5_MIN = 20; // Prevents credential stuffing
+  private readonly AUTH_LOCK_MS = 60000; // 1 minute suspension block (reduced from 5m)
 
   // Realtime Channel Overflow limits
-  private readonly MAX_REALTIME_PER_MIN = 120; // Real-time overflow safety
-  private readonly REALTIME_LOCK_MS = 180000; // 3 minutes lockout duration
+  private readonly MAX_REALTIME_PER_MIN = 300; // Real-time overflow safety
+  private readonly REALTIME_LOCK_MS = 30000; // 30 seconds lockout duration (reduced from 3m)
 
   // Egress Byte guard limit (to prevent database bandwidth exhaust tools)
-  private readonly MAX_EGRESS_BYTES_PER_15_MIN = 25 * 1024 * 1024; // 25 Megabytes
-  private readonly EGRESS_LOCK_MS = 3600000; // 1 Hour complete lock for heavy scraping
+  private readonly MAX_EGRESS_BYTES_PER_15_MIN = 500 * 1024 * 1024; // Increased to 500 Megabytes to support media/image posts
+  private readonly EGRESS_LOCK_MS = 10000; // 10 seconds complete lock (reduced from 1 hour to prevent infinite lockouts)
 
   constructor() {
     this.restoreState();
@@ -61,6 +62,7 @@ class AntiHardwareAbuseEngine {
           if (parsed.lockUntil && now < parsed.lockUntil) {
             this.isLocked = true;
             this.lockUntil = parsed.lockUntil;
+            this.lockReason = parsed.lockReason || 'Systeem Lockdown';
           }
         }
       }
@@ -74,7 +76,8 @@ class AntiHardwareAbuseEngine {
     try {
       if (this.isLocked) {
         window.localStorage.setItem('secure_anti_abuse_lock', JSON.stringify({
-          lockUntil: this.lockUntil
+          lockUntil: this.lockUntil,
+          lockReason: this.lockReason
         }));
       } else {
         window.localStorage.removeItem('secure_anti_abuse_lock');
@@ -84,11 +87,11 @@ class AntiHardwareAbuseEngine {
     }
   }
 
-  public registerCallback(callback: (locked: boolean, durationLeftSec: number) => void) {
+  public registerCallback(callback: (locked: boolean, durationLeftSec: number, reason: string) => void) {
     this.onLockdownChange = callback;
     const now = Date.now();
     if (this.isLocked && now < this.lockUntil) {
-      callback(true, Math.ceil((this.lockUntil - now) / 1000));
+      callback(true, Math.ceil((this.lockUntil - now) / 1000), this.lockReason || 'Systeem Lockdown');
     }
   }
 
@@ -103,12 +106,110 @@ class AntiHardwareAbuseEngine {
       if (now >= this.lockUntil) {
         this.isLocked = false;
         this.lockUntil = 0;
+        this.lockReason = '';
         this.persistState();
-        if (this.onLockdownChange) this.onLockdownChange(false, 0);
+        if (this.onLockdownChange) this.onLockdownChange(false, 0, '');
       } else if (this.onLockdownChange) {
-        this.onLockdownChange(true, Math.ceil((this.lockUntil - now) / 1000));
+        this.onLockdownChange(true, Math.ceil((this.lockUntil - now) / 1000), this.lockReason || 'Systeem Lockdown');
       }
     }
+  }
+
+  /**
+   * Checks if this hardware/device is permanently banned.
+   * Persists the ban flag across multiple layers (cookies, localStorage, sessionStorage)
+   * to completely prevent evasion or storage clearing.
+   */
+  public isBanned(): boolean {
+    if (typeof window === 'undefined') return false;
+
+    const BANNED_MACS = ['02:F3:F9:F1:D9:A6', '02:53:33:0D:D8:D6'];
+    let isBannedTrace = false;
+
+    // Check localStorage
+    try {
+      if (window.localStorage.getItem('__sys_hw_banned') === 'true' ||
+          BANNED_MACS.some(mac => window.localStorage.getItem('secure_device_hw_token') === `BANNED_DEVICE_TOKEN_${mac.replace(/:/g, '_')}`)) {
+        isBannedTrace = true;
+      }
+    } catch (e) {}
+
+    // Check sessionStorage
+    try {
+      if (window.sessionStorage.getItem('__sys_hw_banned') === 'true') {
+        isBannedTrace = true;
+      }
+    } catch (e) {}
+
+    // Check cookies
+    try {
+      if (BANNED_MACS.some(mac => document.cookie.includes(`__hw_ban_trace=${mac.replace(/:/g, '_')}`)) ||
+          document.cookie.includes('__sys_hw_banned=true')) {
+        isBannedTrace = true;
+      }
+    } catch (e) {}
+
+    // Calculate actual fingerprint
+    const currentFingerprint = this.getDeviceFingerprintRaw().toUpperCase();
+    if (BANNED_MACS.includes(currentFingerprint) || isBannedTrace) {
+      // Find which one is the banned MAC, or default to the first one if we only have a trace flag
+      const activeBannedMac = BANNED_MACS.includes(currentFingerprint) 
+        ? currentFingerprint 
+        : (BANNED_MACS.find(mac => {
+            const token = `BANNED_DEVICE_TOKEN_${mac.replace(/:/g, '_')}`;
+            const trace = `__hw_ban_trace=${mac.replace(/:/g, '_')}`;
+            try {
+              return window.localStorage.getItem('secure_device_hw_token') === token || document.cookie.includes(trace);
+            } catch (e) { return false; }
+          }) || BANNED_MACS[0]);
+
+      this.propagateBan(activeBannedMac);
+      return true;
+    }
+
+    return false;
+  }
+
+  private propagateBan(mac: string) {
+    if (typeof window === 'undefined') return;
+
+    // LocalStorage
+    try {
+      window.localStorage.setItem('__sys_hw_banned', 'true');
+      window.localStorage.setItem('secure_device_hw_token', `BANNED_DEVICE_TOKEN_${mac.replace(/:/g, '_')}`);
+    } catch (e) {}
+
+    // SessionStorage
+    try {
+      window.sessionStorage.setItem('__sys_hw_banned', 'true');
+    } catch (e) {}
+
+    // Cookies (10 years expiry)
+    try {
+      const expiry = new Date();
+      expiry.setFullYear(expiry.getFullYear() + 10);
+      document.cookie = `__hw_ban_trace=${mac.replace(/:/g, '_')}; expires=${expiry.toUTCString()}; path=/; SameSite=Lax; Secure`;
+      document.cookie = `__sys_hw_banned=true; expires=${expiry.toUTCString()}; path=/; SameSite=Lax; Secure`;
+    } catch (e) {}
+  }
+
+  public getDeviceFingerprint(): string {
+    if (this.isBanned()) {
+      const currentFingerprint = this.getDeviceFingerprintRaw().toUpperCase();
+      const BANNED_MACS = ['02:F3:F9:F1:D9:A6', '02:53:33:0D:D8:D6'];
+      if (BANNED_MACS.includes(currentFingerprint)) {
+        return currentFingerprint;
+      }
+      const found = BANNED_MACS.find(mac => {
+        const token = `BANNED_DEVICE_TOKEN_${mac.replace(/:/g, '_')}`;
+        const trace = `__hw_ban_trace=${mac.replace(/:/g, '_')}`;
+        try {
+          return window.localStorage.getItem('secure_device_hw_token') === token || document.cookie.includes(trace);
+        } catch (e) { return false; }
+      });
+      return found || BANNED_MACS[0];
+    }
+    return this.getDeviceFingerprintRaw();
   }
 
   /**
@@ -116,7 +217,7 @@ class AntiHardwareAbuseEngine {
    * Leverages OS/system configuration variables, screen limits, browser context, and device traces.
    * Matches 'xx:xx:xx:xx:xx:xx' format perfectly.
    */
-  public getDeviceFingerprint(): string {
+  public getDeviceFingerprintRaw(): string {
     if (typeof window === 'undefined') return '02:00:00:00:00:00';
     
     const STORAGE_KEY = 'secure_device_hw_token';
@@ -165,17 +266,26 @@ class AntiHardwareAbuseEngine {
   public logRequest(url: string): { allowed: boolean; reason?: string } {
     const now = Date.now();
 
+    if (this.isBanned()) {
+      return {
+        allowed: false,
+        reason: "HARDWARE_BAN_ACTIVE: Dit apparaat (MAC: 02:F3:F9:F1:D9:A6) is permanent geblokkeerd wegens overtreding van onze servicevoorwaarden."
+      };
+    }
+
     if (this.isLocked) {
       if (now < this.lockUntil) {
         const secondsLeft = Math.ceil((this.lockUntil - now) / 1000);
+        const displayReason = this.lockReason || "DDoS Shield Actief (Te hoog transactie-tempo)";
         return { 
           allowed: false, 
-          reason: `DDOS_SHIELD_ACTIVE: Systeem in lockdown voor nog ${secondsLeft} seconden wegens te hoog transactie-tempo.` 
+          reason: `DDOS_SHIELD_ACTIVE: ${displayReason}. Lockdown voor nog ${secondsLeft} seconden.` 
         };
       } else {
         this.isLocked = false;
+        this.lockReason = '';
         this.persistState();
-        if (this.onLockdownChange) this.onLockdownChange(false, 0);
+        if (this.onLockdownChange) this.onLockdownChange(false, 0, '');
       }
     }
 
@@ -185,9 +295,10 @@ class AntiHardwareAbuseEngine {
     if (last10SecReqs.length >= this.TRIGGER_LOCKDOWN_LIMIT) {
       this.isLocked = true;
       this.lockUntil = now + this.LOCKDOWN_DURATION_MS;
+      this.lockReason = "BOT_ACTIVITY_DETECTED: Snelheidslimiet ernstig overschreden";
       this.persistState();
       if (this.onLockdownChange) {
-        this.onLockdownChange(true, Math.ceil(this.LOCKDOWN_DURATION_MS / 1000));
+        this.onLockdownChange(true, Math.ceil(this.LOCKDOWN_DURATION_MS / 1000), this.lockReason);
       }
       return { 
         allowed: false, 
@@ -212,6 +323,13 @@ class AntiHardwareAbuseEngine {
     const now = Date.now();
     this.cleanup();
 
+    if (this.isBanned()) {
+      return {
+        allowed: false,
+        reason: `HARDWARE_BAN_ACTIVE: Dit apparaat (MAC: ${this.getDeviceFingerprint()}) is permanent geblokkeerd.`
+      };
+    }
+
     if (this.isLocked) {
       return { allowed: false, reason: "SYSTEM_LOCKED: Apparaat is geblokkeerd." };
     }
@@ -225,13 +343,15 @@ class AntiHardwareAbuseEngine {
     if (totalEgressBytes >= this.MAX_EGRESS_BYTES_PER_15_MIN) {
       this.isLocked = true;
       this.lockUntil = now + this.EGRESS_LOCK_MS;
+      const mbExceeded = (totalEgressBytes / 1024 / 1024).toFixed(2);
+      this.lockReason = `EGRESS_LIMIT_EXCEEDED: Datalimiet overschreden (${mbExceeded} MB / Max 500 MB)`;
       this.persistState();
       if (this.onLockdownChange) {
-        this.onLockdownChange(true, Math.ceil(this.EGRESS_LOCK_MS / 1000));
+        this.onLockdownChange(true, Math.ceil(this.EGRESS_LOCK_MS / 1000), this.lockReason);
       }
       return {
         allowed: false,
-        reason: `EGRESS_LIMIT_EXCEEDED: Datalimiet overschreden (${(totalEgressBytes / 1024 / 1024).toFixed(2)} MB). Jouw verbinding is om veiligheidsredenen gedurende 1 uur geblokkeerd.`
+        reason: `EGRESS_LIMIT_EXCEEDED: Datalimiet overschreden (${mbExceeded} MB). Jouw verbinding is om veiligheidsredenen gedurende 10 seconden geblokkeerd.`
       };
     }
 
@@ -245,6 +365,13 @@ class AntiHardwareAbuseEngine {
     const now = Date.now();
     this.cleanup();
 
+    if (this.isBanned()) {
+      return {
+        allowed: false,
+        reason: `HARDWARE_BAN_ACTIVE: Dit apparaat (MAC: ${this.getDeviceFingerprint()}) is permanent geblokkeerd.`
+      };
+    }
+
     if (this.isLocked) {
       return { allowed: false, reason: "SYSTEM_LOCKED: Kan actie niet uitvoeren." };
     }
@@ -254,13 +381,14 @@ class AntiHardwareAbuseEngine {
     if (this.authLog.length > this.MAX_AUTH_ATTEMPTS_PER_5_MIN) {
       this.isLocked = true;
       this.lockUntil = now + this.AUTH_LOCK_MS;
+      this.lockReason = "AUTH_ATTEMPTS_EXCEEDED: Teveel aanmeldpogingen";
       this.persistState();
       if (this.onLockdownChange) {
-        this.onLockdownChange(true, Math.ceil(this.AUTH_LOCK_MS / 1000));
+        this.onLockdownChange(true, Math.ceil(this.AUTH_LOCK_MS / 1000), this.lockReason);
       }
       return {
         allowed: false,
-        reason: "AUTH_ATTEMPTS_EXCEEDED: Teveel aanmeldpogingen vanaf dit apparaat. Jouw hardware is gedurende 5 minuten geblokkeerd."
+        reason: "AUTH_ATTEMPTS_EXCEEDED: Teveel aanmeldpogingen vanaf dit apparaat. Jouw hardware is gedurende 1 minuut geblokkeerd."
       };
     }
 
@@ -274,6 +402,13 @@ class AntiHardwareAbuseEngine {
     const now = Date.now();
     this.cleanup();
 
+    if (this.isBanned()) {
+      return {
+        allowed: false,
+        reason: `HARDWARE_BAN_ACTIVE: Dit apparaat (MAC: ${this.getDeviceFingerprint()}) is permanent geblokkeerd.`
+      };
+    }
+
     if (this.isLocked) {
       return { allowed: false, reason: "SYSTEM_LOCKED: Verbinding geblokkeerd." };
     }
@@ -283,9 +418,10 @@ class AntiHardwareAbuseEngine {
     if (this.realtimeLog.length > this.MAX_REALTIME_PER_MIN) {
       this.isLocked = true;
       this.lockUntil = now + this.REALTIME_LOCK_MS;
+      this.lockReason = "REALTIME_OVERFLOW: Overvloed aan real-time events";
       this.persistState();
       if (this.onLockdownChange) {
-        this.onLockdownChange(true, Math.ceil(this.REALTIME_LOCK_MS / 1000));
+        this.onLockdownChange(true, Math.ceil(this.REALTIME_LOCK_MS / 1000), this.lockReason);
       }
       return {
         allowed: false,
@@ -296,23 +432,31 @@ class AntiHardwareAbuseEngine {
     return { allowed: true };
   }
 
-  public getIsLockedStatus(): { locked: boolean; secondsLeft: number } {
+  public getIsLockedStatus(): { locked: boolean; secondsLeft: number; reason: string } {
     const now = Date.now();
-    if (this.isLocked && now < this.lockUntil) {
-      return { locked: true, secondsLeft: Math.ceil((this.lockUntil - now) / 1000) };
+    if (this.isBanned()) {
+      return {
+        locked: true,
+        secondsLeft: 999999,
+        reason: `HARDWARE_BAN_ACTIVE: Dit apparaat (MAC: ${this.getDeviceFingerprint()}) is permanent geblokkeerd wegens overtreding van onze servicevoorwaarden.`
+      };
     }
-    return { locked: false, secondsLeft: 0 };
+    if (this.isLocked && now < this.lockUntil) {
+      return { locked: true, secondsLeft: Math.ceil((this.lockUntil - now) / 1000), reason: this.lockReason || 'Systeem Lockdown' };
+    }
+    return { locked: false, secondsLeft: 0, reason: '' };
   }
 
   public manualUnlock() {
     this.isLocked = false;
     this.lockUntil = 0;
+    this.lockReason = '';
     this.requestLog = [];
     this.authLog = [];
     this.realtimeLog = [];
     this.egressLog = [];
     this.persistState();
-    if (this.onLockdownChange) this.onLockdownChange(false, 0);
+    if (this.onLockdownChange) this.onLockdownChange(false, 0, '');
   }
 }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Lock as LockIcon, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip, Video } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip, Video } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -38,7 +38,7 @@ interface MessagesViewProps {
   onEditMessage?: (messageId: string, newText: string) => void;
 }
 
-export const MessagesView: React.FC<MessagesViewProps> = ({
+export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
   user,
   profile,
   profiles = [],
@@ -78,6 +78,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
   const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | null>(null);
+  const [isCompressing, setIsCompressing] = React.useState<boolean>(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const compressImage = (file: File): Promise<string> => {
@@ -89,7 +90,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const MAX_DIM = 800;
+          const MAX_DIM = 720; // Highly optimized dimension for mobile/web speed & low data egress
           if (width > MAX_DIM || height > MAX_DIM) {
             if (width > height) {
               height = Math.round((height * MAX_DIM) / width);
@@ -104,7 +105,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL('image/jpeg', 0.7);
+            const compressed = canvas.toDataURL('image/jpeg', 0.62); // 0.62 quality provides a dramatic footprint shrink with pristine visual clarity
             resolve(compressed);
           } else {
             resolve(event.target?.result as string);
@@ -120,11 +121,12 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 8 * 1024 * 1024) {
-      alert("Bestand is te groot. Selecteer een bestand kleiner dan 8MB.");
+    if (file.size > 15 * 1024 * 1024) { // Increased limit but we optimize strongly
+      alert("Bestand is te groot. Selecteer een bestand kleiner dan 15MB.");
       return;
     }
 
+    setIsCompressing(true);
     try {
       if (file.type.startsWith('image/')) {
         const compressed = await compressImage(file);
@@ -142,6 +144,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       }
     } catch (err) {
       console.error("Error reading file:", err);
+    } finally {
+      setIsCompressing(false);
     }
   };
 
@@ -719,33 +723,31 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                               )}
                             </div>
 
-                            {/* Action Buttons beside bubble */}
-                            {isMe && !editingMessageId && (
-                              <div className="flex flex-col gap-1 opacity-0 group-hover/msg:opacity-100 transition-all duration-200">
-                                <button 
-                                  onClick={() => { setEditingMessageId(msg.id); setEditInput(msg.text); }}
-                                  className="p-1.5 bg-app-card border border-app-border rounded-lg text-app-muted hover:text-app-ink hover:bg-app-accent transition-colors shadow-sm"
-                                  title="Bewerken"
-                                >
-                                  <Edit3 size={12} />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    if (confirm('Weet je zeker dat je dit bericht wilt verwijderen?')) {
-                                      onDeleteMessage?.(msg.id);
-                                    }
-                                  }}
-                                  className="p-1.5 bg-app-card border border-app-border rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm"
-                                  title="Verwijderen"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            )}
+                             {/* Action Buttons beside bubble */}
+                             {isMe && !editingMessageId && (
+                               <div className="flex flex-row sm:flex-col gap-1.5 opacity-100 sm:opacity-0 group-hover/msg:opacity-100 transition-all duration-200 shrink-0 items-center">
+                                 <button 
+                                   onClick={() => { setEditingMessageId(msg.id); setEditInput(msg.text); }}
+                                   className="p-2 sm:p-1.5 bg-app-card border border-app-border rounded-xl sm:rounded-lg text-app-muted hover:text-app-ink hover:bg-app-accent transition-colors shadow-sm active:scale-95"
+                                   title="Bewerken"
+                                 >
+                                   <Edit3 size={14} className="sm:w-3 sm:h-3" />
+                                 </button>
+                                 <button 
+                                   onClick={() => {
+                                     onDeleteMessage?.(msg.id);
+                                   }}
+                                   className="p-2 sm:p-1.5 bg-app-card border border-app-border rounded-xl sm:rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm active:scale-95"
+                                   title="Verwijderen"
+                                 >
+                                   <Trash2 size={14} className="sm:w-3 sm:h-3" />
+                                 </button>
+                               </div>
+                             )}
                           </div>
-                          <span className="mt-2 text-[8px] font-mono text-app-muted opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest">
-                            {formatTime(msg.created_at)}
-                          </span>
+                          <div className={`flex items-center gap-1.5 mt-1.5 text-[10px] font-medium text-app-muted ${isMe ? 'justify-end text-right' : 'justify-start text-left'}`}>
+                            <span>{formatDate(msg.created_at)} om {formatTime(msg.created_at)}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -774,6 +776,27 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
             <div className="p-8 bg-app-card/90 backdrop-blur-xl border-t border-app-border">
               {/* POLISHED FILE PREVIEW CARD */}
               <AnimatePresence>
+                {isCompressing && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center gap-4 backdrop-blur-md"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-app-card border border-app-border flex items-center justify-center flex-shrink-0">
+                      <Loader2 className="w-6 h-6 text-app-muted animate-spin" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-app-ink uppercase tracking-wider">
+                        Bestand Verwerken
+                      </p>
+                      <p className="text-[10px] text-app-muted font-mono mt-0.5">
+                        Bestand optimaliseren voor snelle verzending...
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
                 {selectedFile && (
                   <motion.div
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -823,7 +846,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     handleTyping(e, activeConversation.id);
                   }}
                   placeholder="Type je bericht..."
-                  className="w-full pl-5 sm:pl-8 pr-40 sm:pr-56 py-4 sm:py-5 bg-app-bg/50 border-2 border-app-border rounded-2xl sm:rounded-3xl focus:border-app-ink focus:ring-0 transition-all font-bold text-app-ink placeholder:text-app-muted/50 text-sm sm:text-base"
+                  className="w-full pl-3 sm:pl-8 pr-[145px] sm:pr-56 py-3.5 sm:py-5 bg-app-bg/50 border-2 border-app-border rounded-xl sm:rounded-3xl focus:border-app-ink focus:ring-0 transition-all font-bold text-app-ink placeholder:text-app-muted/50 text-xs sm:text-base"
                   style={useCustomTheme ? { 
                     backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
                     borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
@@ -841,33 +864,33 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   <button 
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent transition-all"
+                    className="p-1.5 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent transition-all"
                     title="Foto of audio uploaden"
                   >
-                    <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <Paperclip className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
                   </button>
                   <button 
                     type="button"
                     onClick={handleImageUrl}
-                    className="p-2 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent transition-all"
+                    className="p-1.5 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent transition-all"
                     title="Afbeelding via URL"
                   >
-                    <Link className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <Link className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
                   </button>
                   <button 
                     type="button"
                     onClick={(e) => handleEmojiButtonClick(e, 'message')}
-                    className="p-2 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent transition-all"
+                    className="p-1.5 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent transition-all"
                     title="Emoji kiezen"
                   >
-                    <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <Smile className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
                   </button>
                   <button 
                     type="submit"
                     disabled={sending || (!messageInput.trim() && !selectedFile)}
-                    className="px-4 sm:px-6 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-2xl hover:opacity-90 disabled:opacity-30 transition-all shadow-lg active:scale-95 flex items-center justify-center min-w-[50px] sm:min-w-[80px]"
+                    className="px-2.5 sm:px-6 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-2xl hover:opacity-90 disabled:opacity-30 transition-all shadow-lg active:scale-95 flex items-center justify-center min-w-[36px] sm:min-w-[80px]"
                   >
-                    {sending ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-4 h-4 sm:w-5 sm:h-5" />}
+                    {sending ? <Loader2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-3.5 h-3.5 sm:w-5 sm:h-5" />}
                   </button>
                 </div>
               </form>
@@ -892,4 +915,4 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       </div>
     </div>
   );
-};
+});

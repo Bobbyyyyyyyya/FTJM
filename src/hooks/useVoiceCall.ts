@@ -29,6 +29,9 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const [isInitiator, setIsInitiator] = useState(false);
   const [callCooldownUntil, setCallCooldownUntil] = useState<number | null>(null);
   const [subVersion, setSubVersion] = useState(0);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
+  const screenStreamRef = useRef<MediaStream | null>(null);
 
   // Auto-refresh signaling connection on focus or visibility change to bypass mobile/PWA background socket throttling
   useEffect(() => {
@@ -73,7 +76,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const endCallSoundRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const defaultRingtone = '/audio/ringtones/classic.mp3';
+    const defaultRingtone = '/audio/ringtones/skype_ringtone_new.mp3';
     const ringtoneUrl = profile?.notification_settings?.ringtone_url || defaultRingtone;
     
     if (incomingSoundRef.current) {
@@ -106,12 +109,21 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       });
       localStreamRef.current = null;
     }
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      screenStreamRef.current = null;
+    }
     remoteStreamRef.current = null;
     setLocalStream(null);
     setRemoteStream(null);
     setIsVideoCall(false);
     setIsVideoMuted(false);
     setIsRemoteVideoMuted(false);
+    setIsScreenSharing(false);
+    setIsRemoteScreenSharing(false);
+    (window as any)._originalCameraTrack = null;
 
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
@@ -321,26 +333,38 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       console.log('Received remote track:', event.track.kind, 'ReadyState:', event.track.readyState);
       
       let stream = event.streams[0];
-      if (!stream) {
-        stream = new MediaStream([event.track]);
-      }
       
-      remoteStreamRef.current = stream;
-      setRemoteStream(stream);
+      // We reconstruct a new MediaStream instance combining all received tracks.
+      // This forces React to perceive a reference change, which in turn causes the
+      // remote VideoStream component to re-render and play the stream correctly.
+      const tracks = stream ? stream.getTracks() : [event.track];
+      if (tracks.indexOf(event.track) === -1) {
+        tracks.push(event.track);
+      }
+      const freshStream = new MediaStream(tracks);
+      
+      remoteStreamRef.current = freshStream;
+      setRemoteStream(freshStream);
+      
+      // Auto-enable video UI if a video track is discovered in the stream
+      const hasVideo = freshStream.getVideoTracks().length > 0;
+      if (hasVideo) {
+        setIsVideoCall(true);
+      }
       
       if (remoteAudioRef.current) {
         const audioElement = remoteAudioRef.current;
         console.log('Attaching stream to audio element');
         
-        if (audioElement.srcObject !== stream) {
-          audioElement.srcObject = stream;
+        if (audioElement.srcObject !== freshStream) {
+          audioElement.srcObject = freshStream;
         }
         
         audioElement.muted = false;
         audioElement.volume = 1.0;
 
         // Force enable tracks
-        stream.getAudioTracks().forEach(track => {
+        freshStream.getAudioTracks().forEach(track => {
           track.enabled = true;
         });
 
@@ -531,7 +555,30 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
         if (payload.msgId && processedSignalsRef.current.has(payload.msgId)) return;
         if (payload.msgId) processedSignalsRef.current.add(payload.msgId);
 
-        console.log('Received external WebRTC [offer] event:', payload);
+        console.log('Received WebRTC [offer] event:', payload);
+        
+        const pc = peerConnectionRef.current;
+        if (pc && callStateRef.current === 'connected') {
+          console.log('In-call renegotiation offer received! Processing immediately...');
+          const sdpOffer = payload.offer || payload;
+          await pc.setRemoteDescription(new RTCSessionDescription(sdpOffer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          
+          sendSignalingMessage(senderId, 'answer', {
+            answer,
+            senderId: user.uid,
+            targetId: senderId
+          });
+
+          // Check if video is active after renegotiation finishes
+          setTimeout(() => {
+            const hasVideo = pc.getReceivers().some(r => r.track && r.track.kind === 'video' && r.track.readyState === 'live');
+            setIsVideoCall(hasVideo);
+          }, 500);
+          return;
+        }
+
         toast.info('RTC sdp-aanbod (offer) ontvangen van beller...');
         // Store the offer (payload itself might be the description, or inside payload.offer)
         (window as any)._pendingCallOffer = payload.offer || payload;
@@ -736,6 +783,19 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       setIsRemoteVideoMuted(!!payload.isVideoMuted);
+    })
+    .on('broadcast', { event: 'screenshare_status' }, (eventObj) => {
+      console.log('Received broadcast [screenshare_status] eventObj:', eventObj);
+      const payload = eventObj?.payload || eventObj || {};
+      if (payload.senderId === user.uid) return;
+      const sharing = !!payload.isScreenSharing;
+      setIsRemoteScreenSharing(sharing);
+      if (sharing) {
+        setIsVideoCall(true);
+        toast.info(`Beller deelt nu het scherm`);
+      } else {
+        toast.info(`Beller is gestopt met scherm delen`);
+      }
     })
     .subscribe((status: string, err?: any) => {
       console.log(`[Realtime] Inbound channel status: ${status}`, err ? err : '');
@@ -988,6 +1048,162 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     }
   };
 
+  const startScreenShare = async () => {
+    if (callState !== 'connected' || !activeCall) {
+      toast.error('Je kunt alleen het scherm delen tijdens een actief gesprek.');
+      return;
+    }
+
+    try {
+      console.log('Starting screen share via getDisplayMedia...');
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          displaySurface: "monitor",
+          logicalSurface: true
+        } as any,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      });
+
+      screenStreamRef.current = stream;
+      setIsScreenSharing(true);
+      setLayout('compact');
+      
+      const screenVideoTrack = stream.getVideoTracks()[0];
+      
+      screenVideoTrack.onended = () => {
+        console.log('Screenshare ended natively from browser control');
+        stopScreenShare();
+      };
+
+      const pc = peerConnectionRef.current;
+      if (pc) {
+        const senders = pc.getSenders();
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+
+        if (videoSender) {
+          if (localStreamRef.current) {
+            const camTrack = localStreamRef.current.getVideoTracks()[0];
+            if (camTrack) {
+              (window as any)._originalCameraTrack = camTrack;
+            }
+          }
+          await videoSender.replaceTrack(screenVideoTrack);
+          console.log('Replaced local camera track with screen share track');
+          
+          const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+          const newLocalStream = new MediaStream([screenVideoTrack]);
+          if (audioTrack) newLocalStream.addTrack(audioTrack);
+          setLocalStream(newLocalStream);
+        } else {
+          console.log('No camera track found. Upgrading call with new screen share video track...');
+          pc.addTrack(screenVideoTrack, stream);
+          
+          const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+          const newLocalStream = new MediaStream([screenVideoTrack]);
+          if (audioTrack) newLocalStream.addTrack(audioTrack);
+          setLocalStream(newLocalStream);
+          setIsVideoCall(true);
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          const targetId = activeCall.callerId === user.uid ? activeCall.targetId : activeCall.callerId;
+          sendSignalingMessage(targetId, 'offer', {
+            offer,
+            senderId: user.uid,
+            targetId,
+            isVideo: true
+          });
+        }
+        
+        const targetId = activeCall.callerId === user.uid ? activeCall.targetId : activeCall.callerId;
+        sendSignalingMessage(targetId, 'screenshare_status', { isScreenSharing: true });
+      }
+      toast.success('Scherm delen gestart');
+    } catch (err) {
+      console.error('Error starting screen share:', err);
+      toast.error('Scherm delen mislukt of geannuleerd');
+      setIsScreenSharing(false);
+    }
+  };
+
+  const stopScreenShare = async () => {
+    console.log('Stopping screen share...');
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+    }
+    setIsScreenSharing(false);
+    setLayout('large');
+
+    const pc = peerConnectionRef.current;
+    if (pc) {
+      const senders = pc.getSenders();
+      const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+      const originalCamTrack = (window as any)._originalCameraTrack;
+
+      if (videoSender && originalCamTrack && originalCamTrack.readyState === 'live') {
+        await videoSender.replaceTrack(originalCamTrack);
+        console.log('Restored original camera track');
+        
+        const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+        const newLocalStream = new MediaStream([originalCamTrack]);
+        if (audioTrack) newLocalStream.addTrack(audioTrack);
+        setLocalStream(newLocalStream);
+      } else {
+        console.log('Removing screenshare track, restoring audio-only mode');
+        if (videoSender) {
+          try {
+            pc.removeTrack(videoSender);
+          } catch (e) {
+            console.warn('Failed to remove track:', e);
+          }
+        }
+        
+        const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+        if (audioTrack) {
+          const newLocalStream = new MediaStream([audioTrack]);
+          setLocalStream(newLocalStream);
+        } else {
+          setLocalStream(null);
+        }
+        
+        if (!originalCamTrack) {
+          setIsVideoCall(false);
+        }
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const targetId = activeCallRef.current?.callerId === user.uid ? activeCallRef.current?.targetId : activeCallRef.current?.callerId;
+        if (targetId) {
+          sendSignalingMessage(targetId, 'offer', {
+            offer,
+            senderId: user.uid,
+            targetId,
+            isVideo: !!originalCamTrack
+          });
+        }
+      }
+
+      const targetId = activeCallRef.current?.callerId === user.uid ? activeCallRef.current?.targetId : activeCallRef.current?.callerId;
+      if (targetId) {
+        sendSignalingMessage(targetId, 'screenshare_status', { isScreenSharing: false });
+      }
+    }
+    (window as any)._originalCameraTrack = null;
+    toast.info('Scherm delen beëindigd');
+  };
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      await stopScreenShare();
+    } else {
+      await startScreenShare();
+    }
+  };
+
   return {
     callState,
     activeCall,
@@ -1007,6 +1223,9 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     layout,
     setLayout,
     isInitiator,
-    callCooldownUntil
+    callCooldownUntil,
+    isScreenSharing,
+    isRemoteScreenSharing,
+    toggleScreenShare
   };
 }

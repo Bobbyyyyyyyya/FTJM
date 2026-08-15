@@ -9,7 +9,8 @@ const nativeClear = typeof window !== 'undefined' ? window.localStorage.clear.bi
 
 // In een echte applicatie zou dit een omgevingsvariabele moeten zijn
 // of dynamisch worden opgehaald via een beveiligd kanaal.
-const CHAT_ENCRYPTION_KEY = 'app-chat-secret-key-2024';
+const CHAT_ENCRYPTION_KEY = (import.meta.env.VITE_ENCRYPTION_KEY as string) || 'w836mDIpEhFnugUrKLgroqOp026IEKspJrckVQf5g9M=';
+const LEGACY_CHAT_ENCRYPTION_KEY = 'app-chat-secret-key-2024';
 
 // Sleutel gebruikt voor het versleutelen van lokale tokens en gecachte data
 const STORAGE_ENCRYPTION_KEY = 'app-secure-storage-key-token-2026';
@@ -36,20 +37,64 @@ export const decryptGeneralChat = (cipherText: string): string => {
     if (!cipherText || typeof cipherText !== 'string') {
       return typeof cipherText === 'string' ? cipherText : '';
     }
-    if (!cipherText.startsWith('gc:')) {
-      return cipherText;
+    
+    let cleanText = cipherText.trim();
+    
+    // Support removing possible extra wrapping quotes or escapes from some serialization/JSON layers
+    if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
+      cleanText = cleanText.substring(1, cleanText.length - 1).trim();
+    }
+    if (cleanText.startsWith("'") && cleanText.endsWith("'")) {
+      cleanText = cleanText.substring(1, cleanText.length - 1).trim();
+    }
+    if (cleanText.startsWith('\\"') && cleanText.endsWith('\\"')) {
+      cleanText = cleanText.substring(2, cleanText.length - 2).trim();
+    }
+
+    let actualCipher = cleanText;
+    if (cleanText.startsWith('gc:')) {
+      actualCipher = cleanText.substring(3).trim();
     }
     
-    const actualCipher = cipherText.substring(3);
-    const bytes = CryptoJS.AES.decrypt(actualCipher, CHAT_ENCRYPTION_KEY);
-    const originalText = bytes.toString(CryptoJS.enc.Utf8);
-    
-    if (!originalText) {
-      return cipherText;
+    // 1. Attempt decryption with primary key
+    try {
+      const bytes = CryptoJS.AES.decrypt(actualCipher, CHAT_ENCRYPTION_KEY);
+      const originalText = bytes.toString(CryptoJS.enc.Utf8);
+      
+      // If we got a valid non-empty utf8 string, return it!
+      if (originalText && originalText.trim().length > 0) {
+        return originalText;
+      }
+      
+      // Try Latin1 fallback in case of emojis or special character encoding
+      const latinText = bytes.toString(CryptoJS.enc.Latin1);
+      if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
+        return latinText;
+      }
+    } catch (e) {
+      // ignore and try legacy
+    }
+
+    // 2. Try legacy fallback key for old messages
+    try {
+      const bytes = CryptoJS.AES.decrypt(actualCipher, LEGACY_CHAT_ENCRYPTION_KEY);
+      const originalText = bytes.toString(CryptoJS.enc.Utf8);
+      
+      if (originalText && originalText.trim().length > 0) {
+        return originalText;
+      }
+      
+      const latinText = bytes.toString(CryptoJS.enc.Latin1);
+      if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
+        return latinText;
+      }
+    } catch (e) {
+      // ignore and return original
     }
     
-    return originalText;
+    return cipherText;
   } catch (error) {
+    console.error('Decryption failed for:', cipherText, error);
     return typeof cipherText === 'string' ? cipherText : '';
   }
 };
@@ -88,11 +133,60 @@ const verifyAndUnwrap = (rawStoredValue: string): string | null => {
   return rawStoredValue;
 };
 
+const memoryCache = new Map<string, string>();
+const pendingWriteTimers = new Map<string, any>();
+
+const flushSingleKey = (key: string) => {
+  const timer = pendingWriteTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    pendingWriteTimers.delete(key);
+  }
+  const value = memoryCache.get(key);
+  if (value !== undefined) {
+    try {
+      const encrypted = CryptoJS.AES.encrypt(value, STORAGE_ENCRYPTION_KEY).toString();
+      const signed = signAndWrap(encrypted);
+      nativeSetItem(key, signed);
+    } catch (e) {
+      console.error('Fout bij versleutelen local storage:', e);
+      const signedFallback = signAndWrap(value);
+      nativeSetItem(key, signedFallback);
+    }
+  }
+};
+
+const flushAllPendingWrites = () => {
+  pendingWriteTimers.forEach((timer, key) => {
+    clearTimeout(timer);
+    const value = memoryCache.get(key);
+    if (value !== undefined) {
+      try {
+        const encrypted = CryptoJS.AES.encrypt(value, STORAGE_ENCRYPTION_KEY).toString();
+        const signed = signAndWrap(encrypted);
+        nativeSetItem(key, signed);
+      } catch (e) {
+        const signedFallback = signAndWrap(value);
+        nativeSetItem(key, signedFallback);
+      }
+    }
+  });
+  pendingWriteTimers.clear();
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', flushAllPendingWrites);
+  window.addEventListener('pagehide', flushAllPendingWrites);
+}
+
 /**
  * Veilige localStorage schil om tokens en cache versleuteld op te slaan
  */
 export const secureLocalStorage = {
   getItem: (key: string): string | null => {
+    if (memoryCache.has(key)) {
+      return memoryCache.get(key)!;
+    }
     try {
       const raw = nativeGetItem(key);
       if (!raw) return null;
@@ -104,43 +198,57 @@ export const secureLocalStorage = {
       const bytes = CryptoJS.AES.decrypt(unwrapped, STORAGE_ENCRYPTION_KEY);
       const decrypted = bytes.toString(CryptoJS.enc.Utf8);
       
+      let finalVal: string | null = null;
       if (!decrypted) {
         // Fallback: als het geen versleutelde data was maar platte tekst (oude cache)
         if (unwrapped.startsWith('{') || unwrapped.startsWith('[') || unwrapped === 'true' || unwrapped === 'false') {
-          return unwrapped;
+          finalVal = unwrapped;
         }
-        return null;
+      } else {
+        finalVal = decrypted;
       }
-      return decrypted;
+
+      if (finalVal !== null) {
+        memoryCache.set(key, finalVal);
+      }
+      return finalVal;
     } catch (e) {
       // Fallback naar onversleutelde waarde bij fouten
       const fallbackRaw = nativeGetItem(key);
       if (fallbackRaw) {
         const fallbackUnwrapped = verifyAndUnwrap(fallbackRaw);
-        return fallbackUnwrapped || fallbackRaw;
+        const val = fallbackUnwrapped || fallbackRaw;
+        memoryCache.set(key, val);
+        return val;
       }
       return null;
     }
   },
 
   setItem: (key: string, value: string): void => {
-    try {
-      // Sla de waarde AES-versleuteld op
-      const encrypted = CryptoJS.AES.encrypt(value, STORAGE_ENCRYPTION_KEY).toString();
-      const signed = signAndWrap(encrypted);
-      nativeSetItem(key, signed);
-    } catch (e) {
-      console.error('Fout bij versleutelen local storage:', e);
-      const signedFallback = signAndWrap(value);
-      nativeSetItem(key, signedFallback);
+    memoryCache.set(key, value);
+    if (pendingWriteTimers.has(key)) {
+      clearTimeout(pendingWriteTimers.get(key));
     }
+    const timer = setTimeout(() => {
+      flushSingleKey(key);
+    }, 150);
+    pendingWriteTimers.set(key, timer);
   },
 
   removeItem: (key: string): void => {
+    memoryCache.delete(key);
+    if (pendingWriteTimers.has(key)) {
+      clearTimeout(pendingWriteTimers.get(key));
+      pendingWriteTimers.delete(key);
+    }
     nativeRemoveItem(key);
   },
 
   clear: (): void => {
+    memoryCache.clear();
+    pendingWriteTimers.forEach(t => clearTimeout(t));
+    pendingWriteTimers.clear();
     nativeClear();
   }
 };

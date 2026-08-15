@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Gamepad2, Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, ArrowLeft as ArrowLeftIcon, ArrowRight, Zap, Play, Volume2, Star, Shield } from 'lucide-react';
+import { Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, ArrowRight, Zap, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Props for the Game component
@@ -31,17 +31,20 @@ interface GameActor {
   emoji: string;           // Visual character emoji
   name: string;
   isLocked?: boolean;
+  teleportCooldown?: number;
 }
 
-const CELL_SIZE = 24;
-const COLS = 15;
-const ROWS = 15;
+let CELL_SIZE = 24;
+let COLS = 15;
+let ROWS = 15;
 
 // Maze layout representation
 // 1 = Wall (solid blocks)
 // 0 = Vodka Bottle (🍾)
 // 2 = Power Peanut (🥜)
 // 3 = Empty/Safe walk path (respawn or tunnel corridor)
+// 6 = Wet spot (Brewery)
+// 7 = Portal (Cosmic)
 const INITIAL_MAZE = [
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
   [1, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 2, 1],
@@ -59,6 +62,140 @@ const INITIAL_MAZE = [
   [1, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 2, 1],
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ];
+
+const DEVIL_MAZE_21 = [
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 2, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 2, 1],
+  [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
+  [1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+  [1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 1, 1, 1, 3, 3, 3, 1, 1, 1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 0, 1, 3, 3, 3, 3, 3, 3, 3, 1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 1, 0, 0, 0, 1, 3, 3, 3, 3, 3, 3, 3, 1, 0, 0, 0, 1, 0, 1],
+  [3, 0, 0, 0, 1, 0, 3, 3, 3, 1, 1, 1, 3, 3, 3, 0, 1, 0, 0, 0, 3], // Warp row index 10!
+  [1, 0, 1, 0, 1, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 1, 0, 1, 0, 1],
+  [1, 0, 1, 0, 1, 0, 1, 3, 3, 3, 3, 3, 3, 3, 1, 0, 1, 0, 1, 0, 1],
+  [1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 3, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+  [1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 3, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+  [1, 2, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 2, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+];
+
+const isCellGhostCage = (x: number, y: number, cols: number, level: number) => {
+  if (cols === 21) {
+    // 21x21 map (Level 3 - Devil's Cave) cage: Rows 7 to 13, Cols 6 to 14
+    return (y >= 7 && y <= 13) && (x >= 6 && x <= 14);
+  } else if (level === 2) {
+    // Level 2 - Brewery: No cage at all!
+    return false;
+  } else {
+    // Standard 15x15 map cage: Rows 4 and 5, Cols 5 to 9
+    return (y === 4 && x >= 6 && x <= 8) || (y === 5 && x >= 5 && x <= 9);
+  }
+};
+
+const getMazeForLevel = (lvl: number): { maze: number[][]; cols: number; rows: number; cellSize: number } => {
+  if (lvl === 1) {
+    return {
+      maze: JSON.parse(JSON.stringify(INITIAL_MAZE)),
+      cols: 15,
+      rows: 15,
+      cellSize: 24
+    };
+  } else if (lvl === 2) {
+    const BREWERY_MAZE = [
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 2, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 2, 1],
+      [1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1],
+      [1, 0, 0, 0, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0, 1],
+      [1, 1, 1, 0, 1, 0, 1, 3, 1, 0, 1, 0, 1, 1, 1],
+      [1, 0, 0, 0, 1, 3, 3, 3, 3, 3, 1, 0, 0, 0, 1],
+      [3, 0, 1, 0, 1, 1, 1, 3, 1, 1, 1, 0, 1, 0, 3],
+      [1, 0, 1, 0, 0, 0, 1, 3, 1, 0, 0, 0, 1, 0, 1],
+      [1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+      [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+      [1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1],
+      [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+      [1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1],
+      [1, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 2, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+    const mazeCloned = JSON.parse(JSON.stringify(BREWERY_MAZE));
+    // Plassen met nat bier dat de hamster vertraagt (waarde 6)
+    mazeCloned[3][3] = 6;
+    mazeCloned[3][11] = 6;
+    mazeCloned[9][3] = 6;
+    mazeCloned[9][11] = 6;
+    mazeCloned[11][7] = 6;
+    return {
+      maze: mazeCloned,
+      cols: 15,
+      rows: 15,
+      cellSize: 24
+    };
+  } else if (lvl === 3) {
+    return {
+      maze: JSON.parse(JSON.stringify(DEVIL_MAZE_21)),
+      cols: 21,
+      rows: 21,
+      cellSize: 17
+    };
+  } else if (lvl === 4) {
+    const TUNDRA_MAZE = [
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 2, 1],
+      [1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1],
+      [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+      [1, 0, 0, 0, 1, 1, 3, 3, 3, 1, 1, 0, 0, 0, 1],
+      [1, 1, 0, 1, 1, 3, 3, 3, 3, 3, 1, 1, 0, 1, 1],
+      [3, 0, 0, 0, 0, 3, 1, 1, 1, 3, 0, 0, 0, 0, 3],
+      [1, 1, 0, 1, 1, 3, 1, 3, 1, 3, 1, 1, 0, 1, 1],
+      [1, 0, 0, 0, 1, 3, 1, 3, 1, 3, 1, 0, 0, 0, 1],
+      [1, 0, 1, 0, 1, 3, 3, 3, 3, 3, 1, 0, 1, 0, 1],
+      [1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1],
+      [1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1],
+      [1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 1],
+      [1, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 2, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+    return {
+      maze: JSON.parse(JSON.stringify(TUNDRA_MAZE)),
+      cols: 15,
+      rows: 15,
+      cellSize: 24
+    };
+  } else {
+    const COSMIC_MAZE = [
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 7, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 7, 1],
+      [1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1],
+      [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+      [1, 0, 0, 0, 1, 1, 3, 3, 3, 1, 1, 0, 0, 0, 1],
+      [1, 1, 0, 1, 1, 3, 3, 3, 3, 3, 1, 1, 0, 1, 1],
+      [3, 0, 0, 0, 0, 3, 1, 1, 1, 3, 0, 0, 0, 0, 3],
+      [1, 1, 0, 1, 1, 3, 1, 3, 1, 3, 1, 1, 0, 1, 1],
+      [1, 0, 0, 0, 1, 3, 1, 3, 1, 3, 1, 0, 0, 0, 1],
+      [1, 0, 1, 0, 1, 3, 3, 3, 3, 3, 1, 0, 1, 0, 1],
+      [1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1],
+      [1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1],
+      [1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 1],
+      [1, 7, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 7, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+    return {
+      maze: JSON.parse(JSON.stringify(COSMIC_MAZE)),
+      cols: 15,
+      rows: 15,
+      cellSize: 24
+    };
+  }
+};
 
 export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onShareHighScoreOpen }: HamsterGameProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -93,6 +230,8 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
   const [level, setLevel] = useState(1);
   const [frightenedTimer, setFrightenedTimer] = useState(0);
   const [devilModeTimer, setDevilModeTimer] = useState(0);
+  const [currentEvent, setCurrentEvent] = useState<{ type: string; name: string; icon: string; desc: string; durationSec: number } | null>(null);
+  const currentEventRef = useRef<{ type: string; name: string; icon: string; desc: string; durationSec: number } | null>(null);
 
   // Shared ref to avoid creating a new AudioContext on every sound play
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -108,7 +247,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
   }, []);
 
   // Web Audio Hook For Synthesized Retro Atmosphere using a single cached context
-  const playTone = (type: 'eat' | 'power' | 'eat_cola' | 'die' | 'victory' | 'start' | 'devil_chili') => {
+  const playTone = (type: 'eat' | 'power' | 'eat_cola' | 'die' | 'victory' | 'start' | 'devil_chili' | 'eat_peanut') => {
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
@@ -137,7 +276,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
         osc.start();
         osc.stop(ctx.currentTime + 0.09);
-      } else if (type === 'power') {
+      } else if (type === 'power' || type === 'eat_peanut') {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(300, ctx.currentTime);
         osc.frequency.setValueAtTime(450, ctx.currentTime + 0.08);
@@ -252,7 +391,8 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
     ghosts: [] as GameActor[],
     invulnFrames: 0, // Flash invulnerable frames when caught
     frameCount: 0,
-    devilModeTimer: 0
+    devilModeTimer: 0,
+    eventTimer: 0
   });
 
   // Init/Spawn the Ghosts
@@ -263,37 +403,51 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       engine.score = 0;
       engine.lives = 3;
       engine.level = 1;
-      engine.maze = JSON.parse(JSON.stringify(INITIAL_MAZE));
+    }
 
-      // 10% chance of a Golden Vodka appearing on the initial level
-      if (Math.random() < 0.10) {
-        const vodkaCells: { r: number, c: number }[] = [];
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (engine.maze[r][c] === 0) {
-              vodkaCells.push({ r, c });
-            }
+    // Load layout dynamically depending on level
+    const layout = getMazeForLevel(engine.level);
+    engine.maze = layout.maze;
+    COLS = layout.cols;
+    ROWS = layout.rows;
+    CELL_SIZE = layout.cellSize;
+
+    // Reset random event
+    currentEventRef.current = null;
+    setCurrentEvent(null);
+
+    // 10% chance of a Golden Vodka appearing on a level
+    if (Math.random() < 0.10) {
+      const vodkaCells: { r: number, c: number }[] = [];
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (engine.maze[r][c] === 0) {
+            vodkaCells.push({ r, c });
           }
         }
-        if (vodkaCells.length > 0) {
-          const randCell = vodkaCells[Math.floor(Math.random() * vodkaCells.length)];
-          engine.maze[randCell.r][randCell.c] = 4; // 4 = Golden Vodka
-          toast.success("✨ GELUK! Een zeldzame GOUDEN VODKA is op dit level gespawned! ✨", { duration: 5000 });
-        }
       }
+      if (vodkaCells.length > 0) {
+        const randCell = vodkaCells[Math.floor(Math.random() * vodkaCells.length)];
+        engine.maze[randCell.r][randCell.c] = 4; // 4 = Golden Vodka
+        toast.success("✨ GELUK! Een zeldzame GOUDEN VODKA is op dit level gespawned! ✨", { duration: 5000 });
+      }
+    }
 
+    if (!keepScores) {
       setScore(0);
       setLives(3);
       setLevel(1);
     }
 
-    // Position Hamster safely
-    engine.hamster.gridX = 7;
-    engine.hamster.gridY = 13;
-    engine.hamster.targetGridX = 7;
-    engine.hamster.targetGridY = 13;
-    engine.hamster.x = 7 * CELL_SIZE;
-    engine.hamster.y = 13 * CELL_SIZE;
+    // Position Hamster safely based on the maze columns and rows
+    const hamX = COLS === 21 ? 10 : 7;
+    const hamY = COLS === 21 ? 17 : 13;
+    engine.hamster.gridX = hamX;
+    engine.hamster.gridY = hamY;
+    engine.hamster.targetGridX = hamX;
+    engine.hamster.targetGridY = hamY;
+    engine.hamster.x = hamX * CELL_SIZE;
+    engine.hamster.y = hamY * CELL_SIZE;
     engine.hamster.currentDir = null;
     engine.hamster.nextDir = null;
 
@@ -312,23 +466,17 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       : 0.9 + Math.min(engine.level - 1, 8) * 0.125;
 
     // Determine how many ghosts are active on the field based on Level
-    // Level 1: 1 ghost, Level 2: 3 ghosts, Level 3: 4 ghosts, Level 5+: 5 ghosts
-    const activeCount = engine.level === 1 ? 1 : (engine.level === 2 ? 3 : (engine.level < 5 ? 4 : 5));
+    const activeCount = engine.level === 1 ? 1 : (engine.level === 2 ? 5 : (engine.level < 5 ? 4 : 5));
 
-    // Colas (Pacman Ghosts behavior setup)
-    // 1. Red Cherry Cola
-    // 2. Blue Diet Cola
-    // 3. Lemon Citrus Cola
-    // 4. Purple Grape Soda
-    // 5. Green Lime Soda
+    // Colas setup
     engine.ghosts = [
       {
-        x: 7 * CELL_SIZE,
-        y: 3 * CELL_SIZE,
-        gridX: 7,
-        gridY: 3,
-        targetGridX: 7,
-        targetGridY: 3,
+        x: (COLS === 21 ? 10 : 7) * CELL_SIZE,
+        y: (COLS === 21 ? 6 : 3) * CELL_SIZE,
+        gridX: COLS === 21 ? 10 : 7,
+        gridY: COLS === 21 ? 6 : 3,
+        targetGridX: COLS === 21 ? 10 : 7,
+        targetGridY: COLS === 21 ? 6 : 3,
         speed: baseSpeed,
         currentDir: 'UP',
         nextDir: 'UP',
@@ -339,12 +487,12 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         isLocked: false
       },
       {
-        x: 6 * CELL_SIZE,
-        y: 5 * CELL_SIZE,
-        gridX: 6,
-        gridY: 5,
-        targetGridX: 6,
-        targetGridY: 5,
+        x: (COLS === 21 ? 9 : 6) * CELL_SIZE,
+        y: (COLS === 21 ? 8 : 5) * CELL_SIZE,
+        gridX: COLS === 21 ? 9 : 6,
+        gridY: COLS === 21 ? 8 : 5,
+        targetGridX: COLS === 21 ? 9 : 6,
+        targetGridY: COLS === 21 ? 8 : 5,
         speed: baseSpeed,
         currentDir: 'UP',
         nextDir: 'UP',
@@ -355,12 +503,12 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         isLocked: true
       },
       {
-        x: 8 * CELL_SIZE,
-        y: 5 * CELL_SIZE,
-        gridX: 8,
-        gridY: 5,
-        targetGridX: 8,
-        targetGridY: 5,
+        x: (COLS === 21 ? 11 : 8) * CELL_SIZE,
+        y: (COLS === 21 ? 8 : 5) * CELL_SIZE,
+        gridX: COLS === 21 ? 11 : 8,
+        gridY: COLS === 21 ? 8 : 5,
+        targetGridX: COLS === 21 ? 11 : 8,
+        targetGridY: COLS === 21 ? 8 : 5,
         speed: baseSpeed,
         currentDir: 'UP',
         nextDir: 'UP',
@@ -371,12 +519,12 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         isLocked: true
       },
       {
-        x: 5 * CELL_SIZE,
-        y: 5 * CELL_SIZE,
-        gridX: 5,
-        gridY: 5,
-        targetGridX: 5,
-        targetGridY: 5,
+        x: (COLS === 21 ? 8 : 5) * CELL_SIZE,
+        y: (COLS === 21 ? 8 : 5) * CELL_SIZE,
+        gridX: COLS === 21 ? 8 : 5,
+        gridY: COLS === 21 ? 8 : 5,
+        targetGridX: COLS === 21 ? 8 : 5,
+        targetGridY: COLS === 21 ? 8 : 5,
         speed: baseSpeed,
         currentDir: 'UP',
         nextDir: 'UP',
@@ -387,12 +535,12 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         isLocked: true
       },
       {
-        x: 9 * CELL_SIZE,
-        y: 5 * CELL_SIZE,
-        gridX: 9,
-        gridY: 5,
-        targetGridX: 9,
-        targetGridY: 5,
+        x: (COLS === 21 ? 12 : 9) * CELL_SIZE,
+        y: (COLS === 21 ? 8 : 5) * CELL_SIZE,
+        gridX: COLS === 21 ? 12 : 9,
+        gridY: COLS === 21 ? 8 : 5,
+        targetGridX: COLS === 21 ? 12 : 9,
+        targetGridY: COLS === 21 ? 8 : 5,
         speed: baseSpeed,
         currentDir: 'UP',
         nextDir: 'UP',
@@ -410,13 +558,19 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       ghost.isLocked = !isActive;
 
       if (isActive) {
-        // Position active ghosts scattered nicely in the field
-        let startX = 7;
-        let startY = 3;
-        if (idx === 1) { startX = 4; startY = 3; }
-        else if (idx === 2) { startX = 10; startY = 3; }
-        else if (idx === 3) { startX = 2; startY = 3; }
-        else if (idx === 4) { startX = 12; startY = 3; }
+        let startX = COLS === 21 ? 10 : 7;
+        let startY = COLS === 21 ? 6 : 3;
+        if (COLS === 21) {
+          if (idx === 1) { startX = 6; startY = 6; }
+          else if (idx === 2) { startX = 14; startY = 6; }
+          else if (idx === 3) { startX = 3; startY = 6; }
+          else if (idx === 4) { startX = 17; startY = 6; }
+        } else {
+          if (idx === 1) { startX = 4; startY = 3; }
+          else if (idx === 2) { startX = 10; startY = 3; }
+          else if (idx === 3) { startX = 2; startY = 3; }
+          else if (idx === 4) { startX = 12; startY = 3; }
+        }
 
         ghost.gridX = startX;
         ghost.gridY = startY;
@@ -427,13 +581,19 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         ghost.currentDir = 'UP';
         ghost.nextDir = 'UP';
       } else {
-        // Locked inside cage at fixed grid spots
-        let cageX = 7;
-        let cageY = 5;
-        if (idx === 1) { cageX = 6; cageY = 5; }
-        else if (idx === 2) { cageX = 8; cageY = 5; }
-        else if (idx === 3) { cageX = 5; cageY = 5; }
-        else if (idx === 4) { cageX = 9; cageY = 5; }
+        let cageX = COLS === 21 ? 10 : 7;
+        let cageY = COLS === 21 ? 8 : 5;
+        if (COLS === 21) {
+          if (idx === 1) { cageX = 9; cageY = 8; }
+          else if (idx === 2) { cageX = 11; cageY = 8; }
+          else if (idx === 3) { cageX = 8; cageY = 8; }
+          else if (idx === 4) { cageX = 12; cageY = 8; }
+        } else {
+          if (idx === 1) { cageX = 6; cageY = 5; }
+          else if (idx === 2) { cageX = 8; cageY = 5; }
+          else if (idx === 3) { cageX = 5; cageY = 5; }
+          else if (idx === 4) { cageX = 9; cageY = 5; }
+        }
 
         ghost.gridX = cageX;
         ghost.gridY = cageY;
@@ -453,24 +613,35 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
     setDevilModeTimer(0);
     engine.hamster.speed = 2;
 
-    if (engine.level >= 3) {
-      const vodkaCells: { r: number, c: number }[] = [];
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          if (engine.maze[r][c] === 0) {
-            vodkaCells.push({ r, c });
-          }
+    // Spawn Devil Chili Peppers
+    const vodkaCells: { r: number, c: number }[] = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (engine.maze[r][c] === 0) {
+          vodkaCells.push({ r, c });
         }
       }
-      
-      const chiliCount = Math.min(3, vodkaCells.length);
-      for (let i = 0; i < chiliCount; i++) {
-        if (vodkaCells.length === 0) break;
-        const randIdx = Math.floor(Math.random() * vodkaCells.length);
-        const cell = vodkaCells.splice(randIdx, 1)[0];
-        engine.maze[cell.r][cell.c] = 5;
-      }
-      toast.error("👿 DEVIL'S CAVE EXPANSIE: Pas op voor de hitte! Eet pepers (🌶️) voor de ultieme DUIVELHAMSTER beloning! 🔥", { duration: 6000 });
+    }
+    
+    const targetChilis = engine.level < 3 ? 0 : 3;
+    const chiliCount = Math.min(targetChilis, vodkaCells.length);
+    for (let i = 0; i < chiliCount; i++) {
+      if (vodkaCells.length === 0) break;
+      const randIdx = Math.floor(Math.random() * vodkaCells.length);
+      const cell = vodkaCells.splice(randIdx, 1)[0];
+      engine.maze[cell.r][cell.c] = 5;
+    }
+
+    if (engine.level === 1) {
+      toast.success("🥤 WELKOM BIJ DE KLASSIEKE FRISDRANK EXPANSIE! Eet colaflessen en ontwijk de gevaren! Hamster Vodka Run! 🐹", { duration: 6000 });
+    } else if (engine.level === 2) {
+      toast.success("🍺 BROUWERIJ EXPANSIE ACTIEF! Pas op voor de trage bierplassen! 🍺", { duration: 6000 });
+    } else if (engine.level === 3) {
+      toast.error("😈 DUIVELSGROT EXPANSIE: DE KAART IS NU GIGANTISCH GROOT! 🌶️ Ontwijk de cola's in deze mega-grot! 🔥", { duration: 7000 });
+    } else if (engine.level === 4) {
+      toast.success("❄️ FROZEN TUNDRA EXPANSIE: IJsgladde banen! De hamster glijdt door! ❄️", { duration: 6000 });
+    } else {
+      toast.success("🌌 KOSMISCHE PORTALEN EXPANSIE: Gebruik de sterrenportalen op de hoeken om te teleporteren! 🌌", { duration: 6000 });
     }
   };
 
@@ -591,6 +762,10 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       const player = engine.hamster;
       engine.frameCount++;
 
+      if (player.teleportCooldown && player.teleportCooldown > 0) {
+        player.teleportCooldown--;
+      }
+
       const isNightmare = engine.level >= 10;
       const normalGhostSpeed = isNightmare 
         ? 4.0 
@@ -634,13 +809,122 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         engine.invulnFrames--;
       }
 
+      // Compute dynamic speed for the hamster
+      let targetHamsterSpeed = (engine.devilModeTimer > 0) ? 4.0 : 2.0;
+      
+      // Calculate current grid coordinate based on hamster's physical center
+      const centerX = Math.floor((player.x + CELL_SIZE / 2) / CELL_SIZE);
+      const centerY = Math.floor((player.y + CELL_SIZE / 2) / CELL_SIZE);
+      const currentGridType = engine.maze[centerY]?.[centerX];
+      
+      if (currentGridType === 6) {
+        targetHamsterSpeed *= 0.50; // slow down by 50% on wet beer puddles (very noticeable!)
+      }
+      if (currentEventRef.current?.type === 'sober_hour') {
+        targetHamsterSpeed *= 0.70; // -30% slow down
+      }
+      player.speed = targetHamsterSpeed;
+
+      // Random Events engine
+      if (!currentEventRef.current) {
+        if (engine.frameCount > 180 && Math.random() < 0.0015) {
+          const eventsPool = [
+            { type: 'vodka_storm', name: 'VODKASTORM 🍾⚡', desc: 'Dubbele punten voor alle verzamelde wodka!', icon: '⚡' },
+            { type: 'police_raid', name: 'POLITIE INVAL 👮🚓', desc: 'Cola-flessen worden agressief en sneller (+25%)!', icon: '🚓' },
+            { type: 'drunken_hamster', name: 'DRONKEN HAMSTER 😵💫', desc: 'Omgekeerde besturing, maar ALLES geeft 3x punten!', icon: '😵' },
+            { type: 'peanut_rain', name: 'PINDA REGEN 🥜🌧️', desc: 'Extra pinda-power-ups vallen uit de lucht!', icon: '🌧️' },
+            { type: 'sober_hour', name: 'SOBER UURTJE 🧊⏰', desc: 'Kater slaat toe! Je beweegt 30% trager!', icon: '🧊' },
+            { type: 'beer_bonus', name: 'GRATIS BIER 🍺✨', desc: 'Er is een bonus koud biertje ergens verschenen! (+500 ptn)', icon: '🍺' },
+            { type: 'ice_shock', name: 'IJSSCHOK ❄️🧊', desc: 'De cola-flessen zijn bevroren en bewegen 50% trager!', icon: '❄️' },
+            { type: 'devil_rage', name: 'DUIVEL WOEDE 😈🔥', desc: 'Instant duivelsmodus! Beweeg supersnel en vreet cola-flessen!', icon: '🔥' },
+            { type: 'ghost_panic', name: 'COLAPANIEK 😰🥤', desc: 'Alle cola-flessen worden direct bang en kwetsbaar!', icon: '😰' },
+            { type: 'golden_hour', name: 'GOUDEN UURTJE 👑💰', desc: 'Tijdelijke goudkoorts! Dubbele punten voor ALLES!', icon: '👑' }
+          ];
+          const selected = eventsPool[Math.floor(Math.random() * eventsPool.length)];
+          const duration = 8 * 60; // 8 seconds
+          currentEventRef.current = { ...selected, durationSec: 8 };
+          setCurrentEvent(currentEventRef.current);
+          engine.eventTimer = duration;
+
+          if (selected.type === 'beer_bonus') {
+            const emptyCells: { r: number, c: number }[] = [];
+            for (let r = 0; r < ROWS; r++) {
+              for (let c = 0; c < COLS; c++) {
+                if (engine.maze[r][c] === 3 && (r !== player.gridY || c !== player.gridX)) {
+                  emptyCells.push({ r, c });
+                }
+              }
+            }
+            if (emptyCells.length > 0) {
+              const cell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+              engine.maze[cell.r][cell.c] = 8;
+            }
+          } else if (selected.type === 'peanut_rain') {
+            const emptyCells: { r: number, c: number }[] = [];
+            for (let r = 0; r < ROWS; r++) {
+              for (let c = 0; c < COLS; c++) {
+                if (engine.maze[r][c] === 3) emptyCells.push({ r, c });
+              }
+            }
+            for (let i = 0; i < 3; i++) {
+              if (emptyCells.length === 0) break;
+              const idx = Math.floor(Math.random() * emptyCells.length);
+              const cell = emptyCells.splice(idx, 1)[0];
+              engine.maze[cell.r][cell.c] = 2;
+            }
+          } else if (selected.type === 'devil_rage') {
+            engine.devilModeTimer = duration;
+            setDevilModeTimer(8);
+            engine.ghosts.forEach(g => {
+              g.isFrightened = true;
+              g.speed = 0.5;
+            });
+          } else if (selected.type === 'ghost_panic') {
+            engine.frightenedTimer = duration;
+            setFrightenedTimer(8);
+            engine.ghosts.forEach(g => {
+              g.isFrightened = true;
+              g.speed = 0.8;
+            });
+          }
+
+          toast.success(`🎉 EVENT ACTIEF: ${selected.name} - ${selected.desc}`, { duration: 5000 });
+          playTone('eat_peanut');
+        }
+      } else {
+        engine.eventTimer--;
+        if (engine.frameCount % 60 === 0) {
+          const nextSec = Math.ceil(engine.eventTimer / 60);
+          if (currentEventRef.current) {
+            currentEventRef.current.durationSec = nextSec;
+            setCurrentEvent({ ...currentEventRef.current });
+          }
+        }
+        if (engine.eventTimer <= 0) {
+          toast(`Het event "${currentEventRef.current?.name}" is afgelopen.`, { icon: '⏰' });
+          currentEventRef.current = null;
+          setCurrentEvent(null);
+        }
+      }
+
+      // Adjust normal ghost speed based on "police_raid" event (+25% speed)
+      const isPoliceRaidActive = currentEventRef.current?.type === 'police_raid';
+      const activeGhostSpeed = isPoliceRaidActive ? (normalGhostSpeed * 1.25) : normalGhostSpeed;
+
       // 2. PLAYERS ENGINE (HAMSTER SMOOTH GRID-ALIGNMENT MOVEMENT)
 
-      // Poll current keysPressed state to continuously feed player.nextDir response instantly!
-      if (engine.keysPressed.UP) player.nextDir = 'UP';
-      else if (engine.keysPressed.DOWN) player.nextDir = 'DOWN';
-      else if (engine.keysPressed.LEFT) player.nextDir = 'LEFT';
-      else if (engine.keysPressed.RIGHT) player.nextDir = 'RIGHT';
+      // Poll current keysPressed state to continuously feed player.nextDir response instantly, with reverse control support!
+      if (currentEventRef.current?.type === 'drunken_hamster') {
+        if (engine.keysPressed.UP) player.nextDir = 'DOWN';
+        else if (engine.keysPressed.DOWN) player.nextDir = 'UP';
+        else if (engine.keysPressed.LEFT) player.nextDir = 'RIGHT';
+        else if (engine.keysPressed.RIGHT) player.nextDir = 'LEFT';
+      } else {
+        if (engine.keysPressed.UP) player.nextDir = 'UP';
+        else if (engine.keysPressed.DOWN) player.nextDir = 'DOWN';
+        else if (engine.keysPressed.LEFT) player.nextDir = 'LEFT';
+        else if (engine.keysPressed.RIGHT) player.nextDir = 'RIGHT';
+      }
 
       // Verify move helper to prevent going through walls under any turning conditions
       const isValidPlayerMove = (gridX: number, gridY: number, dir: Direction): boolean => {
@@ -661,7 +945,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         }
 
         // Prevent the player from entering the central ghost cage
-        const isCage = (checkY === 4 && checkX >= 6 && checkX <= 8) || (checkY === 5 && checkX >= 5 && checkX <= 9);
+        const isCage = isCellGhostCage(checkX, checkY, COLS, engine.level);
         if (isCage) return false;
 
         return engine.maze[checkY][checkX] !== 1;
@@ -743,22 +1027,32 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         }
       }
 
-      // 3. DETECT ITEMS COLLECTION (VODKA BOTTLES & NUTS)
+      // 3. DETECT ITEMS COLLECTION (VODKA BOTTLES, NUTS, PORTALS)
       const checkCollectGridX = Math.floor((player.x + CELL_SIZE / 2) / CELL_SIZE);
       const checkCollectGridY = Math.floor((player.y + CELL_SIZE / 2) / CELL_SIZE);
 
       if (checkCollectGridX >= 0 && checkCollectGridX < COLS && checkCollectGridY >= 0 && checkCollectGridY < ROWS) {
         const item = engine.maze[checkCollectGridY][checkCollectGridX];
+        
+        // Multiplier based on event
+        let scoreMult = 1;
+        if (currentEventRef.current?.type === 'drunken_hamster') {
+          scoreMult = 3;
+        } else if (currentEventRef.current?.type === 'golden_hour') {
+          scoreMult = 2;
+        }
+
         if (item === 0) {
           // Collected vodka!
           engine.maze[checkCollectGridY][checkCollectGridX] = 3; // Clear item cell
-          engine.score += 25;
+          const bonus = (currentEventRef.current?.type === 'vodka_storm') ? 50 : 25;
+          engine.score += bonus * scoreMult;
           setScore(engine.score);
           playTone('eat');
         } else if (item === 2) {
           // Collected Power Peanut!
           engine.maze[checkCollectGridY][checkCollectGridX] = 3; // Clear item cell
-          engine.score += 100;
+          engine.score += 100 * scoreMult;
           setScore(engine.score);
           playTone('power');
           
@@ -773,7 +1067,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         } else if (item === 4) {
           // Collected Golden Vodka!
           engine.maze[checkCollectGridY][checkCollectGridX] = 3; // Clear item cell
-          engine.score += 500; // Large score reward
+          engine.score += 500 * scoreMult; // Large score reward
           setScore(engine.score);
           playTone('victory');
           engine.lives = 3; // Regenerate all health/lives!
@@ -782,7 +1076,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         } else if (item === 5) {
           // Collected Devil's Chili Pepper! 🌶️
           engine.maze[checkCollectGridY][checkCollectGridX] = 3; // Clear item cell
-          engine.score += 1000; // Big point reward!
+          engine.score += 1000 * scoreMult; // Big point reward!
           setScore(engine.score);
           playTone('devil_chili');
 
@@ -803,14 +1097,45 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             duration: 5000,
             icon: '🔥'
           });
+        } else if (item === 7) {
+          if (!player.teleportCooldown || player.teleportCooldown === 0) {
+            // STEPPED ON A COSMIC PORTAL! Teleport to opposite diagonal portal corner
+            let destR = 1;
+            let destC = 1;
+            if (checkCollectGridY === 1 && checkCollectGridX === 1) {
+              destR = ROWS - 2; destC = COLS - 2;
+            } else if (checkCollectGridY === 1 && checkCollectGridX === COLS - 2) {
+              destR = ROWS - 2; destC = 1;
+            } else if (checkCollectGridY === ROWS - 2 && checkCollectGridX === 1) {
+              destR = 1; destC = COLS - 2;
+            } else if (checkCollectGridY === ROWS - 2 && checkCollectGridX === COLS - 2) {
+              destR = 1; destC = 1;
+            }
+            player.gridX = destC;
+            player.gridY = destR;
+            player.targetGridX = destC;
+            player.targetGridY = destR;
+            player.x = destC * CELL_SIZE;
+            player.y = destR * CELL_SIZE;
+            player.teleportCooldown = 45; // 45 frames (~0.75 seconds) cooldown to prevent instant loops
+            playTone('eat_cola'); // teleport sound
+            toast.success("🌌 DIMENSIONELE TELEPORTATIE! Je bent naar de andere kant van het heelal geworpen! ✨", { duration: 3000 });
+          }
+        } else if (item === 8) {
+          // Collected beer mug bonus!
+          engine.maze[checkCollectGridY][checkCollectGridX] = 3;
+          engine.score += 500 * scoreMult;
+          setScore(engine.score);
+          playTone('victory');
+          toast.success("🍺 PROOST! Je hebt het koude biertje opgedronken! +500 ptn! 🍻", { duration: 4000 });
         }
       }
 
-      // Check level cleared condition (any 0s, 2s, 4s or 5s left in maze?)
+      // Check level cleared condition (any 0s, 2s, 4s, 5s or 8s left in maze?)
       let itemsRemaining = 0;
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-          if (engine.maze[r][c] === 0 || engine.maze[r][c] === 2 || engine.maze[r][c] === 4 || engine.maze[r][c] === 5) {
+          if (engine.maze[r][c] === 0 || engine.maze[r][c] === 2 || engine.maze[r][c] === 4 || engine.maze[r][c] === 5 || engine.maze[r][c] === 8) {
             itemsRemaining++;
           }
         }
@@ -822,8 +1147,12 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         engine.level++;
         setLevel(engine.level);
         
-        // Reset maze but preserve score/lives
-        engine.maze = JSON.parse(JSON.stringify(INITIAL_MAZE));
+        // Reset/load next level maze dynamically
+        const nextLayout = getMazeForLevel(engine.level);
+        engine.maze = nextLayout.maze;
+        COLS = nextLayout.cols;
+        ROWS = nextLayout.rows;
+        CELL_SIZE = nextLayout.cellSize;
 
         // 10% chance of a Golden Vodka appearing on a level
         const isGoldenVodkaLevel = Math.random() < 0.10;
@@ -854,6 +1183,26 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
 
       // 4. GHOST ENGINE (COLA BOTTLES GRID-TARGET INTERSECTION CHASE ACTION)
       engine.ghosts.forEach((ghost, idx) => {
+        // Dynamically compute ghost frightened state and speed
+        const isFrightenedModeActive = engine.devilModeTimer > 0 || engine.frightenedTimer > 0 || currentEventRef.current?.type === 'ghost_panic';
+        ghost.isFrightened = isFrightenedModeActive;
+
+        if (isFrightenedModeActive) {
+          if (engine.devilModeTimer > 0) {
+            ghost.speed = 0.5;
+          } else {
+            ghost.speed = 0.8;
+          }
+        } else {
+          let baseSpeed = normalGhostSpeed;
+          if (currentEventRef.current?.type === 'police_raid') {
+            baseSpeed *= 1.25;
+          } else if (currentEventRef.current?.type === 'ice_shock') {
+            baseSpeed *= 0.50;
+          }
+          ghost.speed = baseSpeed;
+        }
+
         const gTargetX = ghost.targetGridX * CELL_SIZE;
         const gTargetY = ghost.targetGridY * CELL_SIZE;
 
@@ -893,7 +1242,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
 
           // Cage boundaries checker
           const isInsideCage = (x: number, y: number) => {
-            return (y === 4 && x >= 6 && x <= 8) || (y === 5 && x >= 5 && x <= 9);
+            return isCellGhostCage(x, y, COLS, engine.level);
           };
 
           const wasInside = isInsideCage(ghost.gridX, ghost.gridY);
@@ -962,7 +1311,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
         }
 
         // If ghost is in the central spawn cage area, ignore collision to prevent spawn camping / instant killing on respawn
-        const isGhostInCage = (ghost.gridY === 4 || ghost.gridY === 5) && (ghost.gridX >= 5 && ghost.gridX <= 9);
+        const isGhostInCage = isCellGhostCage(ghost.gridX, ghost.gridY, COLS, engine.level);
         if (isGhostInCage) {
           return;
         }
@@ -985,13 +1334,15 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             engine.score += pts;
             setScore(engine.score);
 
-            // Send ghost back to central cage / spawn spot
-            ghost.gridX = 7;
-            ghost.gridY = 5;
-            ghost.targetGridX = 7;
-            ghost.targetGridY = 5;
-            ghost.x = 7 * CELL_SIZE;
-            ghost.y = 5 * CELL_SIZE;
+            // Send ghost back to central cage / spawn spot dynamically
+            const spawnX = COLS === 21 ? 10 : 7;
+            const spawnY = COLS === 21 ? 8 : 5;
+            ghost.gridX = spawnX;
+            ghost.gridY = spawnY;
+            ghost.targetGridX = spawnX;
+            ghost.targetGridY = spawnY;
+            ghost.x = spawnX * CELL_SIZE;
+            ghost.y = spawnY * CELL_SIZE;
             
             // Retain frightened status if global frightened power mode is still active
             if (engine.devilModeTimer > 0) {
@@ -1032,46 +1383,96 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
 
       // 6. CANVAS RETRO DRAW ENGINE
       const dpr = window.devicePixelRatio || 1;
-      if (canvas.width !== 360 * dpr || canvas.height !== 360 * dpr) {
-        canvas.width = 360 * dpr;
-        canvas.height = 360 * dpr;
+      const desiredWidth = COLS * CELL_SIZE;
+      const desiredHeight = ROWS * CELL_SIZE;
+      if (canvas.width !== desiredWidth * dpr || canvas.height !== desiredHeight * dpr) {
+        canvas.width = desiredWidth * dpr;
+        canvas.height = desiredHeight * dpr;
       }
       ctx.save();
       ctx.scale(dpr, dpr);
 
-      ctx.clearRect(0, 0, 360, 360);
-      if (engine.level >= 3) {
-        ctx.fillStyle = '#0f0202'; // Deep fiery blood-red background for Devil's Cave
-        ctx.fillRect(0, 0, 360, 360);
-        
-        // Render glowing fire embers rising upwards
+      ctx.clearRect(0, 0, desiredWidth, desiredHeight);
+
+      // Themes based on level expansions
+      let bgStyle = '#020617'; // default dark blue
+      let wallBg = '#0f172a';
+      let wallStroke = '#2563eb';
+
+      if (engine.level === 2) {
+        // Brewery Expansion
+        bgStyle = '#1c0d02'; // deep dark beer brown
+        wallBg = '#3c1c04'; // wooden brown
+        wallStroke = '#b45309'; // copper orange
+      } else if (engine.level === 3) {
+        // Devil's Cave
+        bgStyle = '#0f0202'; // deep blood red
+        wallBg = '#220000';
+        wallStroke = '#ef4444'; // fiery red
+      } else if (engine.level === 4) {
+        // Frozen Tundra
+        bgStyle = '#082f49'; // deep icy blue
+        wallBg = '#0c4a6e';
+        wallStroke = '#38bdf8'; // icy sky blue
+      } else if (engine.level >= 5) {
+        // Cosmic Portals
+        bgStyle = '#150020'; // deep star purple
+        wallBg = '#2b0040';
+        wallStroke = '#ec4899'; // neon space pink
+      }
+
+      ctx.fillStyle = bgStyle;
+      ctx.fillRect(0, 0, desiredWidth, desiredHeight);
+
+      // Render custom level backgrounds (e.g. rising embers for lvl 3, falling snowflakes for lvl 4, glittering stars for lvl 5+)
+      if (engine.level === 3) {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
         for (let i = 0; i < 6; i++) {
-          const px = ((engine.frameCount + i * 60) * 0.5) % 360;
-          const py = (Math.sin(engine.frameCount * 0.01 + i) * 50 + i * 60) % 360;
+          const px = ((engine.frameCount + i * 60) * 0.5) % desiredWidth;
+          const py = (Math.sin(engine.frameCount * 0.01 + i) * 50 + i * 60) % desiredHeight;
           ctx.beginPath();
-          ctx.arc(px, 360 - py, 3 + (i % 3), 0, Math.PI * 2);
+          ctx.arc(px, desiredHeight - py, 3 + (i % 3), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (engine.level === 4) {
+        // Falling snowflakes
+        ctx.fillStyle = 'rgba(125, 211, 252, 0.3)';
+        for (let i = 0; i < 8; i++) {
+          const px = (i * 50 + engine.frameCount * 0.3) % desiredWidth;
+          const py = (i * 45 + engine.frameCount * 0.5) % desiredHeight;
+          ctx.font = '10px sans-serif';
+          ctx.fillText('❄️', px, py);
+        }
+      } else if (engine.level >= 5) {
+        // Cosmic stars
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        for (let i = 0; i < 10; i++) {
+          const px = (Math.sin(i * 9) * desiredWidth) % desiredWidth;
+          const py = (Math.cos(i * 12) * desiredHeight) % desiredHeight;
+          const alpha = 0.2 + 0.3 * Math.sin(engine.frameCount * 0.05 + i);
+          ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(px, py, 1.5, 0, Math.PI * 2);
           ctx.fill();
         }
       }
 
-      // Draw beautiful Pacman grid walls and items
+      // Draw beautiful grid walls and items
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const type = engine.maze[r][c];
           
           if (type === 1) {
             // Solid retro wall decor
-            ctx.fillStyle = engine.level >= 3 ? '#220000' : '#0f172a'; // Deeper dark wall center or devil red
+            ctx.fillStyle = wallBg;
             ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
             
-            // Neon grid blue / red accent border
-            ctx.strokeStyle = engine.level >= 3 ? '#ef4444' : '#2563eb';
+            // Neon grid accent border
+            ctx.strokeStyle = wallStroke;
             ctx.lineWidth = 1.5;
             ctx.strokeRect(c * CELL_SIZE + 1.5, r * CELL_SIZE + 1.5, CELL_SIZE - 3, CELL_SIZE - 3);
           } else if (type === 0) {
             // DRAW VODKA BOTTLES (item to collect)
-            // Vibrant pulsing background ring and bright stroke glow to make it stand out beautifully
             const pulse = 1 + 0.12 * Math.sin(engine.frameCount * 0.1 + (r + c) * 0.5);
             ctx.save();
             ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
@@ -1100,7 +1501,6 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
             ctx.scale(pulse, pulse);
 
-            // Bright amber glowing aura ring
             ctx.fillStyle = 'rgba(249, 115, 22, 0.35)';
             ctx.beginPath();
             ctx.arc(0, 0, 12, 0, Math.PI * 2);
@@ -1124,7 +1524,6 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
             ctx.scale(pulse, pulse);
 
-            // Radiant golden glowing aura ring
             ctx.fillStyle = 'rgba(234, 179, 8, 0.45)';
             ctx.beginPath();
             ctx.arc(0, 0, 13, 0, Math.PI * 2);
@@ -1136,7 +1535,6 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ctx.arc(0, 0, 11, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Draw shiny stars surrounding golden bottle
             ctx.font = '16px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -1152,7 +1550,6 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
             ctx.scale(pulse, pulse);
 
-            // Radiant red fire aura ring
             ctx.fillStyle = 'rgba(239, 68, 68, 0.45)';
             ctx.beginPath();
             ctx.arc(0, 0, 13, 0, Math.PI * 2);
@@ -1164,7 +1561,6 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ctx.arc(0, 0, 11, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Draw chili emoji and sparkles
             ctx.font = '16px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -1173,44 +1569,121 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
             ctx.fillText('🔥', 8, -6);
             ctx.fillText('🔥', -8, 6);
             ctx.restore();
+          } else if (type === 6) {
+            // DRAW WET BEER PUDDLE (Brewery)
+            ctx.fillStyle = 'rgba(180, 83, 9, 0.25)';
+            ctx.beginPath();
+            ctx.arc(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(217, 119, 6, 0.5)';
+            ctx.stroke();
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🍺', c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2 + 1);
+          } else if (type === 7) {
+            // DRAW COSMIC PORTALS 🌌
+            const pulse = 1 + 0.15 * Math.sin(engine.frameCount * 0.1 + (r + c) * 0.6);
+            ctx.save();
+            ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
+            ctx.scale(pulse, pulse);
+            ctx.fillStyle = 'rgba(236, 72, 153, 0.35)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 11, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#db2777';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🌌', 0, 0);
+            ctx.restore();
+          } else if (type === 8) {
+            // DRAW BONUS COLD BEER 🍺 (Free Beer Event)
+            const pulse = 1 + 0.2 * Math.sin(engine.frameCount * 0.15);
+            ctx.save();
+            ctx.translate(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
+            ctx.scale(pulse, pulse);
+            ctx.fillStyle = 'rgba(234, 179, 8, 0.4)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🍺', 0, 0);
+            ctx.restore();
           }
         }
       }
 
       // Draw tunnel indicators (small sparkles)
+      const warpRowY = Math.floor(ROWS / 2);
       ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
-      ctx.fillRect(0, 6 * CELL_SIZE, 8, CELL_SIZE);
-      ctx.fillRect(360 - 8, 6 * CELL_SIZE, 8, CELL_SIZE);
+      ctx.fillRect(0, warpRowY * CELL_SIZE, 8, CELL_SIZE);
+      ctx.fillRect(desiredWidth - 8, warpRowY * CELL_SIZE, 8, CELL_SIZE);
 
       // Draw beautiful glows and outline of the ghost cage (kooi) in the center
       ctx.save();
-      ctx.strokeStyle = engine.level >= 3 ? '#ef4444' : '#f43f5e'; // Vibrant pink/rose glowing neon cage of red devil themed cage
+      ctx.strokeStyle = engine.level === 3 ? '#ef4444' : '#f43f5e'; // Vibrant pink/rose or devil red
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       
-      ctx.moveTo(5 * CELL_SIZE, 5 * CELL_SIZE);
-      ctx.lineTo(5 * CELL_SIZE, 6 * CELL_SIZE); // Down left edge
-      ctx.lineTo(10 * CELL_SIZE, 6 * CELL_SIZE); // Bottom edge
-      ctx.lineTo(10 * CELL_SIZE, 5 * CELL_SIZE); // Up right edge
-      ctx.lineTo(9 * CELL_SIZE, 5 * CELL_SIZE); // Step in horizontally
-      ctx.lineTo(9 * CELL_SIZE, 4 * CELL_SIZE); // Up row 4 edge
-      ctx.lineTo(8 * CELL_SIZE, 4 * CELL_SIZE); // Top right roof of cage
-      
-      ctx.moveTo(7 * CELL_SIZE, 4 * CELL_SIZE); // Gap for dashed gate!
-      ctx.lineTo(6 * CELL_SIZE, 4 * CELL_SIZE); // Top left roof of cage 
-      ctx.lineTo(6 * CELL_SIZE, 5 * CELL_SIZE); // Down row 4 edge
-      ctx.lineTo(5 * CELL_SIZE, 5 * CELL_SIZE); // Step out horizontally
-      ctx.stroke();
+      if (COLS === 21) {
+        // 21x21 cage at col 8-13, row 7-9
+        ctx.moveTo(8 * CELL_SIZE, 8 * CELL_SIZE);
+        ctx.lineTo(8 * CELL_SIZE, 9 * CELL_SIZE); // Down left edge
+        ctx.lineTo(13 * CELL_SIZE, 9 * CELL_SIZE); // Bottom edge
+        ctx.lineTo(13 * CELL_SIZE, 8 * CELL_SIZE); // Up right edge
+        ctx.lineTo(12 * CELL_SIZE, 8 * CELL_SIZE); // Step in horizontally
+        ctx.lineTo(12 * CELL_SIZE, 7 * CELL_SIZE); // Up row 7 edge
+        ctx.lineTo(11 * CELL_SIZE, 7 * CELL_SIZE); // Top right roof of cage
+        
+        ctx.moveTo(10 * CELL_SIZE, 7 * CELL_SIZE); // Gap for dashed gate!
+        ctx.lineTo(9 * CELL_SIZE, 7 * CELL_SIZE); // Top left roof of cage 
+        ctx.lineTo(9 * CELL_SIZE, 8 * CELL_SIZE); // Down row 7 edge
+        ctx.lineTo(8 * CELL_SIZE, 8 * CELL_SIZE); // Step out horizontally
+        ctx.stroke();
 
-      // Draw dashed laser gate for cage top opening
-      ctx.strokeStyle = '#38bdf8'; // Sky blue laser beam gate
-      ctx.lineWidth = 3.5;
-      ctx.setLineDash([4, 4]); // Dashed line style
-      ctx.beginPath();
-      ctx.moveTo(7 * CELL_SIZE - 2, 4 * CELL_SIZE);
-      ctx.lineTo(8 * CELL_SIZE + 2, 4 * CELL_SIZE);
-      ctx.stroke();
-      ctx.setLineDash([]); // Reset line dash
+        // Draw dashed laser gate for cage top opening
+        ctx.strokeStyle = '#38bdf8'; // Sky blue laser beam gate
+        ctx.lineWidth = 3.5;
+        ctx.setLineDash([4, 4]); // Dashed line style
+        ctx.beginPath();
+        ctx.moveTo(10 * CELL_SIZE - 2, 7 * CELL_SIZE);
+        ctx.lineTo(11 * CELL_SIZE + 2, 7 * CELL_SIZE);
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset line dash
+      } else {
+        // Standard cage at col 5-10, row 4-6
+        ctx.moveTo(5 * CELL_SIZE, 5 * CELL_SIZE);
+        ctx.lineTo(5 * CELL_SIZE, 6 * CELL_SIZE); // Down left edge
+        ctx.lineTo(10 * CELL_SIZE, 6 * CELL_SIZE); // Bottom edge
+        ctx.lineTo(10 * CELL_SIZE, 5 * CELL_SIZE); // Up right edge
+        ctx.lineTo(9 * CELL_SIZE, 5 * CELL_SIZE); // Step in horizontally
+        ctx.lineTo(9 * CELL_SIZE, 4 * CELL_SIZE); // Up row 4 edge
+        ctx.lineTo(8 * CELL_SIZE, 4 * CELL_SIZE); // Top right roof of cage
+        
+        ctx.moveTo(7 * CELL_SIZE, 4 * CELL_SIZE); // Gap for dashed gate!
+        ctx.lineTo(6 * CELL_SIZE, 4 * CELL_SIZE); // Top left roof of cage 
+        ctx.lineTo(6 * CELL_SIZE, 5 * CELL_SIZE); // Down row 4 edge
+        ctx.lineTo(5 * CELL_SIZE, 5 * CELL_SIZE); // Step out horizontally
+        ctx.stroke();
+
+        // Draw dashed laser gate for cage top opening
+        ctx.strokeStyle = '#38bdf8'; // Sky blue laser beam gate
+        ctx.lineWidth = 3.5;
+        ctx.setLineDash([4, 4]); // Dashed line style
+        ctx.beginPath();
+        ctx.moveTo(7 * CELL_SIZE - 2, 4 * CELL_SIZE);
+        ctx.lineTo(8 * CELL_SIZE + 2, 4 * CELL_SIZE);
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset line dash
+      }
       ctx.restore();
 
       // Draw Ghosts (Cola Bottles)
@@ -1261,6 +1734,27 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
       if (engine.invulnFrames === 0 || Math.floor(engine.frameCount / 8) % 2 === 0) {
         ctx.save();
         ctx.translate(player.x + CELL_SIZE / 2, player.y + CELL_SIZE / 2);
+        
+        // Check if player is on a sticky beer puddle
+        const playerCenterX = Math.floor((player.x + CELL_SIZE / 2) / CELL_SIZE);
+        const playerCenterY = Math.floor((player.y + CELL_SIZE / 2) / CELL_SIZE);
+        const isOnBeer = engine.maze[playerCenterY]?.[playerCenterX] === 6;
+
+        if (isOnBeer) {
+          // Wobble the hamster from side to side
+          const wobble = Math.sin(engine.frameCount * 0.25) * 0.15;
+          ctx.rotate(wobble);
+
+          // Draw splash bubbles/foam around the hamster
+          ctx.fillStyle = 'rgba(217, 119, 6, 0.6)';
+          for (let i = 0; i < 4; i++) {
+            const angle = (engine.frameCount * 0.1 + i * Math.PI / 2) % (Math.PI * 2);
+            const r = 10 + 4 * Math.sin(engine.frameCount * 0.15 + i);
+            ctx.beginPath();
+            ctx.arc(Math.cos(angle) * r, Math.sin(angle) * r, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
         
         if (engine.devilModeTimer > 0) {
           // Flame aura red circles
@@ -1485,7 +1979,7 @@ export function HamsterGame({ onBack, isFullscreen, userProfile, onSaveHighScore
               onClick={() => steerMobile('LEFT')}
               className="w-14 h-12 bg-app-card hover:bg-app-accent border border-app-border rounded-xl flex items-center justify-center active:bg-amber-400 transition-colors shadow-sm cursor-pointer"
             >
-              <ArrowLeftIcon className="w-6 h-6 text-app-ink" />
+              <ArrowLeft className="w-6 h-6 text-app-ink" />
             </button>
             <span className="text-[10px] font-bold text-app-muted uppercase tracking-widest w-12 text-center">Steer</span>
             <button 
