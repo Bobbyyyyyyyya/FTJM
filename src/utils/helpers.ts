@@ -611,3 +611,16 @@ export const isBetaTester = (
   return BETA_TESTER_EMAILS.includes(userOrEmail.toLowerCase().trim());
 };
 
+/**
+ * Generates a public share URL pointing to the production preview (ais-pre-) instead of dev (ais-dev-)
+ */
+export const getMediaShareUrl = (mediaIdOrUrl: string): string => {
+  if (typeof window === 'undefined') return '';
+  let origin = window.location.origin;
+  if (origin.includes('ais-dev-')) {
+    origin = origin.replace('ais-dev-', 'ais-pre-');
+  }
+  const pathname = window.location.pathname || '';
+  return `${origin}${pathname}?media=${encodeURIComponent(mediaIdOrUrl)}`;
+};
+

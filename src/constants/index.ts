@@ -1,9 +1,16 @@
 export const NEWS_ITEMS = [
   {
+    id: 13,
+    title: "FTJM Web Update v2.5.0 🔥",
+    content: "Welkom bij de grote FTJM Web v2.5.0 update! We hebben de uploadlimiet verhoogd naar 4 MB voor alle profielfoto's, achtergronden, audio en chatberichten. Daarnaast introduceren we een vernieuwde geluids- en beltonenverzameling, automatische desktop app detectie met directe GitHub download (v1.3.0) voor macOS, Windows en Linux, badges voor Geverifieerde Accounts en Beta Testers, en verbeterde beveiligings- en snelheidsoptimalisaties!",
+    date: new Date().toISOString().split('T')[0],
+    category: "Grote Update"
+  },
+  {
     id: 12,
     title: "FTJM Enterprise Update v2.4.5 🚀",
     content: "We hebben het platform geüpdatet naar v2.4.5! Deze update brengt de nieuwste optimalisaties, een nog betere weergave van het FTJM logo in icon spaces, en verbeterde systeem- en beveiligingsfuncties door het hele platform.",
-    date: new Date().toISOString().split('T')[0],
+    date: "2026-07-10",
     category: "Update"
   },
   {

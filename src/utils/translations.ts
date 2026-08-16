@@ -130,6 +130,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
 
     // Settings App Tab
     "Beheer hoe de app op je apparaat werkt.": "Manage how the app works on your device.",
+    "Officiële Desktop App (macOS, Windows, Linux)": "Official Desktop App (macOS, Windows, Linux)",
+    "Web PWA / Browser Installatie": "Web PWA / Browser Installation",
     "Desktop App Installeren": "Install Desktop App",
     "Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.": "Install FTJM as a standalone app on your computer or ChromeOS device for a faster experience and direct desktop access.",
     "Belangrijk: Zorg ervoor dat pop-ups zijn toegestaan in je browser voor een optimale werking van de app en verificaties.": "Important: Ensure pop-ups are allowed in your browser for optimal app performance and verifications.",

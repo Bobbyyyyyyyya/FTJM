@@ -47,7 +47,11 @@ import {
   PhoneOff,
   Fingerprint,
   Film,
-  FlaskConical
+  FlaskConical,
+  Zap,
+  Monitor,
+  LayoutGrid,
+  Smartphone
 } from 'lucide-react';
 
 // Components
@@ -66,7 +70,10 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { AudioLogsView } from './components/AudioLogsView';
 import { GamesView } from './components/GamesView';
 import { MediaFeedCard } from './components/MediaFeedCard';
+import { MediaSwipeFeed } from './components/MediaSwipeFeed';
+import { PublicSharedMediaModal } from './components/PublicSharedMediaModal';
 import { MessageEditArea } from './components/MessageEditArea';
+import { DesktopAppPromptModal, getDesktopOperatingSystem } from './components/DesktopAppPromptModal';
 import { useVoiceCall } from './hooks/useVoiceCall';
 import { VoiceCallUI } from './components/VoiceCallUI';
 import { useGroupVoiceCall } from './hooks/useGroupVoiceCall';
@@ -252,6 +259,27 @@ export default function App() {
 
   const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security' | 'discord'>('profile');
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  const [showDesktopPromptModal, setShowDesktopPromptModal] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      const detectedOs = getDesktopOperatingSystem();
+      if (detectedOs) {
+        try {
+          const choice = localStorage.getItem('ftjm_desktop_app_choice');
+          const sessionSeen = sessionStorage.getItem('ftjm_desktop_app_prompt_seen');
+          if (!choice && !sessionSeen) {
+            const timer = setTimeout(() => {
+              setShowDesktopPromptModal(true);
+            }, 900);
+            return () => clearTimeout(timer);
+          }
+        } catch (e) {
+          console.error('Failed to read desktop preference', e);
+        }
+      }
+    }
+  }, [user]);
   const [threads, setThreads] = useState<ForumThread[]>([]);
   const [activeThread, setActiveThread] = useState<ForumThread | null>(null);
   const [threadComments, setThreadComments] = useState<ForumComment[]>([]);
@@ -332,14 +360,14 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v2.4') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.5') !== 'true';
   });
   const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
-    return localStorage.getItem('has_seen_news_v2.4') === 'true';
+    return localStorage.getItem('has_seen_news_v2.5') === 'true';
   });
   const [hasSeenMenu, setHasSeenMenu] = useState(() => {
-    return localStorage.getItem('has_seen_menu_v2.4') === 'true';
+    return localStorage.getItem('has_seen_menu_v2.5') === 'true';
   });
   const cleanNotificationSettings = (settings: any): NotificationSettings => {
     const defaultSettings = {
@@ -899,6 +927,38 @@ export default function App() {
 
   const [feedMedia, setFeedMedia] = useState<any[]>([]);
   const [feedLoading, setFeedLoading] = useState<boolean>(false);
+  const [feedViewMode, setFeedViewMode] = useState<'grid' | 'swipe'>(() => {
+    try {
+      return (localStorage.getItem('ftjm_feed_view_mode') as 'grid' | 'swipe') || 'grid';
+    } catch {
+      return 'grid';
+    }
+  });
+
+  const [sharedMediaId, setSharedMediaId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const mediaParam = params.get('media') || params.get('media_id');
+      if (mediaParam) return mediaParam;
+      const hash = window.location.hash;
+      if (hash.includes('media=')) {
+        const match = hash.match(/media=([^&]+)/);
+        if (match) return decodeURIComponent(match[1]);
+      }
+    } catch (e) {
+      console.error('Error parsing shared media URL param:', e);
+    }
+    return null;
+  });
+
+  // If user is authenticated and whitelist approved, navigate to the media feed to view the shared post with full swipe/like/comment features
+  useEffect(() => {
+    if (sharedMediaId && user && isWhitelisted) {
+      setView('media_feed');
+      setFeedViewMode('swipe');
+    }
+  }, [sharedMediaId, user, isWhitelisted]);
 
   const fetchFeedMedia = async () => {
     setFeedLoading(true);
@@ -7280,7 +7340,7 @@ export default function App() {
                     setShowNavDropdown(!showNavDropdown);
                     if (!hasSeenMenu) {
                       setHasSeenMenu(true);
-                      localStorage.setItem('has_seen_menu_v2.4', 'true');
+                      localStorage.setItem('has_seen_menu_v2.5', 'true');
                     }
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
@@ -7331,7 +7391,7 @@ export default function App() {
                             setShowNavDropdown(false); 
                             if (!hasSeenNews) {
                               setHasSeenNews(true);
-                              localStorage.setItem('has_seen_news_v2.4', 'true');
+                              localStorage.setItem('has_seen_news_v2.5', 'true');
                             }
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
@@ -7632,7 +7692,24 @@ export default function App() {
       <main className={!user ? "" : "max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12"}>
         <AnimatePresence mode="wait">
           {!user ? (
-            <LandingPage onLogin={handleLogin} websiteStatus={websiteStatus} />
+            <>
+              <LandingPage onLogin={handleLogin} websiteStatus={websiteStatus} />
+              {sharedMediaId && (
+                <PublicSharedMediaModal
+                  mediaId={sharedMediaId}
+                  onClose={() => {
+                    setSharedMediaId(null);
+                    try {
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete('media');
+                      url.searchParams.delete('media_id');
+                      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+                    } catch {}
+                  }}
+                  onLogin={handleLogin}
+                />
+              )}
+            </>
           ) : isWhitelisted === null ? (
             <div className="flex flex-col items-center justify-center py-20">
               <Loader2 className="w-12 h-12 text-app-ink animate-spin mb-4" />
@@ -7826,7 +7903,7 @@ export default function App() {
 
               {view === 'media_feed' && (
                 <div className="max-w-6xl mx-auto py-4 sm:py-8 px-4">
-                  <div className="flex items-center justify-between mb-8">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                     <div>
                       <h3 className="text-2xl sm:text-3xl font-black text-app-ink flex items-center gap-2">
                         <Film className="w-7 h-7 text-cyan-500 animate-[pulse_2s_infinite]" />
@@ -7836,18 +7913,57 @@ export default function App() {
                         Ontdek foto's en video's gedeeld door de community
                       </p>
                     </div>
-                    <button 
-                      onClick={fetchFeedMedia}
-                      className="p-2.5 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl border border-app-border hover:scale-105 active:scale-95 transition-all shadow-sm"
-                      title="Feed vernieuwen"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${feedLoading ? 'animate-spin' : ''}`} />
-                    </button>
+
+                    <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+                      {/* View Mode Toggle: Grid vs Shorts/Swipe */}
+                      <div className="flex items-center bg-app-card border border-app-border p-1 rounded-2xl shadow-sm">
+                        <button
+                          onClick={() => {
+                            setFeedViewMode('grid');
+                            try { localStorage.setItem('ftjm_feed_view_mode', 'grid'); } catch {}
+                          }}
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
+                            feedViewMode === 'grid'
+                              ? 'bg-app-ink text-app-bg shadow-sm'
+                              : 'text-app-muted hover:text-app-ink'
+                          }`}
+                          title="Grid Weergave (Overzicht)"
+                        >
+                          <LayoutGrid className="w-3.5 h-3.5" />
+                          <span>Grid</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setFeedViewMode('swipe');
+                            try { localStorage.setItem('ftjm_feed_view_mode', 'swipe'); } catch {}
+                          }}
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
+                            feedViewMode === 'swipe'
+                              ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-sm shadow-cyan-500/20'
+                              : 'text-app-muted hover:text-app-ink'
+                          }`}
+                          title="Swipe / Shorts Weergave (TikTok / Reels Style)"
+                        >
+                          <Smartphone className="w-3.5 h-3.5" />
+                          <span>Shorts / Swipe</span>
+                        </button>
+                      </div>
+
+                      <button 
+                        onClick={fetchFeedMedia}
+                        className="p-2.5 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl border border-app-border hover:scale-105 active:scale-95 transition-all shadow-sm"
+                        title="Feed vernieuwen"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${feedLoading ? 'animate-spin' : ''}`} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Share Media Box */}
                   {user && (
-                    <div className="bg-app-card border border-app-border rounded-3xl p-6 mb-8 shadow-sm relative overflow-hidden">
+                    <div className={`bg-app-card border border-app-border rounded-3xl p-5 mb-8 shadow-sm relative overflow-hidden transition-all ${
+                      feedViewMode === 'swipe' ? 'max-w-lg mx-auto' : ''
+                    }`}>
                       {profileMediaLoading && (
                         <div className="absolute inset-0 bg-app-card/60 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-2">
                           <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
@@ -7872,7 +7988,7 @@ export default function App() {
                             Upload een foto of video die direct in de feed verschijnt.
                           </p>
                           
-                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                          <div className="mt-3 flex flex-wrap items-center gap-3">
                             {/* File Upload Input */}
                             <input 
                               type="file"
@@ -7913,7 +8029,27 @@ export default function App() {
                         Upload je eerste media onder je Profiel!
                       </button>
                     </div>
+                  ) : feedViewMode === 'swipe' ? (
+                    /* TikTok / YouTube Shorts Vertical Swipe View */
+                    <div className="py-2">
+                      <MediaSwipeFeed
+                        mediaList={feedMedia}
+                        currentUserId={user?.uid}
+                        onLike={handleLikeMedia}
+                        onComment={handleCommentMedia}
+                        onDeleteComment={handleDeleteCommentMedia}
+                        onDeleteMedia={handleDeleteFeedMedia}
+                        onOpenProfile={handleOpenProfile}
+                        onViewFullscreen={setSelectedFullscreenMedia}
+                        nicknames={nicknames}
+                        isAdmin={isAdmin}
+                        profiles={users}
+                        onUploadClick={() => document.getElementById('feed-media-upload')?.click()}
+                        initialMediaId={sharedMediaId}
+                      />
+                    </div>
                   ) : (
+                    /* Classic Grid View */
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                       {feedMedia.map((media, idx) => (
                         <MediaFeedCard
@@ -9032,14 +9168,14 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-gradient-to-tr from-cyan-400 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                        <ShieldAlert className="w-6 h-6 text-white animate-pulse" />
+                        <Sparkles className="w-6 h-6 text-white animate-pulse" />
                       </div>
                       <div>
                         <h2 className="text-2xl font-black text-white tracking-tighter uppercase leading-none">
-                          V2.4 Update
+                          V2.5.0 Update
                         </h2>
                         <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1">
-                          GELAAGDE VERIFICATIE & CHAT REVAMP BEVEILIGING
+                          DESKTOP APP, 4MB UPLOADS & AUDIO REFRESH
                         </p>
                       </div>
                     </div>
@@ -9049,41 +9185,41 @@ export default function App() {
                   <div className="space-y-3 py-1">
                     <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Fingerprint className="w-5 h-5 text-cyan-400 shrink-0" />
+                        <Zap className="w-5 h-5 text-cyan-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Visuele Login Revamp</h4>
+                          <h4 className="font-extrabold text-sm text-white">4 MB Uploadlimiet</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Het inlogscherm heeft een prachtig nieuw gelaagd ontwerp met vloeiende animaties en dynamische ambient gloed effecten gekregen.
+                            De limiet voor alle bestanden, foto's, profielfoto's, achtergronden en audio is verdubbeld naar maar liefst 4 MB.
                           </p>
                         </div>
                       </div>
 
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <LockIcon className="w-5 h-5 text-amber-400 shrink-0" />
+                        <Monitor className="w-5 h-5 text-indigo-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Gelaagde Verificatie</h4>
+                          <h4 className="font-extrabold text-sm text-white">Officiële Desktop App (v1.3.0)</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Tijdens het invoeren van het wachtwoord is de registratielink nu veilig verborgen om onbedoelde invoer te voorkomen en de focus op je actieve sessie te houden.
+                            FTJM herkent nu automatisch je besturingssysteem (macOS, Windows, Linux) en biedt een directe downloadlink naar de officiële standalone release.
                           </p>
                         </div>
                       </div>
 
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0" />
+                        <Volume2 className="w-5 h-5 text-purple-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Robuuste Decryptie</h4>
+                          <h4 className="font-extrabold text-sm text-white">Nieuwe Audio & Beltonen</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Onze interne encryptie filters in de chatroom en privéberichten verwerken nu vlekkeloos speciale karakters, emoji's en complexe UTF-8 strings.
+                            Volledig vernieuwde bibliotheek met moderne geluidseffecten (o.a. Fears to Fathom, 007 Sound) en beltonen (Skype New, iPhone Remixes).
                           </p>
                         </div>
                       </div>
 
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Activity className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Bericht Inperking & Lees Meer</h4>
+                          <h4 className="font-extrabold text-sm text-white">Geverifieerde Badges & Optimalisaties</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Extreem lange berichten worden nu automatisch ingekort met een handige 'Lees meer' knop om de chatroom netjes en overzichtelijk te houden.
+                            Duidelijke badges voor officiële en geverifieerde accounts, snellere laadtijden en verbeterde sessiebeveiliging.
                           </p>
                         </div>
                       </div>
@@ -9096,7 +9232,7 @@ export default function App() {
                     <button
                       onClick={() => {
                         setShowWhatsNew(false);
-                        localStorage.setItem('has_seen_whats_new_v2.4', 'true');
+                        localStorage.setItem('has_seen_whats_new_v2.5', 'true');
                       }}
                       className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
                     >
@@ -9637,7 +9773,7 @@ export default function App() {
                     Voorwaarden & Privacy Update
                   </h2>
                   <p className="text-xs text-zinc-400 uppercase tracking-widest font-mono">
-                    FTJM Enterprise Platform v2.4.5
+                    FTJM Enterprise Platform v2.5.0
                   </p>
                 </div>
 
@@ -9834,6 +9970,11 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <DesktopAppPromptModal 
+          isOpen={showDesktopPromptModal} 
+          onClose={() => setShowDesktopPromptModal(false)} 
+        />
 
         <Toaster 
           position="top-right" 

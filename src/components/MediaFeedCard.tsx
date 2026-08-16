@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical } from 'lucide-react';
-import { formatDate } from '../utils/helpers';
+import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical, Share2 } from 'lucide-react';
+import { formatDate, getMediaShareUrl } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
 import { t } from '../utils/translations';
 
@@ -54,6 +54,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isLikePulsing, setIsLikePulsing] = useState(false);
+  const [copiedToast, setCopiedToast] = useState(false);
 
   const likesList = media.likes || [];
   const commentsList = media.comments || [];
@@ -68,6 +69,13 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
     setIsLikePulsing(true);
     setTimeout(() => setIsLikePulsing(false), 500);
     onLike(media.id, media.user_id);
+  };
+
+  const handleShare = () => {
+    const shareUrl = getMediaShareUrl(media.id || media.media_url);
+    navigator.clipboard.writeText(shareUrl);
+    setCopiedToast(true);
+    setTimeout(() => setCopiedToast(false), 2200);
   };
 
   const handleCommentSubmit = (e: React.FormEvent) => {
@@ -174,31 +182,50 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
       </div>
 
       {/* Interactions Bar */}
-      <div className="p-3 flex items-center gap-4 border-b border-app-border/40 bg-app-card/30">
-        <button
-          onClick={handleLikeClick}
-          className={`flex items-center gap-1.5 text-xs font-black transition-all ${
-            isLikedByMe ? 'text-red-500' : 'text-app-muted hover:text-red-400'
-          }`}
-        >
-          <motion.span
-            animate={isLikePulsing ? { scale: [1, 1.4, 0.9, 1.2, 1] } : {}}
-            transition={{ duration: 0.4 }}
+      <div className="p-3 flex items-center justify-between border-b border-app-border/40 bg-app-card/30">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleLikeClick}
+            className={`flex items-center gap-1.5 text-xs font-black transition-all ${
+              isLikedByMe ? 'text-red-500' : 'text-app-muted hover:text-red-400'
+            }`}
           >
-            <Heart className={`w-5 h-5 ${isLikedByMe ? 'fill-current' : ''}`} />
-          </motion.span>
-          <span>{likesList.length}</span>
-        </button>
+            <motion.span
+              animate={isLikePulsing ? { scale: [1, 1.4, 0.9, 1.2, 1] } : {}}
+              transition={{ duration: 0.4 }}
+            >
+              <Heart className={`w-5 h-5 ${isLikedByMe ? 'fill-current' : ''}`} />
+            </motion.span>
+            <span>{likesList.length}</span>
+          </button>
 
-        <button
-          onClick={() => setShowComments(!showComments)}
-          className={`flex items-center gap-1.5 text-xs font-black transition-all ${
-            showComments ? 'text-cyan-500' : 'text-app-muted hover:text-cyan-500'
-          }`}
-        >
-          <MessageSquare className="w-5 h-5" />
-          <span>{commentsList.length}</span>
-        </button>
+          <button
+            onClick={() => setShowComments(!showComments)}
+            className={`flex items-center gap-1.5 text-xs font-black transition-all ${
+              showComments ? 'text-cyan-500' : 'text-app-muted hover:text-cyan-500'
+            }`}
+          >
+            <MessageSquare className="w-5 h-5" />
+            <span>{commentsList.length}</span>
+          </button>
+        </div>
+
+        <div className="relative">
+          <button
+            onClick={handleShare}
+            className="flex items-center gap-1.5 text-xs font-bold text-app-muted hover:text-cyan-500 transition-colors p-1.5 rounded-lg hover:bg-app-accent"
+            title="Deel link naar deze post"
+          >
+            <Share2 className="w-4 h-4" />
+            <span className="hidden sm:inline text-[11px] font-semibold">{copiedToast ? 'Gekopieerd!' : 'Delen'}</span>
+          </button>
+
+          {copiedToast && (
+            <div className="absolute right-0 bottom-full mb-1.5 bg-cyan-500 text-white text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap z-20">
+              Link gekopieerd!
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Comments Section */}

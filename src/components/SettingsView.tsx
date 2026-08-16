@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical, Download, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { rateLimiter } from '../utils/rateLimiter';
 import CryptoJS from 'crypto-js';
@@ -2037,10 +2037,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
-                  <h4 className="font-bold text-app-ink mb-2">{t("Desktop App Installeren")}</h4>
-                  <p className="text-sm text-app-muted mb-4 font-medium">
-                    {t("Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.")}
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h4 className="font-bold text-app-ink text-base flex items-center gap-2">
+                      <Monitor className="w-5 h-5 text-cyan-500" />
+                      {t("Officiële Desktop App (macOS, Windows, Linux)")}
+                    </h4>
+                    <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-mono text-[10px] font-bold border border-cyan-500/30">
+                      v1.3.0 Release
+                    </span>
+                  </div>
+                  <p className="text-sm text-app-muted mb-4 font-medium leading-relaxed">
+                    Download de nieuwste zelfstandige FTJM applicatie voor Windows (.exe), macOS of Linux. Geniet van achtergrondnotificaties, superieure prestaties en directe bureaubladintegratie.
                   </p>
+                  
+                  <a
+                    href="https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.3.0"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-2xl font-bold transition-all shadow-md shadow-cyan-600/20 flex items-center justify-center gap-2.5 mb-6 text-sm active:scale-[0.99]"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download FTJM v1.3.0 (GitHub)</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                  </a>
+
+                  <div className="border-t border-app-border/60 pt-4">
+                    <h5 className="font-bold text-app-ink text-xs uppercase tracking-wider mb-2">
+                      {t("Web PWA / Browser Installatie")}
+                    </h5>
+                    <p className="text-xs text-app-muted mb-3 font-medium">
+                      {t("Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.")}
+                    </p>
+                  </div>
                   
                   <div className="mb-6 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
                     <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />

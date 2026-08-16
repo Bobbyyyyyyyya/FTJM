@@ -136,6 +136,101 @@ const verifyAndUnwrap = (rawStoredValue: string): string | null => {
 const memoryCache = new Map<string, string>();
 const pendingWriteTimers = new Map<string, any>();
 
+// Non-essential cache keys that can safely be evicted when local storage reaches quota limit
+const EVICTABLE_CACHE_KEYS = [
+  'cached_posts',
+  'cached_conversations',
+  'cached_customTheme',
+  'cached_notifications',
+  'cached_whitelist',
+  'cached_nicknames',
+  'cached_profile',
+  'ftjm_audio_cache',
+  'ftjm_media_cache',
+  'cache_purged_v3.2'
+];
+
+/**
+ * Frees up local storage space by purging large expendable cache entries
+ */
+const freeStorageSpace = () => {
+  try {
+    for (const key of EVICTABLE_CACHE_KEYS) {
+      nativeRemoveItem(key);
+    }
+
+    // Inspect remaining keys and purge any legacy cached_ keys that aren't critical auth tokens
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const keysToPurge: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && (k.startsWith('cached_') || k.startsWith('ftjm_temp_') || k.includes('cache'))) {
+          if (!k.includes('auth') && !k.includes('sb-') && !k.includes('token')) {
+            keysToPurge.push(k);
+          }
+        }
+      }
+      for (const k of keysToPurge) {
+        nativeRemoveItem(k);
+      }
+    }
+  } catch (err) {
+    // Silently ignore cleanup errors
+  }
+};
+
+// Check and purge oversized blobs on initial script load if storage is clogged
+if (typeof window !== 'undefined' && window.localStorage) {
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && !k.includes('auth') && !k.includes('token') && !k.includes('sb-')) {
+        const val = nativeGetItem(k);
+        if (val && val.length > 300000) {
+          nativeRemoveItem(k);
+        }
+      }
+    }
+  } catch {}
+}
+
+/**
+ * Safely writes to native localStorage without throwing QuotaExceededError
+ */
+const safeNativeSetItem = (key: string, value: string): boolean => {
+  // If the value is extraordinarily large (>350KB), avoid writing it to local storage to protect quota
+  // It will remain accessible via memoryCache for the duration of the session
+  if (value.length > 350000 && !key.includes('auth') && !key.includes('token') && !key.includes('sb-')) {
+    return false;
+  }
+
+  try {
+    nativeSetItem(key, value);
+    return true;
+  } catch (err: any) {
+    const isQuotaError =
+      err &&
+      (err.name === 'QuotaExceededError' ||
+        err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        err.code === 22 ||
+        err.code === 1014 ||
+        (typeof err.message === 'string' && err.message.toLowerCase().includes('quota')));
+
+    if (isQuotaError) {
+      // Free expendable caches and retry once
+      freeStorageSpace();
+      try {
+        nativeSetItem(key, value);
+        return true;
+      } catch (retryErr) {
+        // Storage is genuinely full; gracefully keep in memoryCache only
+        return false;
+      }
+    }
+    return false;
+  }
+};
+
 const flushSingleKey = (key: string) => {
   const timer = pendingWriteTimers.get(key);
   if (timer) {
@@ -147,11 +242,12 @@ const flushSingleKey = (key: string) => {
     try {
       const encrypted = CryptoJS.AES.encrypt(value, STORAGE_ENCRYPTION_KEY).toString();
       const signed = signAndWrap(encrypted);
-      nativeSetItem(key, signed);
+      safeNativeSetItem(key, signed);
     } catch (e) {
-      console.error('Fout bij versleutelen local storage:', e);
-      const signedFallback = signAndWrap(value);
-      nativeSetItem(key, signedFallback);
+      try {
+        const signedFallback = signAndWrap(value);
+        safeNativeSetItem(key, signedFallback);
+      } catch {}
     }
   }
 };
@@ -164,10 +260,12 @@ const flushAllPendingWrites = () => {
       try {
         const encrypted = CryptoJS.AES.encrypt(value, STORAGE_ENCRYPTION_KEY).toString();
         const signed = signAndWrap(encrypted);
-        nativeSetItem(key, signed);
+        safeNativeSetItem(key, signed);
       } catch (e) {
-        const signedFallback = signAndWrap(value);
-        nativeSetItem(key, signedFallback);
+        try {
+          const signedFallback = signAndWrap(value);
+          safeNativeSetItem(key, signedFallback);
+        } catch {}
       }
     }
   });
@@ -291,10 +389,12 @@ export const secureSupabaseStorage = {
     try {
       const encrypted = CryptoJS.AES.encrypt(value, STORAGE_ENCRYPTION_KEY).toString();
       const signed = signAndWrap(encrypted);
-      nativeSetItem(key, signed);
+      safeNativeSetItem(key, signed);
     } catch (e) {
-      const signedFallback = signAndWrap(value);
-      nativeSetItem(key, signedFallback);
+      try {
+        const signedFallback = signAndWrap(value);
+        safeNativeSetItem(key, signedFallback);
+      } catch {}
     }
   },
 
