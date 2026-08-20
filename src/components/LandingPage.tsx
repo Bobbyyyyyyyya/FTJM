@@ -16,23 +16,78 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
 
   return (
     <div className="min-h-screen bg-[#002f54] flex flex-col relative overflow-hidden font-sans selection:bg-white/20 selection:text-white scroll-smooth">
-      {/* Dynamic Background */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute inset-0 bg-[#002f54]" />
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay" />
-        <div className="absolute top-0 inset-x-0 h-[500px] bg-gradient-to-b from-[#004276] to-transparent opacity-80" />
+      {/* Dynamic Original Blue Background with subtle animation */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 bg-[#002f54]">
+        {/* Subtle Ambient Glows */}
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.1, 1],
+            x: ['-5%', '5%', '-5%'],
+            y: ['-5%', '5%', '-5%']
+          }}
+          transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] rounded-full bg-[#004276]/40 blur-[120px]"
+        />
         
-        {/* Animated Orbs */}
         <motion.div 
-          animate={{ y: [0, -40, 0], opacity: [0.1, 0.3, 0.1], scale: [1, 1.2, 1] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute top-[10%] -left-64 w-[600px] h-[600px] bg-blue-500/20 rounded-full blur-[120px]"
+          animate={{ 
+            scale: [1, 1.2, 1],
+            x: ['5%', '-5%', '5%'],
+            y: ['5%', '-10%', '5%']
+          }}
+          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+          className="absolute top-[20%] -right-[10%] w-[50vw] h-[50vw] rounded-full bg-cyan-600/10 blur-[100px]"
         />
+
         <motion.div 
-          animate={{ y: [0, 40, 0], opacity: [0.1, 0.2, 0.1], scale: [1, 1.1, 1] }}
-          transition={{ duration: 15, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-          className="absolute bottom-[20%] -right-64 w-[800px] h-[800px] bg-cyan-400/10 rounded-full blur-[150px]"
+          animate={{ 
+            scale: [1, 1.15, 1],
+            x: ['0%', '10%', '0%'],
+            y: ['10%', '0%', '10%']
+          }}
+          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+          className="absolute -bottom-[20%] left-[20%] w-[70vw] h-[70vw] rounded-full bg-blue-500/10 blur-[150px]"
         />
+
+        {/* Flying Data Pulses / Shooting Stars */}
+        <motion.div
+          animate={{
+            x: ['100vw', '-50vw'],
+            y: ['-20vh', '120vh'],
+            opacity: [0, 1, 0],
+          }}
+          transition={{
+            duration: 2.5,
+            repeat: Infinity,
+            repeatDelay: 6,
+            ease: "linear"
+          }}
+          className="absolute top-0 right-[10%] w-[150px] h-[2px] bg-gradient-to-r from-transparent via-cyan-300 to-transparent rotate-[35deg] blur-[1px]"
+        />
+        <motion.div
+          animate={{
+            x: ['120vw', '-20vw'],
+            y: ['10vh', '150vh'],
+            opacity: [0, 0.8, 0],
+          }}
+          transition={{
+            duration: 3,
+            repeat: Infinity,
+            repeatDelay: 9,
+            ease: "linear",
+            delay: 4
+          }}
+          className="absolute top-0 right-[30%] w-[250px] h-[3px] bg-gradient-to-r from-transparent via-blue-300 to-transparent rotate-[35deg] blur-[2px]"
+        />
+
+        {/* Elegant noise texture */}
+        <div className="absolute inset-0 opacity-[0.05] mix-blend-overlay bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]" />
+        
+        {/* Grid overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_40%,#000_20%,transparent_100%)]" />
+
+        {/* Top/Bottom Vignette for readability */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#001E36]/80 via-transparent to-[#001E36]/90 z-0" />
       </div>
 
       {/* Navigation */}
@@ -40,315 +95,219 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="w-full max-w-7xl mx-auto px-6 py-8 flex items-center justify-between relative z-50"
+        className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between relative z-50"
       >
-        <div className="flex items-center gap-4 group cursor-pointer">
-          <div className="relative w-12 h-12 bg-transparent rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.15)] group-hover:scale-105 group-hover:-rotate-3 transition-all duration-500 overflow-hidden">
+        <div className="flex items-center gap-3 group cursor-pointer">
+          <div className="relative w-10 h-10 bg-transparent rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.1)] group-hover:scale-105 transition-transform overflow-hidden">
             <img 
               src="/logo.png" 
               alt="FTJM Logo" 
               className="w-full h-full object-cover scale-[1.35]"
               referrerPolicy="no-referrer"
             />
-            <div className="absolute inset-0 border border-white/40 rounded-2xl scale-110 opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-500" />
           </div>
           <div className="flex flex-col">
-            <span className="text-2xl font-black tracking-tighter text-white leading-none">FTJM</span>
-            <span className="text-[10px] font-bold text-cyan-400 tracking-[0.25em] uppercase mt-1">Enterprise</span>
+            <span className="text-xl font-black tracking-tight text-white leading-none">FTJM</span>
+            <span className="text-[9px] font-bold text-cyan-400 tracking-[0.2em] uppercase mt-0.5">Enterprise</span>
           </div>
         </div>
         
-        <div className="hidden lg:flex items-center gap-2 bg-white/5 backdrop-blur-md border border-white/10 rounded-full p-1.5 shadow-xl">
-          {['Doel', 'Features', 'Visie', 'Juridisch'].map((item) => (
-            <a 
-              key={item}
-              href={`#${item.toLowerCase()}`} 
-              className="px-6 py-2.5 text-xs font-bold text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all uppercase tracking-[0.15em]"
-            >
-              {item}
-            </a>
-          ))}
+        <div className="hidden md:flex items-center gap-8 text-[11px] font-bold text-white/60 uppercase tracking-[0.15em]">
+          <a href="#doel" className="hover:text-white transition-colors">Doel</a>
+          <a href="#features" className="hover:text-white transition-colors">Platform</a>
+          <a href="#visie" className="hover:text-white transition-colors">Visie</a>
+          <a href="#juridisch" className="hover:text-white transition-colors">Juridisch</a>
         </div>
 
         <button 
           onClick={onLogin}
-          className="group relative px-8 py-3.5 bg-white text-[#002f54] rounded-full font-black text-xs hover:shadow-[0_0_40px_rgba(255,255,255,0.3)] transition-all active:scale-95 uppercase tracking-wider overflow-hidden"
+          className="group relative px-6 py-2.5 bg-white text-[#002f54] rounded-lg font-black text-xs hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all active:scale-95 uppercase tracking-wider"
         >
-          <span className="relative z-10 flex items-center gap-2">
+          <span className="flex items-center gap-2">
             Inloggen
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
           </span>
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-100 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
         </button>
       </motion.nav>
 
       {/* Hero Section */}
-      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center relative z-10 py-24 min-h-[80vh]">
-        <motion.div style={{ y, opacity }} className="max-w-5xl mx-auto w-full flex flex-col items-center">
+      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center relative z-10 py-20 min-h-[85vh]">
+        <motion.div style={{ y, opacity }} className="max-w-4xl mx-auto w-full flex flex-col items-center">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.1, type: "spring" }}
-            className="mb-12 inline-flex items-center gap-3 px-5 py-2.5 bg-white/5 backdrop-blur-xl rounded-full text-[10px] font-bold text-white border border-white/10 shadow-2xl uppercase tracking-[0.2em]"
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="mb-10 inline-flex items-center gap-2.5 px-4 py-2 bg-white/5 backdrop-blur-md rounded-full text-[10px] font-bold text-white/90 border border-white/10 shadow-lg uppercase tracking-widest"
           >
-            <span className="relative flex h-2.5 w-2.5">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${websiteStatus.toLowerCase() === 'online' ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${websiteStatus.toLowerCase() === 'online' ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${websiteStatus.toLowerCase() === 'online' ? 'bg-cyan-400' : 'bg-amber-400'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${websiteStatus.toLowerCase() === 'online' ? 'bg-cyan-500' : 'bg-amber-500'}`}></span>
             </span>
-            Netwerk Status: <span className="text-white/90">{websiteStatus}</span>
+            Systeem Status: <span className="text-white font-black">{websiteStatus}</span>
           </motion.div>
           
           <motion.h1 
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-5xl sm:text-7xl lg:text-[6rem] font-black tracking-tighter text-white mb-8 leading-[1.05]"
+            transition={{ duration: 0.7, delay: 0.2 }}
+            className="text-5xl sm:text-7xl lg:text-[6rem] font-black tracking-tighter text-white mb-6 leading-[1.05]"
           >
             Veilig bouwen <br className="hidden sm:block" /> 
             <span className="text-transparent bg-clip-text bg-gradient-to-br from-cyan-300 via-blue-200 to-white/40">aan de toekomst</span>
           </motion.h1>
           
           <motion.p 
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="text-lg sm:text-2xl text-blue-100/70 mb-14 leading-relaxed max-w-2xl mx-auto font-medium"
+            transition={{ duration: 0.7, delay: 0.3 }}
+            className="text-lg sm:text-xl text-blue-100/80 mb-12 leading-relaxed max-w-2xl mx-auto font-medium"
           >
-            Welkom bij het <strong className="text-white">FTJM Besloten Netwerk</strong>. <br className="hidden sm:block" /> 
-            Een ongeschonden, end-to-end encrypted omgeving voor compromisloze samenwerking.
+            Het FTJM Netwerk is een gesloten, zwaar beveiligde omgeving. Ontworpen voor compromisloze communicatie, end-to-end encryptie en geverifieerde toegang.
           </motion.p>
           
           <motion.div 
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-5 w-full sm:w-auto"
+            transition={{ duration: 0.7, delay: 0.4 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto"
           >
             <button 
               onClick={onLogin}
-              className="group relative w-full sm:w-auto px-10 py-5 bg-white text-[#002f54] rounded-2xl font-black text-sm hover:shadow-[0_0_60px_rgba(255,255,255,0.4)] transition-all active:scale-[0.98] flex items-center justify-center gap-3 uppercase tracking-[0.1em] overflow-hidden"
+              className="w-full sm:w-auto px-8 py-4 bg-white text-[#002f54] rounded-xl font-black text-xs hover:bg-cyan-50 transition-colors active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest shadow-xl"
             >
-              <LogIn className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              Verifieer Identiteit
+              <LogIn className="w-4 h-4" />
+              Systeem Toegang
             </button>
             <a 
               href="#doel"
-              className="group w-full sm:w-auto px-10 py-5 bg-black/20 text-white border border-white/10 rounded-2xl font-bold text-sm hover:bg-white/10 transition-all active:scale-[0.98] backdrop-blur-xl flex items-center justify-center gap-3 uppercase tracking-[0.1em]"
+              className="group w-full sm:w-auto px-8 py-4 bg-transparent text-white border border-white/20 rounded-xl font-bold text-xs hover:bg-white/10 transition-colors active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest"
             >
-              Doel van het Platform
-              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform text-cyan-400" />
+              Ontdek Meer
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform text-cyan-400" />
             </a>
           </motion.div>
         </motion.div>
       </main>
 
-      {/* Doel van de app Section */}
-      <section id="doel" className="py-24 relative z-20 max-w-7xl mx-auto px-6">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
-          <div className="lg:col-span-5 space-y-6">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/5 rounded-full text-[10px] font-bold text-cyan-400 border border-white/10 uppercase tracking-[0.2em]">
-              <ShieldCheck className="w-3 h-3 text-cyan-400" /> Onze Missie
+      {/* Doel Section */}
+      <section id="doel" className="py-24 relative z-20 border-t border-white/5 bg-[#001A30]">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            <div className="space-y-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-500/10 rounded-md text-[10px] font-black text-cyan-400 uppercase tracking-widest">
+                <ShieldCheck className="w-3 h-3" /> De Missie
+              </div>
+              <h2 className="text-4xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+                Waarom het <br />
+                FTJM Netwerk?
+              </h2>
+              <p className="text-lg text-blue-100/70 leading-relaxed">
+                We leven in een tijdperk van data-exploitatie. Het FTJM platform is opgericht als tegenreactie: een <strong>volledig onafhankelijke, afgeschermde digitale haven</strong>.
+              </p>
+              <p className="text-base text-blue-100/50 leading-relaxed">
+                Geen tracking, geen datamining, en geen externe pottenkijkers. Dit platform verbindt geverifieerde leden via versleutelde kanalen om innovatie en diepgaande discussies in alle rust mogelijk te maken.
+              </p>
             </div>
-            <h2 className="text-4xl sm:text-5xl font-black tracking-tighter text-white leading-[1.1]">
-              Waarom bestaat <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-200 to-white/60">het FTJM Platform?</span>
-            </h2>
-            <p className="text-lg text-blue-100/70 font-medium leading-relaxed">
-              Het FTJM Netwerk is gebouwd met een helder en compromisloos doel: een <strong>exclusieve, uiterst veilige en onafhankelijke digitale haven</strong> creëren voor FTJM-leden.
-            </p>
-            <p className="text-base text-blue-100/60 leading-relaxed font-normal">
-              In een tijdperk waarin publieke netwerken en reguliere communicatie-tools kwetsbaar zijn voor datalekken en ongewenste surveillance, biedt dit platform een ongeschonden toevluchtsoord. Hier kunnen we met volledige gemoedsrust de basis leggen voor de toekomst.
-            </p>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-white/5 border border-white/10 p-6 rounded-2xl hover:bg-white/10 transition-colors">
+                <Users className="w-6 h-6 text-cyan-400 mb-4" />
+                <h3 className="text-lg font-bold text-white mb-2">Gesloten Kring</h3>
+                <p className="text-sm text-blue-100/60 leading-relaxed">Alleen op uitnodiging. Een netwerk dat uitsluitend bestaat uit geverifieerde leden.</p>
+              </div>
+              <div className="bg-white/5 border border-white/10 p-6 rounded-2xl hover:bg-white/10 transition-colors">
+                <Lock className="w-6 h-6 text-cyan-400 mb-4" />
+                <h3 className="text-lg font-bold text-white mb-2">Absolute Privacy</h3>
+                <p className="text-sm text-blue-100/60 leading-relaxed">Militaire standaard encryptie garandeert dat jouw data uitsluitend van jou blijft.</p>
+              </div>
+              <div className="bg-white/5 border border-white/10 p-6 rounded-2xl hover:bg-white/10 transition-colors sm:col-span-2 flex flex-col sm:flex-row items-center justify-between gap-6">
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-1">Directe Communicatie</h3>
+                  <p className="text-sm text-blue-100/60">Real-time chats en gestructureerde archieven voor optimale productiviteit.</p>
+                </div>
+                <button onClick={onLogin} className="shrink-0 w-10 h-10 rounded-full bg-cyan-500 text-white flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-cyan-500/20">
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md">
-              <div className="w-12 h-12 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center mb-6">
-                <Users className="w-6 h-6 text-cyan-400" />
+        </div>
+      </section>
+
+      {/* Features Bento Grid */}
+      <section id="features" className="py-24 bg-[#001526] relative z-20">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="mb-16 md:text-center max-w-2xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white mb-4">Professionele Architectuur</h2>
+            <p className="text-blue-100/60">Gebouwd op moderne webtechnologie voor ongeëvenaarde snelheid, betrouwbaarheid en veiligheid op elk apparaat.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2 bg-gradient-to-br from-[#002f54] to-[#001E36] border border-white/10 p-8 rounded-3xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+                <Zap className="w-32 h-32" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">Exclusieve Connectie</h3>
-              <p className="text-sm text-blue-100/60 leading-relaxed">
-                Het samenbrengen van geverifieerde FTJM-leden in een besloten kring, om synergetische relaties te versterken en hechte interactie te waarborgen.
-              </p>
+              <div className="w-12 h-12 bg-cyan-500/10 text-cyan-400 rounded-xl flex items-center justify-center mb-6">
+                <Zap className="w-6 h-6" />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-2">Zero-Knowledge Ontwerp</h3>
+              <p className="text-blue-100/60 max-w-md">De architectuur is zo gebouwd dat zelfs de serverbeheerders geen toegang hebben tot de inhoud van versleutelde berichten of persoonlijke bestanden.</p>
+            </div>
+            
+            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl group hover:bg-white/10 transition-colors">
+              <div className="w-12 h-12 bg-blue-500/10 text-blue-400 rounded-xl flex items-center justify-center mb-6">
+                <Globe className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Overal Toegang</h3>
+              <p className="text-blue-100/60 text-sm">Volledig responsief ontwerp met native desktop applicatie ondersteuning voor Windows, macOS en Linux.</p>
             </div>
 
-            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md">
-              <div className="w-12 h-12 rounded-2xl bg-blue-400/10 border border-blue-400/20 flex items-center justify-center mb-6">
-                <MessageSquare className="w-6 h-6 text-cyan-400" />
+            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl group hover:bg-white/10 transition-colors">
+              <div className="w-12 h-12 bg-purple-500/10 text-purple-400 rounded-xl flex items-center justify-center mb-6">
+                <MessageSquare className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">Diepgaande Discussie</h3>
-              <p className="text-sm text-blue-100/60 leading-relaxed">
-                Kennis structuren door moyen van gearchiveerde forums en real-time chats, waardoor waardevolle ideeën nooit verloren gaan en direct actiegericht zijn.
-              </p>
+              <h3 className="text-xl font-bold text-white mb-2">Live Synchronisatie</h3>
+              <p className="text-blue-100/60 text-sm">State-of-the-art WebSockets zorgen voor instant berichtgeving en live status updates in het hele netwerk.</p>
             </div>
 
-            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md">
-              <div className="w-12 h-12 rounded-2xl bg-cyan-400/5 border border-cyan-400/10 flex items-center justify-center mb-6">
-                <Lock className="w-6 h-6 text-cyan-400" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Onschendbare Privacy</h3>
-              <p className="text-sm text-blue-100/60 leading-relaxed">
-                Compromisloze beveiliging op militair niveau, zodat elke uitgewisselde gedachte of strategisch besluit strikt beveiligd binnen ons netwerk blijft.
-              </p>
-            </div>
-
-            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-md flex flex-col justify-center items-start bg-gradient-to-br from-[#004276]/40 to-cyan-500/5">
-              <h4 className="text-2xl font-black text-white mb-2 tracking-tight">Focus op Resultaat</h4>
-              <p className="text-xs text-cyan-300 font-bold uppercase tracking-wider mb-4">Eén Hub voor alles</p>
-              <button 
-                onClick={onLogin}
-                className="group flex items-center gap-2 px-5 py-3 bg-white text-[#002f54] rounded-xl font-black text-xs uppercase tracking-wider hover:bg-cyan-100 transition-all active:scale-95 cursor-pointer"
-              >
-                Inloggen en ontdekken
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <div className="md:col-span-2 bg-gradient-to-r from-cyan-900/40 to-blue-900/40 border border-white/10 p-8 rounded-3xl flex flex-col justify-center items-center text-center">
+              <h3 className="text-2xl font-black text-white mb-2">Klaar om in te loggen?</h3>
+              <p className="text-blue-100/60 mb-6">Log in om toegang te krijgen tot het beveiligde netwerk.</p>
+              <button onClick={onLogin} className="px-6 py-3 bg-cyan-500 text-white rounded-lg font-bold text-sm hover:bg-cyan-400 transition-colors shadow-lg shadow-cyan-500/20">
+                Start Sessie
               </button>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section id="features" className="py-32 bg-white relative z-20 rounded-t-[3rem] sm:rounded-t-[4rem] shadow-[0_-20px_50px_rgba(0,0,0,0.2)]">
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-zinc-300 to-transparent" />
+      {/* Visie Section */}
+      <section id="visie" className="py-24 relative z-20 bg-[#001A30] border-y border-white/5">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="mb-24 md:text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-[#004276]/5 rounded-full text-[10px] font-black text-[#004276] border border-[#004276]/10 uppercase tracking-[0.2em] mb-6">
-              <Zap className="w-3 h-3 text-cyan-600" /> Kernwaarden
-            </div>
-            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-zinc-900 mb-6 leading-[1.1]">
-              Architectuur <br className="md:hidden" /> voor <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#004276] to-cyan-600">Professionals</span>
-            </h2>
-            <p className="text-xl text-zinc-500 font-medium leading-relaxed">
-              Ons netwerk combineert militaire beveiliging met een bliksemsnelle gebruikerservaring, specifiek ontworpen voor FTJM.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-            {/* Feature 1 */}
-            <motion.div whileHover={{ y: -5 }} className="lg:col-span-2 relative group p-10 lg:p-14 rounded-[2.5rem] bg-zinc-50 border border-zinc-200 overflow-hidden">
-              <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-duration-700 pointer-events-none">
-                <img 
-                  src="/logo.png" 
-                  alt="FTJM Logo" 
-                  className="w-64 h-64 -rotate-12"
-                  referrerPolicy="no-referrer"
-                />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div>
+              <div className="w-16 h-16 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center mb-6">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Marko&backgroundColor=002f54" alt="Marko Hoksen" className="w-12 h-12 rounded-xl" />
               </div>
-              <div className="relative z-10 w-full h-full flex flex-col justify-between">
-                <div className="w-16 h-16 bg-transparent rounded-2xl flex items-center justify-center mb-12 shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all overflow-hidden">
-                  <img 
-                    src="/logo.png" 
-                    alt="FTJM Logo" 
-                    className="w-full h-full object-cover scale-[1.35]"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-                <div>
-                  <h3 className="text-3xl font-black text-zinc-900 mb-4 tracking-tight">Zero-Knowledge Encryptie</h3>
-                  <p className="text-lg text-zinc-500 font-medium max-w-md">
-                    Elk bericht wordt versleuteld op uw apparaat voordat het ons netwerk raakt. Wij kunnen uw data niet lezen, zelfs niet als we dat zouden willen.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Feature 2 */}
-            <motion.div whileHover={{ y: -5 }} className="relative group p-10 rounded-[2.5rem] bg-gradient-to-br from-[#004276] to-[#002f54] overflow-hidden shadow-2xl">
-              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
-              <div className="relative z-10 h-full flex flex-col justify-between">
-                <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center mb-12 backdrop-blur-md border border-white/20 group-hover:bg-white group-hover:text-[#004276] transition-colors text-white">
-                  <MessageSquare className="w-7 h-7" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Real-Time Sync</h3>
-                  <p className="text-blue-100/70 font-medium">WebSocket verbindingen zorgen voor milliseconde snelle interactie met collega's.</p>
-                </div>
-              </div>
-            </motion.div>
-
-             {/* Feature 3 */}
-             <motion.div whileHover={{ y: -5 }} className="relative group p-10 rounded-[2.5rem] bg-white border border-zinc-200 shadow-sm hover:shadow-xl transition-shadow">
-              <div className="w-14 h-14 bg-zinc-50 rounded-2xl flex items-center justify-center mb-8 border border-zinc-100 group-hover:border-[#004276]/20 transition-colors">
-                <Users className="w-7 h-7 text-zinc-700" />
-              </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-3 tracking-tight">Community Driven</h3>
-              <p className="text-zinc-500 font-medium">Samenvoegen van denkkracht door middel van gestructureerde threads in een besloten omgeving.</p>
-            </motion.div>
-
-             {/* Feature 4 */}
-             <motion.div whileHover={{ y: -5 }} className="relative group p-10 rounded-[2.5rem] bg-white border border-zinc-200 shadow-sm hover:shadow-xl transition-shadow lg:col-span-2">
-              <div className="flex flex-col sm:flex-row gap-8 items-start sm:items-center">
-                <div className="shrink-0 w-20 h-20 bg-cyan-50 rounded-3xl flex items-center justify-center border border-cyan-100">
-                  <Globe className="w-10 h-10 text-cyan-600" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-black text-zinc-900 mb-3 tracking-tight">Wereldwijd Beschikbaar, Lokaal Beveiligd</h3>
-                  <p className="text-zinc-500 font-medium text-lg lg:max-w-lg">
-                    Naadloze ervaring op desktop, tablet en mobiel. Blijf overal verbonden zonder concessies te doen aan veiligheid.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Visie / Director Section */}
-      <section id="visie" className="py-32 bg-zinc-900 relative z-20 overflow-hidden">
-        {/* Dark theme background for contrast */}
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20" />
-        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-[#004276]/30 rounded-full blur-[150px] pointer-events-none" />
-        
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
-            
-            <div className="lg:col-span-7">
-              <div className="inline-flex items-center gap-3 px-5 py-2 bg-white/5 rounded-full text-[10px] font-bold text-white border border-white/10 uppercase tracking-[0.2em] mb-10 backdrop-blur-md">
-                <Lock className="w-3 h-3 text-cyan-400" /> Leiderschap & Visie
-              </div>
-              
-              <h2 className="text-4xl sm:text-6xl font-black tracking-tighter text-white mb-10 leading-[1.05]">
-                Radicale openheid,<br /> <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Volledige controle.</span>
-              </h2>
-              
-              <div className="relative mb-12">
-                <div className="absolute -left-8 -top-8 text-8xl text-white/5 font-serif leading-none">"</div>
-                <p className="text-xl sm:text-3xl text-zinc-300 leading-tight font-medium relative z-10">
-                  Bij FTJM geloven we dat ware innovatie alleen kan plaatsvinden in een omgeving waar ideeën vrijuit kunnen stromen, beschermd door ongeëvenaarde digitale veiligheid. Dit forum is het kloppende hart daarvan.
+              <h2 className="text-3xl font-black text-white mb-2">Geleid door visie.</h2>
+              <h3 className="text-cyan-400 font-bold uppercase tracking-widest text-xs mb-6">Marko Hoksen — Directeur</h3>
+              <div className="relative">
+                <span className="text-6xl text-white/10 absolute -top-4 -left-4 font-serif leading-none">"</span>
+                <p className="text-lg text-blue-100/80 font-medium leading-relaxed relative z-10 italic">
+                  Innovatie gedijt uitsluitend in een veilige haven. We hebben het FTJM netwerk gebouwd omdat de huidige standaard voor privacy onvoldoende is. Wij leggen de macht en data terug bij het individu en het collectief.
                 </p>
               </div>
-              
-              <div className="flex items-center gap-6">
-                <div className="relative w-20 h-20 rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-zinc-800">
-                  <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Marko&backgroundColor=004276" alt="Marko Hoksen" className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-white tracking-tight">Marko Hoksen</h3>
-                  <p className="text-cyan-400 font-bold uppercase tracking-[0.2em] text-[11px] mt-1.5 flex items-center gap-2">
-                    Directeur FTJM
-                  </p>
+            </div>
+            <div className="flex justify-center md:justify-end">
+              <div className="relative w-64 h-64 sm:w-80 sm:h-80">
+                <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 to-blue-500/20 rounded-full blur-3xl animate-pulse" />
+                <div className="relative w-full h-full bg-[#002f54] border border-white/10 rounded-full flex flex-col items-center justify-center shadow-2xl backdrop-blur-md">
+                  <Lock className="w-12 h-12 text-cyan-400 mb-4" />
+                  <span className="text-white font-black text-xl tracking-widest uppercase">Secured</span>
+                  <span className="text-blue-100/50 text-xs mt-1">Network Infrastructure</span>
                 </div>
               </div>
             </div>
-
-            <div className="lg:col-span-5 relative hidden lg:block">
-              <div className="aspect-[4/5] rounded-[3rem] border border-white/10 bg-gradient-to-b from-white/5 to-transparent p-12 flex flex-col items-center justify-center text-center shadow-2xl backdrop-blur-sm relative overflow-hidden group">
-                 <div className="absolute inset-0 bg-[#004276] translate-y-full group-hover:translate-y-0 transition-transform duration-700 ease-out" />
-                 <div className="w-32 h-32 mb-10 group-hover:scale-110 transition-transform duration-700 relative z-10 opacity-20 group-hover:opacity-50">
-                    <img 
-                      src="/logo.png" 
-                      alt="FTJM Logo" 
-                      className="w-full h-full object-cover scale-[1.35]"
-                      referrerPolicy="no-referrer"
-                    />
-                 </div>
-                 <div className="relative z-10">
-                    <p className="text-4xl font-black text-white/30 tracking-tighter uppercase mb-2 group-hover:text-white transition-colors duration-700">Trust</p>
-                    <p className="text-2xl font-bold text-cyan-500/50 group-hover:text-cyan-300 transition-colors duration-700">The Network</p>
-                 </div>
-              </div>
-            </div>
-
           </div>
         </div>
       </section>
@@ -556,45 +515,28 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
       </section>
 
       {/* Footer */}
-      <footer className="py-16 bg-[#001f38] relative z-10 overflow-hidden border-t border-blue-900/50">
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-10 mb-12">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-transparent rounded-xl flex items-center justify-center border border-white/20 overflow-hidden">
-                <img 
-                  src="/logo.png" 
-                  alt="FTJM Logo" 
-                  className="w-full h-full object-cover scale-[1.35]"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-              <div>
-                <span className="block text-xl font-black tracking-tighter text-white leading-none">FTJM</span>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-6 text-white/50 text-[10px] font-bold uppercase tracking-[0.2em]">
-              <a href="#doel" className="hover:text-white transition-colors">Doel</a>
-              <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
-              <a href="#features" className="hover:text-white transition-colors">Platform</a>
-              <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
-              <a href="#visie" className="hover:text-white transition-colors">Visie</a>
-              <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
-              <a href="#juridisch" className="hover:text-white transition-colors">Documentatie</a>
-            </div>
+      <footer className="py-12 bg-[#001526] relative z-10 overflow-hidden border-t border-white/5">
+        <div className="max-w-7xl mx-auto px-6 relative z-10 flex flex-col items-center">
+          <div className="w-12 h-12 bg-transparent rounded-xl flex items-center justify-center border border-white/10 mb-6 opacity-50">
+            <img 
+              src="/logo.png" 
+              alt="FTJM Logo" 
+              className="w-full h-full object-cover scale-[1.35]"
+              referrerPolicy="no-referrer"
+            />
           </div>
-
-          <div className="pt-8 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">
-              © {new Date().getFullYear()} FTJM Enterprise.
-            </p>
-            <div className="flex items-center gap-3">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-emerald-400"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[10px] font-bold text-white/40 tracking-widest">ENCRYPTED CONNECTION</span>
-            </div>
+          <div className="flex items-center gap-6 text-white/40 text-[10px] font-bold uppercase tracking-[0.2em] mb-8">
+            <a href="#doel" className="hover:text-white transition-colors">Doel</a>
+            <a href="#features" className="hover:text-white transition-colors">Platform</a>
+            <a href="#visie" className="hover:text-white transition-colors">Visie</a>
+            <a href="#juridisch" className="hover:text-white transition-colors">Documentatie</a>
+          </div>
+          <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-4">
+            © {new Date().getFullYear()} FTJM Enterprise.
+          </p>
+          <div className="flex items-center gap-2">
+            <Lock className="w-3 h-3 text-emerald-500" />
+            <span className="text-[9px] font-bold text-emerald-500/70 tracking-widest uppercase">End-to-End Encrypted Platform</span>
           </div>
         </div>
       </footer>

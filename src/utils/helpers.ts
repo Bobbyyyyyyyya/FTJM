@@ -624,3 +624,114 @@ export const getMediaShareUrl = (mediaIdOrUrl: string): string => {
   return `${origin}${pathname}?media=${encodeURIComponent(mediaIdOrUrl)}`;
 };
 
+export interface DeviceOSInfo {
+  name: 'Chrome OS' | 'macOS' | 'Windows' | 'Linux' | 'iOS' | 'iPadOS' | 'Android' | 'Onbekend';
+  isChromeOS: boolean;
+  icon: string;
+  badgeClass: string;
+  browserName: string;
+  formattedLabel: string;
+}
+
+/**
+ * Accurately detects the operating system, with full precedence for Chrome OS (CrOS)
+ * to prevent Chromebooks / Chrome OS devices from being wrongly classified as Linux.
+ */
+export const getDeviceOSInfo = (userAgentStr?: string, platformStr?: string): DeviceOSInfo => {
+  const ua = userAgentStr || (typeof window !== 'undefined' ? navigator.userAgent : '') || '';
+  const platform = platformStr || (typeof window !== 'undefined' ? ((navigator as any).userAgentData?.platform || navigator.platform || '') : '') || '';
+
+  // 1. Detect Chrome OS FIRST (prevents X11/Linux false positives)
+  if (/CrOS|Chromebook|ChromeOS|cros/i.test(ua) || /Chrome OS|CrOS/i.test(platform)) {
+    return {
+      name: 'Chrome OS',
+      isChromeOS: true,
+      icon: '🌐',
+      badgeClass: 'bg-cyan-500/15 text-cyan-600 border border-cyan-500/30',
+      browserName: 'Chrome',
+      formattedLabel: 'Chrome OS (Chromebook)'
+    };
+  }
+
+  // 2. iOS / iPadOS
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && typeof window !== 'undefined' && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
+    return {
+      name: 'iPadOS',
+      isChromeOS: false,
+      icon: '📱',
+      badgeClass: 'bg-blue-500/15 text-blue-600 border border-blue-500/30',
+      browserName: /CriOS/i.test(ua) ? 'Chrome' : /FxiOS/i.test(ua) ? 'Firefox' : 'Safari',
+      formattedLabel: 'iPadOS'
+    };
+  }
+
+  if (/iPhone|iPod/i.test(ua)) {
+    return {
+      name: 'iOS',
+      isChromeOS: false,
+      icon: '📱',
+      badgeClass: 'bg-blue-500/15 text-blue-600 border border-blue-500/30',
+      browserName: /CriOS/i.test(ua) ? 'Chrome' : /FxiOS/i.test(ua) ? 'Firefox' : 'Safari',
+      formattedLabel: 'iOS (iPhone)'
+    };
+  }
+
+  // 3. Android
+  if (/Android/i.test(ua) || /Android/i.test(platform)) {
+    return {
+      name: 'Android',
+      isChromeOS: false,
+      icon: '🤖',
+      badgeClass: 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/30',
+      browserName: /Chrome/i.test(ua) ? 'Chrome' : /Firefox/i.test(ua) ? 'Firefox' : 'Android Browser',
+      formattedLabel: 'Android'
+    };
+  }
+
+  // 4. macOS
+  if (/Mac|Macintosh|MacIntel|MacPPC|Mac68K|Mac OS X/i.test(ua) || /Mac/i.test(platform)) {
+    return {
+      name: 'macOS',
+      isChromeOS: false,
+      icon: '🍎',
+      badgeClass: 'bg-purple-500/15 text-purple-600 border border-purple-500/30',
+      browserName: /Edg/i.test(ua) ? 'Edge' : /Chrome/i.test(ua) ? 'Chrome' : /Firefox/i.test(ua) ? 'Firefox' : 'Safari',
+      formattedLabel: 'macOS'
+    };
+  }
+
+  // 5. Windows
+  if (/Win|Windows|Win32|Win64|WinCE|Windows NT/i.test(ua) || /Win/i.test(platform)) {
+    return {
+      name: 'Windows',
+      isChromeOS: false,
+      icon: '🪟',
+      badgeClass: 'bg-sky-500/15 text-sky-600 border border-sky-500/30',
+      browserName: /Edg/i.test(ua) ? 'Edge' : /Chrome/i.test(ua) ? 'Chrome' : /Firefox/i.test(ua) ? 'Firefox' : 'Browser',
+      formattedLabel: 'Windows'
+    };
+  }
+
+  // 6. Generic Linux (only after Chrome OS check!)
+  if (/Linux|X11/i.test(ua) || /Linux/i.test(platform)) {
+    return {
+      name: 'Linux',
+      isChromeOS: false,
+      icon: '🐧',
+      badgeClass: 'bg-amber-500/15 text-amber-600 border border-amber-500/30',
+      browserName: /Chrome/i.test(ua) ? 'Chrome' : /Firefox/i.test(ua) ? 'Firefox' : 'Browser',
+      formattedLabel: 'Linux'
+    };
+  }
+
+  return {
+    name: 'Onbekend',
+    isChromeOS: false,
+    icon: '💻',
+    badgeClass: 'bg-zinc-500/15 text-zinc-600 border border-zinc-500/30',
+    browserName: 'Browser',
+    formattedLabel: 'Onbekend Apparaat'
+  };
+};
+
+

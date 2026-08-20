@@ -117,7 +117,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 )}
               </div>
 
-              {!isMe && (
+              {!isMe && !user.is_blocked && (
                 <div className="mt-8 flex gap-3">
                   <button 
                     onClick={() => onStartDM({ id: user.id, display_name: user.display_name || 'Anoniem' })}
@@ -126,6 +126,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     <Mail className="w-5 h-5" />
                     Bericht Sturen
                   </button>
+                </div>
+              )}
+              {!isMe && user.is_blocked && (
+                <div className="mt-8 p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-center">
+                  <p className="text-xs font-bold text-rose-500">Dit account is geblokkeerd.</p>
                 </div>
               )}
             </div>

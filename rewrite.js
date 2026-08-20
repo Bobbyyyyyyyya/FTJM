@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+const fs = require('fs');
+
+const content = `import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Heart, 
@@ -96,7 +98,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
   const [direction, setDirection] = useState<number>(0);
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const [copiedToast, setCopiedToast] = useState(false);
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
@@ -106,13 +108,6 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
   const isScrollingRef = useRef<boolean>(false);
 
   const currentMedia = mediaList[currentIndex];
-  const isVideo = currentMedia?.media_type === 'video' || (Boolean(currentMedia?.media_url) && (
-    currentMedia.media_url.startsWith('data:video/') || 
-    currentMedia.media_url.startsWith('data:audio/mp4') || 
-    currentMedia.media_url.startsWith('data:audio/webm') || 
-    currentMedia.media_url.startsWith('data:audio/quicktime') || 
-    /\.(mp4|webm|mov|mkv|m4v|ogv|avi|3gp)(\?.*)?$/i.test(currentMedia.media_url)
-  ));
 
   useEffect(() => {
     if (initialMediaId && mediaList.length > 0) {
@@ -157,7 +152,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
       } else if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'PageUp') {
         e.preventDefault();
         goToPrev();
-      } else if (e.key === ' ' && isVideo) {
+      } else if (e.key === ' ' && currentMedia?.media_type === 'video') {
         e.preventDefault();
         togglePlayPause();
       } else if (e.key === 'm') {
@@ -167,7 +162,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [goToNext, goToPrev, isVideo]);
+  }, [goToNext, goToPrev, currentMedia]);
 
   const handleWheel = (e: React.WheelEvent) => {
     if (showComments) return;
@@ -188,22 +183,13 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
 
   useEffect(() => {
     if (videoRef.current) {
-      videoRef.current.muted = isMuted;
       if (isPlaying) {
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {
-            if (videoRef.current && !isMuted) {
-              videoRef.current.muted = true;
-              videoRef.current.play().catch(() => {});
-            }
-          });
-        }
+        videoRef.current.play().catch(() => {});
       } else {
         videoRef.current.pause();
       }
     }
-  }, [currentIndex, isPlaying, isMuted]);
+  }, [currentIndex, isPlaying]);
 
   const togglePlayPause = () => {
     setIsPlaying(prev => !prev);
@@ -228,7 +214,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
       lastTapRef.current = 0;
     } else {
       lastTapRef.current = now;
-      if (isVideo) {
+      if (currentMedia?.media_type === 'video') {
         togglePlayPause();
       }
     }
@@ -279,26 +265,30 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
 
   const slideVariants = {
     enter: (dir: number) => ({
-      y: dir > 0 ? "100%" : dir < 0 ? "-100%" : "0%",
-      opacity: dir === 0 ? 1 : 0,
-      scale: dir === 0 ? 1 : 0.95,
+      y: dir > 0 ? "100%" : "-100%",
+      opacity: 0,
+      scale: 0.9,
+      filter: "blur(8px)",
     }),
     center: {
-      y: "0%",
+      y: 0,
       opacity: 1,
       scale: 1,
+      filter: "blur(0px)",
       transition: {
-        y: { type: "spring" as const, stiffness: 350, damping: 30 },
+        y: { type: "spring" as const, stiffness: 400, damping: 35 },
         opacity: { duration: 0.2 },
-        scale: { duration: 0.2 },
+        scale: { duration: 0.3 },
+        filter: { duration: 0.2 },
       },
     },
     exit: (dir: number) => ({
       y: dir > 0 ? "-100%" : "100%",
       opacity: 0,
-      scale: 0.95,
+      scale: 0.9,
+      filter: "blur(8px)",
       transition: {
-        y: { type: "spring" as const, stiffness: 350, damping: 30 },
+        y: { type: "spring" as const, stiffness: 400, damping: 35 },
         opacity: { duration: 0.2 },
       },
     }),
@@ -308,32 +298,38 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
     <div 
       ref={containerRef}
       onWheel={handleWheel}
-      className="relative w-full max-w-[460px] mx-auto h-[calc(100dvh-125px)] min-h-[540px] max-h-[900px] bg-black sm:rounded-[2.5rem] overflow-hidden shadow-2xl border border-zinc-800/80 select-none touch-pan-y group flex flex-col"
+      className="relative w-full sm:max-w-[440px] mx-auto h-full sm:h-[86vh] sm:min-h-[640px] sm:max-h-[920px] bg-black sm:rounded-[2.5rem] overflow-hidden sm:shadow-2xl sm:border border-zinc-800/80 select-none touch-pan-y group flex flex-col"
     >
       {/* Dynamic Blurred Background */}
-      <div 
-        key={"bg-" + (currentMedia.id || currentIndex)}
-        className="absolute inset-0 bg-cover bg-center blur-2xl opacity-35 scale-125 pointer-events-none z-0 transition-all duration-500"
-        style={{ backgroundImage: "url(" + currentMedia.media_url + ")" }}
-      />
+      <AnimatePresence mode="wait">
+        <motion.div 
+          key={"bg-" + (currentMedia.id || currentIndex)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.4 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5 }}
+          className="absolute inset-0 bg-cover bg-center blur-3xl scale-125 pointer-events-none z-0"
+          style={{ backgroundImage: "url(" + currentMedia.media_url + ")" }}
+        />
+      </AnimatePresence>
       <div className="absolute inset-0 bg-black/40 pointer-events-none z-0" />
 
       {/* Media Container */}
       <div className="absolute inset-0 z-10 flex items-center justify-center">
-        <AnimatePresence initial={false} custom={direction} mode="popLayout">
+        <AnimatePresence initial={false} custom={direction} mode="wait">
           <motion.div
-            key={currentMedia.id || (currentMedia.media_url + currentIndex)}
+            key={currentMedia.id || currentIndex}
             custom={direction}
             variants={slideVariants}
-            initial={direction === 0 ? false : "enter"}
+            initial="enter"
             animate="center"
             exit="exit"
             drag="y"
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={0.4}
             onDragEnd={(_, info) => {
-              const isFast = Math.abs(info.velocity.y) > 250;
-              const isFar = Math.abs(info.offset.y) > 70;
+              const isFast = Math.abs(info.velocity.y) > 300;
+              const isFar = Math.abs(info.offset.y) > 80;
               if (info.offset.y < 0 && (isFar || isFast)) {
                 goToNext();
               } else if (info.offset.y > 0 && (isFar || isFast)) {
@@ -343,7 +339,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
             className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing touch-none flex items-center justify-center overflow-hidden"
             onClick={handleMediaAreaClick}
           >
-            {isVideo ? (
+            {currentMedia.media_type === "video" ? (
               <>
                 <video
                   ref={videoRef}
@@ -353,7 +349,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                   playsInline
                   autoPlay
                   muted={isMuted}
-                  preload="auto"
+                  preload="metadata"
                 />
                 {!isPlaying && (
                   <motion.div 
@@ -452,6 +448,9 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                <UserIcon className="w-6 h-6 m-auto text-white/50" />
             )}
           </button>
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 bg-cyan-500 rounded-full border-2 border-black flex items-center justify-center shadow-lg">
+            <Plus className="w-3 h-3 text-white stroke-[3]" />
+          </div>
         </div>
 
         {/* Like */}
@@ -498,13 +497,13 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
           </button>
         </div>
 
-        {/* Extra Options / Delete (Only for user's own media) */}
-        {currentUserId && currentUserId === currentMedia.user_id && onDeleteMedia && (
+        {/* Extra Options / Delete */}
+        {(currentUserId === currentMedia.user_id || isAdmin) && onDeleteMedia && (
           <div className="flex flex-col items-center gap-1 mt-2">
             <button 
               onClick={() => onDeleteMedia(currentMedia.id, currentMedia.user_id)}
               className="w-10 h-10 rounded-full bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md flex items-center justify-center transition-all active:scale-75 shadow-lg border border-red-500/30"
-              title="Mijn foto/video verwijderen"
+              title="Verwijderen"
             >
               <Trash2 className="w-4 h-4 text-red-400" />
             </button>
@@ -513,13 +512,10 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
       </div>
 
       {/* Bottom Info Bar */}
-      <div className="absolute left-4 bottom-8 right-20 z-20 flex flex-col gap-2 pointer-events-none">
+      <div className="absolute left-4 bottom-8 right-20 z-20 flex flex-col gap-2">
         <button 
-          onClick={(e) => {
-             e.stopPropagation();
-             onOpenProfile(currentMedia.user_id);
-          }}
-          className="flex items-center gap-2 group/author w-max max-w-full text-left pointer-events-auto"
+          onClick={() => onOpenProfile(currentMedia.user_id)}
+          className="flex items-center gap-2 group/author w-max max-w-full text-left"
         >
           <span className="text-base sm:text-lg font-black text-white drop-shadow-lg shadow-black group-hover/author:text-cyan-400 transition-colors truncate">
             {nicknames[currentMedia.user_id] || currentMedia.author_name}
@@ -541,17 +537,17 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
           )}
         </button>
 
-        <div className="flex items-center gap-3 pointer-events-auto">
+        <div className="flex items-center gap-3">
           <span className="text-xs text-white/80 font-mono drop-shadow-md">
             {formatDate(currentMedia.created_at)}
           </span>
-          {isVideo && (
+          {currentMedia.media_type === "video" && (
             <button 
               onClick={(e) => {
                 e.stopPropagation();
                 setIsMuted(!isMuted);
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white/90 text-[10px] uppercase font-bold active:scale-95 transition-all shadow-lg cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white/90 text-[10px] uppercase font-bold active:scale-95 transition-all shadow-lg cursor-pointer pointer-events-auto"
             >
               {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
               {isMuted ? "Gedempt" : "Geluid"}
@@ -563,99 +559,101 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
       {/* Slide-Up Comments Drawer */}
       <AnimatePresence>
         {showComments && (
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 25, stiffness: 250 }}
-            className="absolute inset-x-0 bottom-0 h-[65%] z-40 bg-zinc-950/95 backdrop-blur-2xl border-t border-white/10 sm:rounded-t-3xl rounded-t-2xl flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
-          >
-            {/* Comments Header */}
-            <div className="relative flex items-center justify-center p-4 border-b border-white/10 shrink-0">
-              <div className="absolute left-1/2 -top-2 w-12 h-1.5 rounded-full bg-white/20 -translate-x-1/2" />
-              <h4 className="text-sm font-black text-white tracking-wider uppercase">Reacties ({commentsList.length})</h4>
-              <button onClick={() => setShowComments(false)} className="absolute right-4 p-2 bg-white/5 rounded-full text-white/60 hover:text-white transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+           <motion.div
+             initial={{ y: "100%" }}
+             animate={{ y: 0 }}
+             exit={{ y: "100%" }}
+             transition={{ type: "spring", damping: 25, stiffness: 250 }}
+             className="absolute inset-x-0 bottom-0 h-[65%] z-40 bg-zinc-950/95 backdrop-blur-2xl border-t border-white/10 sm:rounded-t-3xl rounded-t-2xl flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
+           >
+             {/* Comments Header */}
+             <div className="relative flex items-center justify-center p-4 border-b border-white/10 shrink-0">
+               <div className="absolute left-1/2 -top-2 w-12 h-1.5 rounded-full bg-white/20 -translate-x-1/2" />
+               <h4 className="text-sm font-black text-white tracking-wider uppercase">Reacties ({commentsList.length})</h4>
+               <button onClick={() => setShowComments(false)} className="absolute right-4 p-2 bg-white/5 rounded-full text-white/60 hover:text-white transition-colors">
+                 <X className="w-4 h-4" />
+               </button>
+             </div>
 
-            {/* Comments List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-              {commentsList.length === 0 ? (
-                <div className="text-center py-12 text-zinc-400">
-                  <p className="text-sm italic">{t("Nog geen reacties. Laat als eerste van je horen!")}</p>
-                </div>
-              ) : (
-                commentsList.map((comment, idx) => {
-                  const cAuthorProfile = profiles?.find((p: any) => p.id === comment.user_id);
-                  const isCVerified = isVerifiedEmail(cAuthorProfile || cAuthorProfile?.email);
-                  const isCBeta = isBetaTester(cAuthorProfile || cAuthorProfile?.email);
-                  const isCAdmin = cAuthorProfile?.role === "admin" || cAuthorProfile?.email?.toLowerCase() === "markohoksen@gmail.com";
+             {/* Comments List */}
+             <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+               {commentsList.length === 0 ? (
+                 <div className="text-center py-12 text-zinc-400">
+                   <p className="text-sm italic">{t("Nog geen reacties. Laat als eerste van je horen!")}</p>
+                 </div>
+               ) : (
+                 commentsList.map((comment, idx) => {
+                   const cAuthorProfile = profiles?.find((p: any) => p.id === comment.user_id);
+                   const isCVerified = isVerifiedEmail(cAuthorProfile || cAuthorProfile?.email);
+                   const isCBeta = isBetaTester(cAuthorProfile || cAuthorProfile?.email);
+                   const isCAdmin = cAuthorProfile?.role === "admin" || cAuthorProfile?.email?.toLowerCase() === "markohoksen@gmail.com";
 
-                  return (
-                    <div key={comment.id || idx} className="flex gap-3 items-start">
-                      <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden shrink-0 border border-zinc-700">
-                        {comment.author_photo ? (
-                          <img src={comment.author_photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-400">
-                            <UserIcon className="w-4 h-4" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-xs font-black text-white/90 truncate">
-                              {nicknames[comment.user_id] || comment.author_name || "Anoniem"}
-                            </span>
-                            {isCVerified && <Check className="w-3 h-3 text-cyan-400" />}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-[10px] font-mono text-zinc-500">
-                              {formatDate(comment.created_at)}
-                            </span>
-                            {currentUserId && currentUserId === comment.user_id && onDeleteComment && (
-                              <button
-                                onClick={() => onDeleteComment(currentMedia.id, currentMedia.user_id, comment.id)}
-                                className="text-zinc-500 hover:text-red-400 transition-colors p-0.5"
-                                title="Mijn reactie verwijderen"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-sm text-white/80 mt-1 leading-relaxed break-words">
-                          {comment.text}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                   return (
+                     <div key={comment.id || idx} className="flex gap-3 items-start">
+                       <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden shrink-0 border border-zinc-700">
+                         {comment.author_photo ? (
+                           <img src={comment.author_photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                         ) : (
+                           <div className="w-full h-full flex items-center justify-center text-zinc-400">
+                             <UserIcon className="w-4 h-4" />
+                           </div>
+                         )}
+                       </div>
+                       <div className="flex-1 min-w-0">
+                         <div className="flex items-center justify-between gap-2">
+                           <div className="flex items-center gap-1.5 min-w-0">
+                             <span className="text-xs font-black text-white/90 truncate">
+                               {nicknames[comment.user_id] || comment.author_name || "Anoniem"}
+                             </span>
+                             {isCVerified && <Check className="w-3 h-3 text-cyan-400" />}
+                           </div>
+                           <div className="flex items-center gap-2 shrink-0">
+                             <span className="text-[10px] font-mono text-zinc-500">
+                               {formatDate(comment.created_at)}
+                             </span>
+                             {(currentUserId === comment.user_id || isAdmin) && onDeleteComment && (
+                               <button
+                                 onClick={() => onDeleteComment(currentMedia.id, currentMedia.user_id, comment.id)}
+                                 className="text-zinc-500 hover:text-red-400 transition-colors p-0.5"
+                               >
+                                 <Trash2 className="w-3.5 h-3.5" />
+                               </button>
+                             )}
+                           </div>
+                         </div>
+                         <p className="text-sm text-white/80 mt-1 leading-relaxed break-words">
+                           {comment.text}
+                         </p>
+                       </div>
+                     </div>
+                   );
+                 })
+               )}
+             </div>
 
-            {/* Input Footer */}
-            <form onSubmit={handleCommentSubmit} className="p-3 sm:p-4 border-t border-white/10 flex gap-2 bg-zinc-950">
-              <input
-                type="text"
-                placeholder={t("Schrijf een reactie...")}
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                className="flex-1 bg-white/5 text-sm text-white rounded-full border border-white/10 px-4 py-3 focus:outline-none focus:border-cyan-500 focus:bg-white/10 transition-all placeholder:text-zinc-500"
-              />
-              <button
-                type="submit"
-                disabled={!commentText.trim()}
-                className="w-11 h-11 rounded-full bg-cyan-500 disabled:opacity-50 text-white active:scale-95 transition-all shadow-lg flex items-center justify-center shrink-0"
-              >
-                <Send className="w-4 h-4 ml-0.5" />
-              </button>
-            </form>
-          </motion.div>
+             {/* Input Footer */}
+             <form onSubmit={handleCommentSubmit} className="p-3 sm:p-4 border-t border-white/10 flex gap-2 bg-zinc-950">
+               <input
+                 type="text"
+                 placeholder={t("Schrijf een reactie...")}
+                 value={commentText}
+                 onChange={(e) => setCommentText(e.target.value)}
+                 className="flex-1 bg-white/5 text-sm text-white rounded-full border border-white/10 px-4 py-3 focus:outline-none focus:border-cyan-500 focus:bg-white/10 transition-all placeholder:text-zinc-500"
+               />
+               <button
+                 type="submit"
+                 disabled={!commentText.trim()}
+                 className="w-11 h-11 rounded-full bg-cyan-500 disabled:opacity-50 text-white active:scale-95 transition-all shadow-lg flex items-center justify-center shrink-0"
+               >
+                 <Send className="w-4 h-4 ml-0.5" />
+               </button>
+             </form>
+           </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
 };
+`
+
+fs.writeFileSync('src/components/MediaSwipeFeed.tsx', content);

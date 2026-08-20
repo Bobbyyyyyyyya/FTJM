@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical, Share2 } from 'lucide-react';
+import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical, Share2, Volume2, VolumeX } from 'lucide-react';
 import { formatDate, getMediaShareUrl } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
 import { t } from '../utils/translations';
@@ -55,6 +55,31 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
   const [commentText, setCommentText] = useState('');
   const [isLikePulsing, setIsLikePulsing] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const isVideo = media.media_type === 'video' || (Boolean(media.media_url) && (
+    media.media_url.startsWith('data:video/') || 
+    media.media_url.startsWith('data:audio/mp4') || 
+    media.media_url.startsWith('data:audio/webm') || 
+    media.media_url.startsWith('data:audio/quicktime') || 
+    /\.(mp4|webm|mov|mkv|m4v|ogv|avi|3gp)(\?.*)?$/i.test(media.media_url)
+  ));
+
+  useEffect(() => {
+    if (isVideo && videoRef.current) {
+      videoRef.current.muted = isMuted;
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          if (videoRef.current && !isMuted) {
+            videoRef.current.muted = true;
+            videoRef.current.play().catch(() => {});
+          }
+        });
+      }
+    }
+  }, [isVideo, media.media_url, isMuted]);
 
   const likesList = media.likes || [];
   const commentsList = media.comments || [];
@@ -86,7 +111,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
   };
 
   return (
-    <motion.div
+    <motion.div 
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       className="bg-app-card border border-app-border rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col group h-full"
@@ -141,13 +166,13 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
         </button>
         <div className="flex items-center gap-2 shrink-0">
           <span className="px-2 py-0.5 bg-app-accent text-[8px] font-black uppercase text-app-ink border border-app-border rounded-full tracking-wider shrink-0">
-            {media.media_type === 'video' ? '📽️ Video' : '🖼️ Foto'}
+            {isVideo ? '📽️ Video' : '🖼️ Foto'}
           </span>
-          {(currentUserId === media.user_id || isAdmin) && onDeleteMedia && (
+          {currentUserId && currentUserId === media.user_id && onDeleteMedia && (
             <button
               onClick={() => onDeleteMedia(media.id, media.user_id)}
               className="p-1.5 text-app-muted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
-              title={t("Verwijder media")}
+              title={t("Mijn media verwijderen")}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -156,23 +181,38 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
       </div>
 
       {/* Media Wrapper */}
-      <div className="relative aspect-square bg-black overflow-hidden flex items-center justify-center cursor-pointer group/media">
-        {media.media_type === 'video' ? (
-          <video
-            src={media.media_url}
-            className="w-full h-full object-cover"
-            onClick={() => onViewFullscreen(media.media_url)}
-            muted
-            loop
-            playsInline
-            autoPlay
-            preload="metadata"
-          />
+      <div className="relative w-full pb-[100%] bg-black overflow-hidden flex items-center justify-center cursor-pointer group/media shrink-0">
+        {isVideo ? (
+          <>
+            <video
+              ref={videoRef}
+              src={media.media_url}
+              className="absolute inset-0 w-full h-full object-cover"
+              onClick={() => onViewFullscreen(media.media_url)}
+              muted={isMuted}
+              loop
+              playsInline
+              autoPlay
+              preload="auto"
+            />
+            {/* Quick Audio Mute / Unmute Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMuted(!isMuted);
+              }}
+              className="absolute bottom-2.5 right-2.5 z-10 p-1.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md text-white border border-white/20 active:scale-90 transition-all shadow-lg cursor-pointer flex items-center justify-center"
+              title={isMuted ? "Geluid aanzetten" : "Geluid dempen"}
+            >
+              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-zinc-300" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
+            </button>
+          </>
         ) : (
           <img
             src={media.media_url}
             alt=""
-            className="w-full h-full object-cover group-hover/media:scale-[1.03] transition-all duration-500"
+            className="absolute inset-0 w-full h-full object-cover group-hover/media:scale-[1.03] transition-all duration-500"
             onClick={() => onViewFullscreen(media.media_url)}
             referrerPolicy="no-referrer"
             loading="lazy"
@@ -287,12 +327,12 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
                             <span className="text-[8px] font-mono text-app-muted shrink-0">
                               {formatDate(comment.created_at)}
                             </span>
-                            {(currentUserId === comment.user_id || isAdmin) && onDeleteComment && (
+                            {currentUserId && currentUserId === comment.user_id && onDeleteComment && (
                               <button
                                 onClick={() => onDeleteComment(media.id, media.user_id, comment.id)}
                                 type="button"
                                 className="text-app-muted hover:text-red-500 transition-colors p-0.5 rounded shrink-0"
-                                title={t("Verwijder reactie")}
+                                title={t("Mijn reactie verwijderen")}
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>

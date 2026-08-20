@@ -36,11 +36,13 @@ export const createSupabaseClient = (uid: string | null = null) => {
     return clientCache[cacheKey];
   }
 
+  const isPrimary = cacheKey === 'default';
+
   const client = createClient(supabaseUrl || '', supabaseKey || '', {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
+      persistSession: isPrimary,
+      autoRefreshToken: isPrimary,
+      detectSessionInUrl: isPrimary,
       storage: secureSupabaseStorage,
       lockSessionType: 'none',
     } as any,

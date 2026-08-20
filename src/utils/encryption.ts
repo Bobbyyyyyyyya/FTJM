@@ -52,8 +52,8 @@ export const decryptGeneralChat = (cipherText: string): string => {
     }
 
     let actualCipher = cleanText;
-    if (cleanText.startsWith('gc:')) {
-      actualCipher = cleanText.substring(3).trim();
+    while (actualCipher.startsWith('gc:')) {
+      actualCipher = actualCipher.substring(3).trim();
     }
     
     // 1. Attempt decryption with primary key
@@ -92,7 +92,8 @@ export const decryptGeneralChat = (cipherText: string): string => {
       // ignore and return original
     }
     
-    return cipherText;
+    // If decryption fails, return actualCipher if cleanText had gc: prefix, or cipherText
+    return cleanText.startsWith('gc:') ? actualCipher : cipherText;
   } catch (error) {
     console.error('Decryption failed for:', cipherText, error);
     return typeof cipherText === 'string' ? cipherText : '';

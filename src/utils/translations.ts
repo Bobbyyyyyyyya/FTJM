@@ -4,7 +4,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   nl: {},
   en: {
     // Navigation / Header / Sidebar
-    "Hoksen Forum": "Hoksen Forum",
+    "FTJM Forum": "FTJM Forum",
     "Algemene Chat": "General Chat",
     "Forum": "Forum",
     "Berichten/Inbox": "Messages/Inbox",
@@ -128,8 +128,28 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "Kies een lettertype die je fijn vindt lezen.": "Choose a font family you like to read.",
     "Thema Resetten naar Standaard": "Reset Theme to Default",
 
-    // Settings App Tab
+    // Settings App Tab & Hidden DMs
     "Beheer hoe de app op je apparaat werkt.": "Manage how the app works on your device.",
+    "Beheer taal, privégesprekken, installatie en app-prestaties.": "Manage language, private chats, installation and app performance.",
+    "Taal & Weergave": "Language & Display",
+    "Kies de gewenste weergavetaal van het forum.": "Choose the preferred display language for the forum.",
+    "Privégesprekken & Verborgen DM's": "Private Chats & Hidden DMs",
+    "Verberg specifieke privéchats uit je actieve inbox om je berichtenoverzicht overzichtelijk en privé te houden.": "Hide specific private chats from your active inbox to keep your messages organized and private.",
+    "Alle gesprekken zichtbaar maken": "Make all conversations visible",
+    "Geen verborgen gesprekken": "No hidden conversations",
+    "Je hebt momenteel geen verborgen DM's. Klik in de inbox op het oog-icoontje naast een gesprek om het te verbergen.": "You currently have no hidden DMs. Click the eye icon next to a conversation in your inbox to hide it.",
+    "Zichtbaar maken": "Unhide",
+    "Verbergen": "Hide",
+    "Actief": "Active",
+    "Verborgen": "Hidden",
+    "Gesprek verbergen": "Hide conversation",
+    "Gesprek weergeven": "Unhide conversation",
+    "Gesprek weergeven in Inbox": "Unhide conversation in Inbox",
+    "App Installatie & Downloads": "App Installation & Downloads",
+    "Systeem & Opslag": "System & Storage",
+    "Handmatige installatiehandleiding": "Manual installation guide",
+    "Lokale cache opschonen": "Clear local cache",
+    "Cache opgeschoond": "Cache cleared",
     "Officiële Desktop App (macOS, Windows, Linux)": "Official Desktop App (macOS, Windows, Linux)",
     "Web PWA / Browser Installatie": "Web PWA / Browser Installation",
     "Desktop App Installeren": "Install Desktop App",
@@ -237,7 +257,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "U bent geblokkeerd of deze gebruiker is niet beschikbaar.": "You are blocked or this user is not available.",
 
     // Landing / Guest / Auth
-    "Welkom bij Hoksen Forum": "Welcome to Hoksen Forum",
+    "Welkom bij FTJM Forum": "Welcome to FTJM Forum",
     "Het ultieme platform voor community-interactie, forumdiscussies en directe chats.": "The ultimate platform for community interaction, forum discussions and direct chats.",
     "Registreren": "Register",
     "Inloggen": "Log In",

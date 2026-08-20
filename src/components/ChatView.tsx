@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Loader2, X, ChevronLeft, Smile, Paperclip, Volume2 } from 'lucide-react';
+import { MessageSquare, Send, Loader2, X, ChevronLeft, Smile, Paperclip, Volume2, Film } from 'lucide-react';
 import { Post, CustomTheme, UserProfile } from '../types';
 import { PostItem } from './PostItem';
 
@@ -70,7 +70,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
   userProfile
 }) => {
   const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
-  const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | null>(null);
+  const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | 'video' | null>(null);
   const [isCompressing, setIsCompressing] = React.useState<boolean>(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -121,19 +121,46 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
 
     setIsCompressing(true);
     try {
-      if (file.type.startsWith('audio/')) {
+      const isVideoFile = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|ogv|3gp)$/i.test(file.name);
+      const isAudioFile = !isVideoFile && (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|opus|aac|flac)$/i.test(file.name));
+      const isImageFile = !isVideoFile && !isAudioFile && (file.type.startsWith('image/') || /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)$/i.test(file.name));
+
+      if (isVideoFile) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          let dataUrl = evt.target?.result as string;
+          // Ensure it has data:video/ prefix if browser gave generic or audio mime
+          if (dataUrl && dataUrl.startsWith('data:audio/mp4')) {
+            dataUrl = dataUrl.replace('data:audio/mp4', 'data:video/mp4');
+          } else if (dataUrl && dataUrl.startsWith('data:application/octet-stream')) {
+            dataUrl = dataUrl.replace('data:application/octet-stream', 'data:video/mp4');
+          }
+          setSelectedFile(dataUrl);
+          setSelectedFileType('video');
+        };
+        reader.readAsDataURL(file);
+      } else if (isAudioFile) {
         const reader = new FileReader();
         reader.onload = (evt) => {
           setSelectedFile(evt.target?.result as string);
           setSelectedFileType('audio');
         };
         reader.readAsDataURL(file);
-      } else if (file.type.startsWith('image/')) {
-        const compressed = await compressImage(file);
-        setSelectedFile(compressed);
-        setSelectedFileType('image');
+      } else if (isImageFile) {
+        if (file.type === 'image/gif' || file.name.endsWith('.gif')) {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            setSelectedFile(evt.target?.result as string);
+            setSelectedFileType('image');
+          };
+          reader.readAsDataURL(file);
+        } else {
+          const compressed = await compressImage(file);
+          setSelectedFile(compressed);
+          setSelectedFileType('image');
+        }
       } else {
-        alert("Selecteer een geldig audiobestand of afbeelding.");
+        alert("Selecteer een geldige video, afbeelding of audiobestand.");
       }
     } catch (err) {
       console.error("Error reading file:", err);
@@ -253,7 +280,12 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
               className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center justify-between gap-4 backdrop-blur-md"
             >
               <div className="flex items-center gap-3 overflow-hidden">
-                {selectedFileType === 'image' ? (
+                {selectedFileType === 'video' ? (
+                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border bg-black flex-shrink-0 relative flex items-center justify-center">
+                    <video src={selectedFile} className="w-full h-full object-cover" muted playsInline />
+                    <Film className="w-4 h-4 text-cyan-400 absolute inset-0 m-auto drop-shadow" />
+                  </div>
+                ) : selectedFileType === 'image' ? (
                   <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border bg-black flex-shrink-0">
                     <img src={selectedFile} alt="Preview" className="w-full h-full object-cover" />
                   </div>
@@ -264,7 +296,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
                 )}
                 <div className="overflow-hidden">
                   <p className="text-xs font-black text-app-ink uppercase tracking-wider truncate">
-                    {selectedFileType === 'image' ? 'Geselecteerde Foto' : 'Geselecteerd Audiobestand'}
+                    {selectedFileType === 'video' ? 'Geselecteerde Video' : selectedFileType === 'image' ? 'Geselecteerde Foto' : 'Geselecteerd Audiobestand'}
                   </p>
                   <p className="text-[10px] text-app-muted font-mono truncate mt-0.5">
                     Klaar om te versturen ({Math.round(selectedFile.length / 1024)} KB)
@@ -305,7 +337,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept="audio/*,image/*"
+              accept="image/*,video/*,audio/*"
               className="hidden"
             />
             <button 
@@ -313,7 +345,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
               onClick={() => fileInputRef.current?.click()}
               disabled={cooldownRemaining > 0}
               className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all"
-              title="Afbeelding of audiobestand uploaden"
+              title="Foto, video of audiobestand uploaden"
             >
               <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>

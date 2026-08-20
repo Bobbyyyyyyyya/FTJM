@@ -32,14 +32,19 @@ export const Header: React.FC<HeaderProps> = React.memo(({
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
         <div className="flex items-center gap-3 sm:gap-4">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-app-ink rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300">
-            <span className="text-app-bg font-bold text-xl sm:text-2xl">H</span>
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-transparent rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden shadow-lg transition-all duration-300">
+            <img 
+              src="/logo.png" 
+              alt="FTJM Logo" 
+              className="w-full h-full object-cover scale-[1.35]" 
+              referrerPolicy="no-referrer" 
+            />
           </div>
           <div className="hidden sm:block">
-            <h1 className="text-lg font-bold text-app-ink tracking-tight">Hoksen Forum</h1>
+            <h1 className="text-lg font-bold text-app-ink tracking-tight">FTJM Forum</h1>
             <div className="flex items-center gap-2">
               <div className={`w-1.5 h-1.5 rounded-full ${websiteStatus === 'Online' ? 'bg-emerald-500 animate-pulse' : websiteStatus === 'Onderhoud' ? 'bg-amber-500' : 'bg-red-500'}`} />
-              <p className="text-[10px] font-medium text-app-muted">{websiteStatus}</p>
+              <p className="text-[10px] font-medium text-app-muted">{websiteStatus} • FTJM Enterprise</p>
             </div>
           </div>
         </div>

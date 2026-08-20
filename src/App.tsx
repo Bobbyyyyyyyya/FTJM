@@ -308,6 +308,11 @@ export default function App() {
     const joinTime = new Date(joinDate).getTime();
     return threads.filter(t => new Date(t.created_at || '').getTime() >= joinTime);
   }, [threads, joinDate, user, profile]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const usersRef = useRef<UserProfile[]>(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     try {
       const cached = secureLocalStorage.getItem('cached_conversations');
@@ -321,6 +326,72 @@ export default function App() {
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  // Hidden conversations state (for hiding DMs from inbox)
+  const [hiddenConversationIds, setHiddenConversationIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ftjm_hidden_conversations');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const handleToggleHideConversation = React.useCallback((conversationId: string) => {
+    setHiddenConversationIds(prev => {
+      const isHidden = prev.includes(conversationId);
+      const updated = isHidden ? prev.filter(id => id !== conversationId) : [...prev, conversationId];
+      try {
+        localStorage.setItem('ftjm_hidden_conversations', JSON.stringify(updated));
+      } catch (e) {}
+      
+      if (isHidden) {
+        toast.success(t("Gesprek zichtbaar gemaakt in Inbox"));
+      } else {
+        toast.success(t("Gesprek verborgen"), {
+          description: t("Je kunt verborgen DM's bekijken en herstellen via Instellingen -> App Instellingen."),
+          action: {
+            label: t("Ongedaan maken"),
+            onClick: () => {
+              setHiddenConversationIds(current => {
+                const restored = current.filter(id => id !== conversationId);
+                try { localStorage.setItem('ftjm_hidden_conversations', JSON.stringify(restored)); } catch (e) {}
+                return restored;
+              });
+            }
+          }
+        });
+      }
+      return updated;
+    });
+  }, [t]);
+
+  const handleUnhideAllConversations = React.useCallback(() => {
+    setHiddenConversationIds([]);
+    try {
+      localStorage.removeItem('ftjm_hidden_conversations');
+    } catch (e) {}
+    toast.success(t("Alle gesprekken zijn weer zichtbaar gemaakt in je inbox"));
+  }, [t]);
+
+  // Filter out DM conversations where the other participant is blocked or conversation is hidden
+  const filteredConversations = React.useMemo(() => {
+    return conversations.filter(c => {
+      if (hiddenConversationIds.includes(c.id)) {
+        return false;
+      }
+      if (!c.is_group) {
+        const otherUid = c.participants?.find(p => p !== user?.uid);
+        if (otherUid) {
+          const otherProfile = users.find(u => u.id === otherUid);
+          if (otherProfile?.is_blocked === true) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+  }, [conversations, users, user?.uid, hiddenConversationIds]);
 
   const threadsRef = useRef<ForumThread[]>(threads);
   useEffect(() => {
@@ -339,6 +410,18 @@ export default function App() {
   });
 
   const handleSetActiveConversation = (conv: Conversation | null) => {
+    if (conv && !conv.is_group) {
+      const otherUid = conv.participants?.find(uid => uid !== user?.uid);
+      if (otherUid) {
+        const otherProfile = users.find(u => u.id === otherUid);
+        if (otherProfile?.is_blocked === true) {
+          toast.error('Deze gebruiker is geblokkeerd.');
+          setActiveConversation(null);
+          secureLocalStorage.removeItem('active_conversation');
+          return;
+        }
+      }
+    }
     setActiveConversation(conv);
     if (conv) {
       secureLocalStorage.setItem('active_conversation', JSON.stringify(conv));
@@ -490,7 +573,7 @@ export default function App() {
         setIsAudioUnlocked(true);
         console.log('Audio auto-unlocked');
         
-        if (navigator.userAgent.includes('CrOS')) {
+        if (/CrOS|Chromebook|ChromeOS|cros/i.test(navigator.userAgent || '')) {
           toast.success('Chrome OS Audio Geactiveerd', {
             description: 'Geluiden zouden nu moeten werken. Gebruik de luidspreker bovenin bij problemen.',
             duration: 5000
@@ -663,7 +746,7 @@ export default function App() {
   };
 
   // Add Profile Media Handler
-  const handleAddProfileMedia = async (url: string, type: 'image' | 'gif' | 'video') => {
+  const handleAddProfileMedia = async (url: string, type: 'image' | 'gif' | 'video', fileBlob?: File | Blob) => {
     if (!user) return;
     if (selectedUser && selectedUser.id === user.uid && profileMedia.length >= 10) {
       toast.error('Je kunt maximaal 10 media items uploaden onder je profiel.');
@@ -671,74 +754,112 @@ export default function App() {
     }
 
     setProfileMediaLoading(true);
-    const newItem = {
-      id: Date.now().toString(),
+    let finalMediaUrl = url;
+
+    // 1. Direct Supabase Storage upload attempt for permanent CDN hosting
+    if (fileBlob) {
+      try {
+        const isVid = type === 'video' || fileBlob.type.includes('video');
+        const fileExt = isVid
+          ? (fileBlob.type.includes('webm') ? 'webm' : fileBlob.type.includes('quicktime') ? 'mov' : 'mp4')
+          : 'jpg';
+        const fileName = `${user.uid}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const possibleBuckets = ['media', 'profile_media', 'videos', 'uploads', 'public', 'files', 'chat-attachments', 'avatars'];
+        
+        for (const bucket of possibleBuckets) {
+          try {
+            const { data: uploadData, error: uploadErr } = await supabaseClient.storage
+              .from(bucket)
+              .upload(fileName, fileBlob, {
+                cacheControl: '3600',
+                upsert: true,
+                contentType: fileBlob.type || (isVid ? 'video/mp4' : 'image/jpeg')
+              });
+            
+            if (!uploadErr && uploadData) {
+              const { data: publicUrlData } = supabaseClient.storage
+                .from(bucket)
+                .getPublicUrl(fileName);
+              
+              if (publicUrlData?.publicUrl) {
+                finalMediaUrl = publicUrlData.publicUrl;
+                break;
+              }
+            }
+          } catch (bErr) {
+            // try next bucket
+          }
+        }
+      } catch (storageErr) {
+        console.warn('Supabase storage upload fallback:', storageErr);
+      }
+    }
+
+    const generatedId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}`;
+
+    const isVideoType = type === 'video' || (finalMediaUrl && (finalMediaUrl.startsWith('data:video/') || /\.(mp4|webm|mov|mkv|m4v|ogv)(\?.*)?$/i.test(finalMediaUrl)));
+    // Database constraint profile_media_media_type_check strictly requires 'image' or 'gif'
+    const dbMediaType = type === 'gif' ? 'gif' : 'image';
+
+    const newRecord = {
+      id: generatedId,
       user_id: user.uid,
-      media_url: url,
-      media_type: type,
-      created_at: new Date().toISOString(),
+      media_url: finalMediaUrl,
+      media_type: dbMediaType,
       likes: [] as string[],
-      comments: [] as any[]
+      comments: [] as any[],
+      created_at: new Date().toISOString()
     };
 
     try {
-      // 1. Try to insert in profile_media table
+      // Insert STRICTLY into public.profile_media table in Supabase
       const { data, error } = await supabaseClient
         .from('profile_media')
-        .insert([{
-          user_id: user.uid,
-          media_url: url,
-          media_type: type,
-          likes: [],
-          comments: []
-        }])
+        .insert([newRecord])
         .select();
 
-      const savedItem = (!error && data && data[0]) ? {
-        ...data[0],
-        likes: [] as string[],
-        comments: [] as any[]
-      } : newItem;
-
-      // Always sync to profiles.custom_theme.media as well!
-      const updatedTheme = {
-        ...(profile?.custom_theme || {}),
-        agreed_terms_v2: true,
-        media: [savedItem, ...(profile?.custom_theme?.media || [])].slice(0, 10)
-      };
-
-      const { error: profileError } = await supabaseClient
-        .from('profiles')
-        .update({ custom_theme: updatedTheme })
-        .eq('id', user.uid);
-
-      if (profileError) {
-        console.warn('Profile theme sync failed:', profileError.message);
-      } else {
-        if (profile) profile.custom_theme = updatedTheme;
-        if (selectedUser && selectedUser.id === user.uid) {
-          selectedUser.custom_theme = updatedTheme;
-        }
+      if (error) {
+        console.error('Failed to insert into public.profile_media:', error);
+        toast.error('Fout bij opslaan in public.profile_media: ' + (error.message || JSON.stringify(error)));
+        throw error;
       }
 
-      if (error) {
-        console.warn('profile_media table insert failed, falling back to profiles.custom_theme:', error.message);
-        setProfileMedia(updatedTheme.media);
-        toast.success('Media opgeslagen op je profiel!');
+      const savedItem = (data && data[0]) ? {
+        ...data[0],
+        media_type: isVideoType ? 'video' : (data[0].media_type || dbMediaType),
+        likes: data[0].likes || [],
+        comments: data[0].comments || []
+      } : {
+        ...newRecord,
+        media_type: isVideoType ? 'video' : dbMediaType
+      };
+
+      setProfileMedia(prev => [savedItem, ...prev.filter(m => m.id !== savedItem.id && m.media_url !== savedItem.media_url)]);
+
+      // Update local feedMedia immediately
+      const broadcastItem = {
+        ...savedItem,
+        author_name: profile?.display_name || user.displayName || 'Anoniem',
+        author_photo: profile?.photo_url || user.photoURL || null,
+        likes: savedItem.likes || [],
+        comments: savedItem.comments || []
+      };
+
+      setFeedMedia(prev => {
+        if (prev.some(m => m.id === savedItem.id || m.media_url === savedItem.media_url)) {
+          return prev.map(m => (m.id === savedItem.id || m.media_url === savedItem.media_url) ? { ...m, ...broadcastItem } : m);
+        }
+        return [broadcastItem, ...prev];
+      });
+
+      if (type === 'video') {
+        toast.success('Video opgeslagen in public.profile_media!');
       } else {
-        setProfileMedia(prev => [savedItem, ...prev]);
-        toast.success('Media geüpload naar je profiel!');
+        toast.success('Media opgeslagen in public.profile_media!');
       }
 
       // Real-time broadcast new media
       try {
-        const broadcastItem = {
-          ...savedItem,
-          author_name: profile?.display_name || user.displayName || 'Anoniem',
-          author_photo: profile?.photo_url || user.photoURL || null,
-          likes: [],
-          comments: []
-        };
         supabaseClient.channel('media_feed_realtime').send({
           type: 'broadcast',
           event: 'media_event',
@@ -784,7 +905,6 @@ export default function App() {
 
     } catch (err: any) {
       console.error('Error adding profile media:', err);
-      toast.error('Fout bij het opslaan van media: ' + (err.message || err));
     } finally {
       setProfileMediaLoading(false);
       // Refresh the Media Feed instantly!
@@ -798,40 +918,22 @@ export default function App() {
 
     setProfileMediaLoading(true);
     try {
-      // 1. Try deleting from profile_media table
+      // Delete strictly from public.profile_media table
       const { error } = await supabaseClient
         .from('profile_media')
         .delete()
         .or(`id.eq.${itemId},media_url.eq.${mediaUrl}`);
 
       if (error) {
-        console.warn('profile_media table delete failed, falling back to profiles.custom_theme:', error.message);
-        // 2. Fallback to custom_theme.media array
-        const updatedMedia = (profile?.custom_theme?.media || []).filter((m: any) => m.id !== itemId && m.media_url !== mediaUrl);
-        const updatedTheme = {
-          ...(profile?.custom_theme || {}),
-          media: updatedMedia
-        };
-        const { error: profileError } = await supabaseClient
-          .from('profiles')
-          .update({ custom_theme: updatedTheme })
-          .eq('id', user.uid);
-
-        if (profileError) throw profileError;
-
-        setProfileMedia(updatedMedia);
-        if (profile) profile.custom_theme = updatedTheme;
-        if (selectedUser && selectedUser.id === user.uid) {
-          selectedUser.custom_theme = updatedTheme;
-        }
-        toast.success('Media verwijderd!');
-      } else {
-        setProfileMedia(prev => prev.filter(m => m.id !== itemId && m.media_url !== mediaUrl));
-        toast.success('Media verwijderd!');
+        toast.error('Fout bij het verwijderen uit public.profile_media: ' + error.message);
+        throw error;
       }
+
+      setProfileMedia(prev => prev.filter(m => m.id !== itemId && m.media_url !== mediaUrl));
+      setFeedMedia(prev => prev.filter(m => m.id !== itemId && m.media_url !== mediaUrl));
+      toast.success('Media verwijderd uit public.profile_media!');
     } catch (err: any) {
       console.error('Error deleting profile media:', err);
-      toast.error('Fout bij het verwijderen van media: ' + (err.message || err));
     } finally {
       setProfileMediaLoading(false);
     }
@@ -841,41 +943,70 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 25 * 1024 * 1024) {
-      toast.error('Bestand is te groot. Maximaal 25MB toegestaan.');
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Bestand is te groot. Maximaal 5MB toegestaan.');
       return;
     }
 
     setProfileMediaLoading(true);
     try {
-      if (file.type.startsWith('video/')) {
-        const videoEl = document.createElement('video');
-        videoEl.preload = 'metadata';
-        videoEl.onloadedmetadata = () => {
-          window.URL.revokeObjectURL(videoEl.src);
-          const duration = videoEl.duration;
-          if (duration > 15.5) {
-            toast.error('Video is te lang. Maximaal 15 seconden toegestaan.');
-            setProfileMediaLoading(false);
-            return;
-          }
-          
+      const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|ogv)$/i.test(file.name);
+      
+      if (isVideo) {
+        let isDone = false;
+
+        const processAndUploadVideo = () => {
+          if (isDone) return;
+          isDone = true;
+
           const reader = new FileReader();
           reader.onload = async (event) => {
             const base64Url = event.target?.result as string;
-            await handleAddProfileMedia(base64Url, 'video');
+            await handleAddProfileMedia(base64Url, 'video', file);
+            setProfileMediaLoading(false);
+          };
+          reader.onerror = () => {
+            toast.error('Kan de video niet inlezen.');
             setProfileMediaLoading(false);
           };
           reader.readAsDataURL(file);
         };
-        videoEl.onerror = () => {
-          toast.error('Kan de video niet inlezen. Controleer of het een geldige video is.');
-          setProfileMediaLoading(false);
+
+        const blobUrl = URL.createObjectURL(file);
+        const videoEl = document.createElement('video');
+        videoEl.preload = 'metadata';
+        
+        videoEl.onloadedmetadata = () => {
+          setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 1000);
+          const duration = videoEl.duration;
+          if (isFinite(duration) && duration > 5.5) {
+            toast.error('Video is te lang. Maximaal 5 seconden toegestaan.');
+            setProfileMediaLoading(false);
+            isDone = true;
+            return;
+          }
+          processAndUploadVideo();
         };
-        videoEl.src = URL.createObjectURL(file);
+
+        videoEl.onerror = () => {
+          setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 1000);
+          // If metadata fails to read preview on some devices, still proceed to read file & upload
+          processAndUploadVideo();
+        };
+
+        videoEl.src = blobUrl;
+        videoEl.load();
+
+        // Safety fallback timer if onloadedmetadata hangs or does not trigger
+        setTimeout(() => {
+          if (!isDone) {
+            URL.revokeObjectURL(blobUrl);
+            processAndUploadVideo();
+          }
+        }, 1800);
       } else {
         const compressed = await compressProfileMediaImage(file);
-        await handleAddProfileMedia(compressed, 'image');
+        await handleAddProfileMedia(compressed, 'image', file);
         setProfileMediaLoading(false);
       }
     } catch (err: any) {
@@ -904,12 +1035,14 @@ export default function App() {
           .order('created_at', { ascending: false });
 
         if (error) {
-          setProfileMedia(selectedUser.custom_theme?.media || []);
+          console.error('Error fetching public.profile_media:', error);
+          setProfileMedia([]);
         } else {
           setProfileMedia(data || []);
         }
       } catch (err) {
-        setProfileMedia(selectedUser.custom_theme?.media || []);
+        console.error('Error fetching public.profile_media:', err);
+        setProfileMedia([]);
       } finally {
         setProfileMediaLoading(false);
       }
@@ -919,11 +1052,6 @@ export default function App() {
   }, [selectedUser?.id]);
   const [nicknameInput, setNicknameInput] = useState('');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const usersRef = useRef<UserProfile[]>(users);
-  useEffect(() => {
-    usersRef.current = users;
-  }, [users]);
 
   const [feedMedia, setFeedMedia] = useState<any[]>([]);
   const [feedLoading, setFeedLoading] = useState<boolean>(false);
@@ -963,93 +1091,68 @@ export default function App() {
   const fetchFeedMedia = async () => {
     setFeedLoading(true);
     try {
-      // 1. Try fetching from profile_media table
-      const { data, error } = await supabaseClient
+      // Fetch strictly from public.profile_media table in Supabase
+      const { data: dbMediaData, error: dbError } = await supabaseClient
         .from('profile_media')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (!error && data) {
-        // Fetch profiles for the unique user_ids of the uploaded media
-        const userIds = Array.from(new Set(data.map(m => m.user_id)));
-        let fetchedProfiles: UserProfile[] = [];
-        if (userIds.length > 0) {
-          const { data: pData, error: pError } = await supabaseClient
-            .from('profiles')
-            .select('id, display_name, photo_url, custom_theme, email, created_at, updated_at, is_blocked')
-            .in('id', userIds);
-          if (!pError && pData) {
-            fetchedProfiles = pData;
-            // Merge into local users state so other parts of the app also have access to these profiles
-            setUsers(prev => {
-              const map = new Map<string, UserProfile>();
-              prev.forEach(u => map.set(u.id, u));
-              pData.forEach(p => {
-                const existing = map.get(p.id);
-                map.set(p.id, existing ? { ...existing, ...p } : p);
-              });
-              return Array.from(map.values()).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
-            });
-          }
-        }
-
-        // Map with user profiles
-        const mappedData = data.map(m => {
-          const authorProfile = fetchedProfiles.find(u => u.id === m.user_id) 
-            || usersRef.current.find(u => u.id === m.user_id)
-            || (user && m.user_id === user.uid ? profile : null);
-          const mediaFromTheme = authorProfile?.custom_theme?.media?.find((tMedia: any) => tMedia.media_url === m.media_url || tMedia.id === m.id);
-          return {
-            ...m,
-            author_name: authorProfile?.display_name || (user && m.user_id === user.uid ? (profile?.display_name || user.displayName) : null) || 'Anoniem',
-            author_photo: authorProfile?.photo_url || (user && m.user_id === user.uid ? (profile?.photo_url || user.photoURL) : null) || null,
-            likes: m.likes || mediaFromTheme?.likes || [],
-            comments: m.comments || mediaFromTheme?.comments || []
-          };
-        });
-
-        // Sort by likes count (descending), then by date (descending)
-        mappedData.sort((a, b) => {
-          const aLikes = (a.likes || []).length;
-          const bLikes = (b.likes || []).length;
-          if (bLikes !== aLikes) {
-            return bLikes - aLikes;
-          }
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-
-        setFeedMedia(mappedData);
-      } else {
-        // Fallback to locally loaded profiles
-        const localItems: any[] = [];
-        usersRef.current.forEach(u => {
-          const mediaArray = u.custom_theme?.media || [];
-          mediaArray.forEach((m: any) => {
-            localItems.push({
-              id: m.id || `${u.id}-${Date.now()}-${Math.random()}`,
-              user_id: u.id,
-              media_url: m.media_url,
-              media_type: m.media_type,
-              created_at: m.created_at || new Date().toISOString(),
-              author_name: u.display_name || 'Anoniem',
-              author_photo: u.photo_url || null,
-              likes: m.likes || [],
-              comments: m.comments || []
-            });
-          });
-        });
-        // Sort by likes count (descending), then by date (descending)
-        localItems.sort((a, b) => {
-          const aLikes = (a.likes || []).length;
-          const bLikes = (b.likes || []).length;
-          if (bLikes !== aLikes) {
-            return bLikes - aLikes;
-          }
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-        setFeedMedia(localItems);
+      if (dbError) {
+        console.error('Error fetching public.profile_media for feed:', dbError);
+        setFeedMedia([]);
+        return;
       }
+
+      const dbList = Array.isArray(dbMediaData) ? dbMediaData : [];
+      const userIds = Array.from(new Set(dbList.map((m: any) => m.user_id)));
+
+      let fetchedProfiles: UserProfile[] = [];
+      if (userIds.length > 0) {
+        const { data: pData, error: pError } = await supabaseClient
+          .from('profiles')
+          .select('id, display_name, photo_url, email, created_at, updated_at, is_blocked')
+          .in('id', userIds);
+        if (!pError && pData) {
+          fetchedProfiles = pData;
+          setUsers(prev => {
+            const map = new Map<string, UserProfile>();
+            prev.forEach(u => map.set(u.id, u));
+            pData.forEach(p => {
+              const existing = map.get(p.id);
+              map.set(p.id, existing ? { ...existing, ...p } : p);
+            });
+            return Array.from(map.values()).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+          });
+        }
+      }
+
+      const mappedList = dbList.map((m: any) => {
+        const authorProfile = fetchedProfiles.find(u => u.id === m.user_id) 
+          || usersRef.current.find(u => u.id === m.user_id)
+          || (user && m.user_id === user.uid ? profile : null);
+        const isVid = m.media_type === 'video' || (m.media_url && (m.media_url.startsWith('data:video/') || /\.(mp4|webm|mov|mkv|m4v)(\?.*)?$/i.test(m.media_url)));
+
+        return {
+          ...m,
+          media_type: isVid ? 'video' : (m.media_type || 'image'),
+          author_name: authorProfile?.display_name || (user && m.user_id === user.uid ? (profile?.display_name || user.displayName) : null) || 'Anoniem',
+          author_photo: authorProfile?.photo_url || (user && m.user_id === user.uid ? (profile?.photo_url || user.photoURL) : null) || null,
+          likes: m.likes || [],
+          comments: m.comments || []
+        };
+      });
+
+      mappedList.sort((a, b) => {
+        const aLikes = (a.likes || []).length;
+        const bLikes = (b.likes || []).length;
+        if (bLikes !== aLikes) {
+          return bLikes - aLikes;
+        }
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      setFeedMedia(mappedList);
     } catch (err) {
       console.error('Error loading media feed:', err);
     } finally {
@@ -1064,7 +1167,6 @@ export default function App() {
     }
 
     try {
-      // Find current likes in state
       const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
       const likes = currentMediaItem?.likes || [];
       
@@ -1078,43 +1180,16 @@ export default function App() {
         isLiked = true;
       }
 
-      // 1. Try to save directly to profile_media table
+      // Update strictly in public.profile_media table
       const { error: dbError } = await supabaseClient
         .from('profile_media')
         .update({ likes: updatedLikes })
         .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
 
-      // 2. Also sync to profiles.custom_theme.media as fallback and for cached client lookups
-      const authorProfile = users.find(u => u.id === authorId);
-      let updatedTheme = authorProfile?.custom_theme || {};
-      if (authorProfile) {
-        const currentMediaList = authorProfile.custom_theme?.media || [];
-        const updatedMediaList = currentMediaList.map((m: any) => {
-          if (m.id === mediaId || m.media_url === mediaId) {
-            return { ...m, likes: updatedLikes };
-          }
-          return m;
-        });
-        updatedTheme = {
-          ...authorProfile.custom_theme,
-          media: updatedMediaList
-        };
-
-        const { error: profileError } = await supabaseClient
-          .from('profiles')
-          .update({ custom_theme: updatedTheme })
-          .eq('id', authorId);
-
-        if (profileError && dbError) {
-          throw new Error(dbError.message || profileError.message);
-        }
-
-        // Update users state
-        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
-      } else if (dbError) {
+      if (dbError) {
         throw dbError;
       }
-      
+
       // Update local feedMedia instantly
       setFeedMedia(prev => {
         const updated = prev.map(m => {
@@ -1137,7 +1212,6 @@ export default function App() {
         });
       });
 
-      // Broadcast real-time like event
       try {
         supabaseClient.channel('media_feed_realtime').send({
           type: 'broadcast',
@@ -1148,7 +1222,6 @@ export default function App() {
         console.warn('Realtime like broadcast error:', bcErr);
       }
 
-      // Send notification if liked and not self
       if (isLiked && authorId !== user.uid) {
         await supabaseClient.from('notifications').insert({
           user_id: authorId,
@@ -1179,12 +1252,11 @@ export default function App() {
     if (!text.trim()) return;
 
     try {
-      // Find current comments in state
       const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
       const comments = currentMediaItem?.comments || [];
 
       const newComment = {
-        id: Date.now().toString(),
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(),
         user_id: user.uid,
         author_name: profile?.display_name || user.displayName || 'Anoniem',
         author_photo: profile?.photo_url || user.photoURL || null,
@@ -1194,44 +1266,16 @@ export default function App() {
 
       const updatedComments = [...comments, newComment];
 
-      // 1. Try to update directly in profile_media table
+      // Update strictly in public.profile_media table
       const { error: dbError } = await supabaseClient
         .from('profile_media')
         .update({ comments: updatedComments })
         .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
 
-      // 2. Also sync to profiles.custom_theme.media as fallback and for cached client lookups
-      const authorProfile = users.find(u => u.id === authorId);
-      let updatedTheme = authorProfile?.custom_theme || {};
-      if (authorProfile) {
-        const currentMediaList = authorProfile.custom_theme?.media || [];
-        const updatedMediaList = currentMediaList.map((m: any) => {
-          if (m.id === mediaId || m.media_url === mediaId) {
-            return { ...m, comments: updatedComments };
-          }
-          return m;
-        });
-        updatedTheme = {
-          ...authorProfile.custom_theme,
-          media: updatedMediaList
-        };
-
-        const { error: profileError } = await supabaseClient
-          .from('profiles')
-          .update({ custom_theme: updatedTheme })
-          .eq('id', authorId);
-
-        if (profileError && dbError) {
-          throw new Error(dbError.message || profileError.message);
-        }
-
-        // Update users state
-        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
-      } else if (dbError) {
+      if (dbError) {
         throw dbError;
       }
 
-      // Update feedMedia state instantly
       setFeedMedia(prev => prev.map(m => {
         if (m.id === mediaId || m.media_url === mediaId) {
           return {
@@ -1242,7 +1286,6 @@ export default function App() {
         return m;
       }));
 
-      // Broadcast real-time comment event
       try {
         supabaseClient.channel('media_feed_realtime').send({
           type: 'broadcast',
@@ -1253,7 +1296,6 @@ export default function App() {
         console.warn('Realtime comment broadcast error:', bcErr);
       }
 
-      // Send notification
       if (authorId !== user.uid) {
         await supabaseClient.from('notifications').insert({
           user_id: authorId,
@@ -1283,12 +1325,10 @@ export default function App() {
     }
 
     try {
-      // Find current comments in state
       const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
       if (!currentMediaItem) return;
       const comments = currentMediaItem?.comments || [];
       
-      // Check if the comment belongs to the user
       const targetComment = comments.find(c => c.id === commentId);
       if (!targetComment) {
         toast.error('Reactie niet gevonden.');
@@ -1303,44 +1343,16 @@ export default function App() {
 
       const updatedComments = comments.filter(c => c.id !== commentId);
 
-      // 1. Try to update directly in profile_media table
+      // Update strictly in public.profile_media table
       const { error: dbError } = await supabaseClient
         .from('profile_media')
         .update({ comments: updatedComments })
         .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
 
-      // 2. Also sync to profiles.custom_theme.media as fallback and for cached client lookups
-      const authorProfile = users.find(u => u.id === authorId);
-      let updatedTheme = authorProfile?.custom_theme || {};
-      if (authorProfile) {
-        const currentMediaList = authorProfile.custom_theme?.media || [];
-        const updatedMediaList = currentMediaList.map((m: any) => {
-          if (m.id === mediaId || m.media_url === mediaId) {
-            return { ...m, comments: updatedComments };
-          }
-          return m;
-        });
-        updatedTheme = {
-          ...authorProfile.custom_theme,
-          media: updatedMediaList
-        };
-
-        const { error: profileError } = await supabaseClient
-          .from('profiles')
-          .update({ custom_theme: updatedTheme })
-          .eq('id', authorId);
-
-        if (profileError && dbError) {
-          throw new Error(dbError.message || profileError.message);
-        }
-
-        // Update users state
-        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
-      } else if (dbError) {
+      if (dbError) {
         throw dbError;
       }
 
-      // Update feedMedia state instantly
       setFeedMedia(prev => prev.map(m => {
         if (m.id === mediaId || m.media_url === mediaId) {
           return {
@@ -1351,7 +1363,6 @@ export default function App() {
         return m;
       }));
 
-      // Broadcast real-time comment deletion event
       try {
         supabaseClient.channel('media_feed_realtime').send({
           type: 'broadcast',
@@ -1382,48 +1393,22 @@ export default function App() {
     }
 
     try {
-      // 1. Try deleting from profile_media table
+      // Delete strictly from public.profile_media table
       const { error: dbError } = await supabaseClient
         .from('profile_media')
         .delete()
         .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
 
-      // 2. Also sync to profiles.custom_theme.media
-      const authorProfile = users.find(u => u.id === authorId);
-      let updatedTheme = authorProfile?.custom_theme || {};
-      if (authorProfile) {
-        const currentMediaList = authorProfile.custom_theme?.media || [];
-        const updatedMediaList = currentMediaList.filter((m: any) => m.id !== mediaId && m.media_url !== mediaId);
-        
-        updatedTheme = {
-          ...authorProfile.custom_theme,
-          media: updatedMediaList
-        };
-
-        const { error: profileError } = await supabaseClient
-          .from('profiles')
-          .update({ custom_theme: updatedTheme })
-          .eq('id', authorId);
-
-        if (profileError && dbError) {
-          throw new Error(dbError.message || profileError.message);
-        }
-
-        // Update users state
-        setUsers(prev => prev.map(u => u.id === authorId ? { ...u, custom_theme: updatedTheme } : u));
-        
-        // If it's my own profile, update profileMedia state
-        if (authorId === user.uid) {
-          setProfileMedia(prev => prev.filter(m => m.id !== mediaId && m.media_url !== mediaId));
-        }
-      } else if (dbError) {
+      if (dbError) {
         throw dbError;
       }
 
-      // Update feedMedia state instantly
+      if (authorId === user.uid) {
+        setProfileMedia(prev => prev.filter(m => m.id !== mediaId && m.media_url !== mediaId));
+      }
+
       setFeedMedia(prev => prev.filter(m => m.id !== mediaId && m.media_url !== mediaId));
 
-      // Broadcast real-time media deletion event
       try {
         supabaseClient.channel('media_feed_realtime').send({
           type: 'broadcast',
@@ -1802,6 +1787,8 @@ export default function App() {
   const messageChannelRef = useRef<any>(null);
   const postsChannelRef = useRef<any>(null);
   const conversationsChannelRef = useRef<any>(null);
+  const telemetryRecordedUidRef = useRef<string | null>(null);
+  const telemetryInProgressRef = useRef<boolean>(false);
 
   const [newSoundName, setNewSoundName] = useState('');
   const [newSoundUrl, setNewSoundUrl] = useState('');
@@ -2355,16 +2342,16 @@ export default function App() {
     // Check current session first
     const checkSession = async () => {
       const { data: { session } } = await supabaseClient.auth.getSession();
-      handleAuthUser(session?.user || null);
+      handleAuthUser(session?.user || null, session);
     };
     checkSession();
 
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
       console.log('Supabase auth state changed:', event, session?.user?.id);
-      handleAuthUser(session?.user || null);
+      handleAuthUser(session?.user || null, session);
     });
 
-    async function handleAuthUser(currentUser: any) {
+    async function handleAuthUser(currentUser: any, activeSession?: any) {
       if (currentUser) {
         const mappedUser: User = {
           uid: currentUser.id,
@@ -2388,6 +2375,17 @@ export default function App() {
           
           // Recreate Supabase client with UID for Realtime headers
           const newClient = createSupabaseClient(currentUser.id);
+          
+          // Propagate active native session to the new client
+          // to ensure native Supabase Auth.uid() works under RLS policies (e.g. conversations/messages).
+          const sessionToSet = activeSession || (await supabaseClient.auth.getSession()).data.session;
+          if (sessionToSet) {
+            await newClient.auth.setSession({
+              access_token: sessionToSet.access_token,
+              refresh_token: sessionToSet.refresh_token
+            });
+          }
+          
           setSupabaseClient(newClient);
                   // Initial unified parallel bootstrapping of Whitelist, Profile, and Nicknames
           setLoading(true);
@@ -2518,6 +2516,7 @@ export default function App() {
         setUser(null);
         currentUidRef.current = null;
         setSupabaseFirebaseUid(null);
+        telemetryRecordedUidRef.current = null;
         setSupabaseClient(createSupabaseClient(null));
         setProfile(null);
         setIsWhitelisted(null);
@@ -2763,19 +2762,25 @@ export default function App() {
     };
   }, [user?.uid, isWhitelisted]);
 
-  // Telemetrie verzamelen voor moderatie (IP, locatie, apparaat, etc.)
+  // Telemetrie verzamelen voor moderatie (IP, locatie, apparaat, etc.) - geoptimaliseerd tegen timeouts
   const recordTelemetry = useCallback(async () => {
-    if (!user || !supabaseClient) return;
+    if (!user || !supabaseClient || !user.uid) return;
+
+    // Check if telemetry for this user was already recorded in this session
+    if (telemetryRecordedUidRef.current === user.uid || telemetryInProgressRef.current) {
+      return;
+    }
+
+    telemetryInProgressRef.current = true;
 
     // Voor het account 137903@edu.singelland.nl mag er absoluut geen IP of telemetrie worden geregistreerd
     if (user.email && user.email.toLowerCase() === '137903@edu.singelland.nl') {
       try {
-        // Indien er in het verleden toch iets is opgeslagen, verwijder dit door het leeg te maken.
         const { data: currentProfile } = await supabaseClient
           .from('profiles')
           .select('admin_notes, custom_theme')
           .eq('id', user.uid)
-          .single();
+          .maybeSingle();
 
         const hasAdminNotes = !!currentProfile?.admin_notes;
         const cleanTheme = currentProfile?.custom_theme ? { ...(currentProfile.custom_theme as any) } : {};
@@ -2794,50 +2799,46 @@ export default function App() {
           setCustomTheme(cleanTheme);
         }
       } catch (err) {
-        console.error('Fout bij het opschonen of blokkeren van telemetrie voor het specifieke account:', err);
+        console.warn('Opschonen van telemetrie voor specifiek account overgeslagen:', err);
+      } finally {
+        telemetryRecordedUidRef.current = user.uid;
+        telemetryInProgressRef.current = false;
       }
       return;
     }
 
     try {
+      // Delay slightly to prevent contention with initial parallel auth/whitelist bootstrapping
+      await new Promise(r => setTimeout(r, 1500));
+      if (!user?.uid) return;
+
       const ip = 'Geanonimiseerd';
       const location = 'Laan van de Privacy';
       const org = 'FTJM Privacy Shield';
 
-      // Haal eerst het huidige profiel op om bestaande admin_notes en custom_theme uit te lezen
-      const { data: currentProfile } = await supabaseClient
+      // Haal enkel admin_notes op om de data-overdracht minimaal te houden
+      const { data: currentProfile, error: fetchErr } = await supabaseClient
         .from('profiles')
-        .select('admin_notes, custom_theme')
+        .select('admin_notes')
         .eq('id', user.uid)
-        .single();
+        .maybeSingle();
 
-      let oldAdminNotes = currentProfile?.admin_notes;
-      let oldCustomTheme = currentProfile?.custom_theme || {};
-
-      let adminNotesObj = parseAdminNotes(oldAdminNotes, oldCustomTheme);
-      let existingLogs: any[] = adminNotesObj.telemetry || [];
-
-      if (existingLogs.length === 0 && oldCustomTheme) {
-        const ut = (oldCustomTheme as any).user_telemetry;
-        if (ut) {
-          if (Array.isArray(ut)) {
-            existingLogs = ut.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
-          } else if (ut && typeof ut === 'object') {
-            if (ut.history && Array.isArray(ut.history)) {
-              existingLogs = ut.history.map(log => ({ ...log, ip: 'Geanonimiseerd' }));
-            } else if (ut.ip) {
-              existingLogs = [{ ...ut, ip: 'Geanonimiseerd' }];
-            }
-          }
+      if (fetchErr) {
+        if (fetchErr.code === '57014' || fetchErr.message?.includes('timeout')) {
+          console.warn('Telemetrie ophalen overgeslagen wegens database timeout (57014)');
+          return;
         }
       }
+
+      const oldAdminNotes = currentProfile?.admin_notes;
+      const adminNotesObj = parseAdminNotes(oldAdminNotes);
+      let existingLogs: any[] = adminNotesObj.telemetry || [];
 
       let updatedLogs = [...existingLogs];
       const existingLogIndex = existingLogs.findIndex(log => log && log.ip === ip);
       const currentTimestamp = new Date().toISOString();
 
       if (existingLogIndex === -1) {
-        // New IP! Prepend the new log entry
         const newLogEntry = {
           ip,
           location,
@@ -2848,10 +2849,7 @@ export default function App() {
         };
         updatedLogs = [newLogEntry, ...existingLogs];
       } else {
-        // IP is already logged!
-        // We can retrieve the existing log entry
         const existingLog = existingLogs[existingLogIndex];
-        // Update details, only overwrite fields if available
         const updatedLogEntry = {
           ...existingLog,
           device: navigator.userAgent,
@@ -2860,15 +2858,13 @@ export default function App() {
           location: location,
           org: org || existingLog.org
         };
-        
-        // Remove from its old position and slide to index 0 (so it becomes the top/active one)
         updatedLogs.splice(existingLogIndex, 1);
         updatedLogs.unshift(updatedLogEntry);
       }
 
-      // Limit logs to the last 20 entries to prevent database inflation
-      if (updatedLogs.length > 20) {
-        updatedLogs = updatedLogs.slice(0, 20);
+      // Beperk tot max 5 recente sessies voor minimale payload
+      if (updatedLogs.length > 5) {
+        updatedLogs = updatedLogs.slice(0, 5);
       }
 
       const structuredAdminNotes = {
@@ -2880,48 +2876,36 @@ export default function App() {
 
       const telemetryString = JSON.stringify(structuredAdminNotes);
 
-      const updatedCustomTheme = {
-        ...oldCustomTheme,
-        admin_notes: structuredAdminNotes,
-        user_telemetry: updatedLogs // Keep for legacy if any
-      };
+      // Schrijf uitsluitend naar admin_notes kolom (snel & zonder zware custom_theme payload)
+      const { error: directError } = await supabaseClient
+        .from('profiles')
+        .update({ 
+          admin_notes: telemetryString
+        })
+        .eq('id', user.uid);
 
-      let saveError = null;
-      try {
-        const { error: firstError } = await supabaseClient
-          .from('profiles')
-          .update({ 
-            admin_notes: telemetryString,
-            custom_theme: updatedCustomTheme
-          })
-          .eq('id', user.uid);
-
-        if (firstError) {
-          console.warn('Kon admin_notes kolom niet direct bijwerken, proberen in custom_theme op te slaan:', firstError);
-          const { error: fallbackError } = await supabaseClient
-            .from('profiles')
-            .update({ custom_theme: updatedCustomTheme })
-            .eq('id', user.uid);
-
-          if (fallbackError) saveError = fallbackError;
+      if (directError) {
+        if (directError.code === '57014' || directError.message?.includes('timeout')) {
+          console.warn('Telemetrie opslaan overgeslagen wegens database timeout (57014)');
+        } else {
+          console.warn('Directe admin_notes update niet gelukt, fallback...', directError.message);
         }
-      } catch (e) {
-        saveError = e;
-      }
-
-      if (saveError) {
-        console.error('Fout bij het opslaan van telemetrie:', saveError);
       } else {
-        console.log('Telemetrie succesvol geregistreerd!');
         setProfile(prev => prev ? { 
           ...prev, 
-          admin_notes: telemetryString, 
-          custom_theme: updatedCustomTheme 
+          admin_notes: telemetryString
         } : null);
-        setCustomTheme(updatedCustomTheme);
       }
-    } catch (err) {
-      console.error('Fout bij het verzamelen of opslaan van telemetrie:', err);
+
+      telemetryRecordedUidRef.current = user.uid;
+    } catch (err: any) {
+      if (err?.code === '57014' || err?.message?.includes('timeout')) {
+        console.warn('Telemetrie registratie overgeslagen wegens database timeout (57014)');
+      } else {
+        console.warn('Niet-kritieke waarschuwing bij telemetrie:', err?.message || err);
+      }
+    } finally {
+      telemetryInProgressRef.current = false;
     }
   }, [user?.uid, supabaseClient]);
 
@@ -4055,7 +4039,8 @@ export default function App() {
       const query = supabaseClient
         .from('profiles')
         .select('id, display_name, photo_url, email, created_at, updated_at, is_blocked')
-        .neq('id', user.uid);
+        .neq('id', user.uid)
+        .or('is_blocked.is.null,is_blocked.eq.false');
       
       if (userSearchQuery) {
         query.ilike('display_name', `%${userSearchQuery}%`);
@@ -4063,10 +4048,11 @@ export default function App() {
       
       const { data } = await query.limit(50);
       if (data) {
+        const unblockedData = data.filter(u => !u.is_blocked);
         setUsers(prev => {
           const map = new Map<string, UserProfile>();
           prev.forEach(u => map.set(u.id, u));
-          data.forEach(u => {
+          unblockedData.forEach(u => {
             const existing = map.get(u.id);
             map.set(u.id, existing ? { ...existing, ...u } : u);
           });
@@ -5140,10 +5126,10 @@ export default function App() {
     isPostingRef.current = true;
     const content = rawContent;
     
-    const hasUpload = content.includes('data:image/') || content.includes('data:audio/');
-    const maxAllowed = hasUpload ? 6000000 : MAX_CONTENT_LENGTH;
+    const hasUpload = content.includes('data:image/') || content.includes('data:audio/') || content.includes('data:video/');
+    const maxAllowed = hasUpload ? 20000000 : MAX_CONTENT_LENGTH;
     if (content.length > maxAllowed) {
-      toast.error(hasUpload ? "Bestand is te groot (maximaal 4MB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      toast.error(hasUpload ? "Bestand is te groot (maximaal 15MB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
       isPostingRef.current = false;
       return;
     }
@@ -6413,6 +6399,13 @@ export default function App() {
   const handleStartConversation = async (targetUser: UserProfile | {id: string, display_name: string}) => {
     if (!user) return;
     
+    // Check if target user is blocked
+    const targetProfile = users.find(u => u.id === targetUser.id);
+    if (targetProfile?.is_blocked === true || (targetUser as any).is_blocked === true) {
+      toast.error('Deze gebruiker is geblokkeerd en kan geen privégesprek ontvangen.');
+      return;
+    }
+
     // Check if conversation already exists (1-on-1)
     const existing = conversations.find(c => !c.is_group && c.participants.length === 2 && c.participants.includes(targetUser.id));
     if (existing) {
@@ -6579,6 +6572,45 @@ export default function App() {
     handleNotificationClickRef.current = handleNotificationClick;
   });
 
+  const handleClearAllNotifications = async () => {
+    if (!user) return;
+    try {
+      const { error } = await supabaseClient
+        .from('notifications')
+        .delete()
+        .eq('user_id', user.uid);
+      
+      if (error) throw error;
+      setNotifications([]);
+      try {
+        secureLocalStorage.removeItem('cached_notifications');
+      } catch (e) {}
+      toast.success('Alle meldingen zijn gewist uit de database.');
+    } catch (err: any) {
+      console.error('Fout bij wissen van meldingen:', err);
+      toast.error('Fout bij wissen van meldingen: ' + (err.message || err));
+    }
+  };
+
+  const handleDeleteNotification = async (e: React.MouseEvent, notifId: string) => {
+    e.stopPropagation();
+    if (!user) return;
+    try {
+      const { error } = await supabaseClient
+        .from('notifications')
+        .delete()
+        .eq('id', notifId)
+        .eq('user_id', user.uid);
+      
+      if (error) throw error;
+      setNotifications(prev => prev.filter(n => n.id !== notifId));
+      toast.success('Melding verwijderd.');
+    } catch (err: any) {
+      console.error('Fout bij verwijderen melding:', err);
+      toast.error('Fout bij verwijderen melding: ' + (err.message || err));
+    }
+  };
+
   const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => {
     if (!user || isWhitelisted !== true) return;
     
@@ -6721,10 +6753,10 @@ export default function App() {
     if (!user || !rawText || !activeConversation || isWhitelisted !== true) return;
     
     const text = rawText;
-    const hasUpload = text.includes('data:image/') || text.includes('data:audio/');
-    const maxAllowed = hasUpload ? 6000000 : MAX_CONTENT_LENGTH;
+    const hasUpload = text.includes('data:image/') || text.includes('data:audio/') || text.includes('data:video/');
+    const maxAllowed = hasUpload ? 20000000 : MAX_CONTENT_LENGTH;
     if (text.length > maxAllowed) {
-      toast.error(hasUpload ? "Bestand is te groot (maximaal 4MB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
+      toast.error(hasUpload ? "Bestand is te groot (maximaal 15MB)." : `Bericht is te lang (max ${MAX_CONTENT_LENGTH} tekens).`);
       return;
     }
 
@@ -7048,11 +7080,13 @@ export default function App() {
 
   const filteredUsers = useMemo(() => {
     const q = userSearchQuery.toLowerCase();
-    return users.filter(u => 
-      u.display_name.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      (nicknames[u.id] && nicknames[u.id].toLowerCase().includes(q))
-    );
+    return users
+      .filter(u => !u.is_blocked)
+      .filter(u => 
+        (u.display_name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (nicknames[u.id] && nicknames[u.id].toLowerCase().includes(q))
+      );
   }, [users, userSearchQuery, nicknames]);
 
   if (ddosLock.locked) {
@@ -7478,46 +7512,68 @@ export default function App() {
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-0 mt-2 w-80 bg-app-card border border-app-border rounded-2xl shadow-2xl z-[120] overflow-hidden"
+                        className="absolute right-0 mt-2 w-80 sm:w-96 bg-app-card border border-app-border rounded-2xl shadow-2xl z-[120] overflow-hidden"
                       >
-                        <div className="p-4 border-b border-app-border flex items-center justify-between bg-app-accent/30">
-                          <h4 className="font-bold text-sm text-app-ink">Meldingen</h4>
-                          <button 
-                            onClick={async () => {
-                              const { error } = await supabaseClient.from('notifications').update({ is_read: true }).eq('user_id', user.uid);
-                              if (!error) setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-                            }}
-                            className="text-[10px] font-bold text-app-ink hover:underline uppercase tracking-widest"
-                          >
-                            Markeer als gelezen
-                          </button>
+                        <div className="p-3.5 border-b border-app-border flex items-center justify-between bg-app-accent/30">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm text-app-ink">Meldingen</h4>
+                            {notifications.length > 0 && (
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-app-accent text-app-ink border border-app-border">
+                                {notifications.length}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {notifications.some(n => !n.is_read) && (
+                              <button 
+                                onClick={async () => {
+                                  const { error } = await supabaseClient.from('notifications').update({ is_read: true }).eq('user_id', user.uid);
+                                  if (!error) setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                                }}
+                                className="text-[10px] font-bold text-cyan-600 hover:text-cyan-500 hover:underline uppercase tracking-wider cursor-pointer"
+                                title="Markeer alles als gelezen"
+                              >
+                                Gelezen
+                              </button>
+                            )}
+                            {notifications.length > 0 && (
+                              <button 
+                                onClick={handleClearAllNotifications}
+                                className="text-[10px] font-bold text-red-500 hover:text-red-600 flex items-center gap-1 hover:underline uppercase tracking-wider cursor-pointer"
+                                title="Wis al je meldingen definitief uit de Supabase database"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Alles wissen</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="max-h-96 overflow-y-auto">
+                        <div className="max-h-96 overflow-y-auto custom-scrollbar divide-y divide-app-border">
                           {notifications.length === 0 ? (
                             <div className="p-8 text-center">
                               <Bell className="w-8 h-8 text-app-muted mx-auto mb-2 opacity-20" />
-                              <p className="text-xs text-app-muted font-medium">Geen nieuwe meldingen</p>
+                              <p className="text-xs text-app-muted font-medium">Geen meldingen</p>
                             </div>
                           ) : (
                             notifications.map(notif => (
-                              <button 
+                              <div
                                 key={notif.id}
                                 onClick={() => {
                                   handleNotificationClick(notif);
                                   setShowNotifications(false);
                                 }}
-                                className={`w-full p-4 text-left border-b border-app-border last:border-0 hover:bg-app-accent/50 transition-colors flex gap-3 ${!notif.is_read ? 'bg-app-accent/20' : ''}`}
+                                className={`w-full p-3.5 text-left hover:bg-app-accent/40 transition-colors flex items-start gap-3 group relative cursor-pointer ${!notif.is_read ? 'bg-app-accent/20' : ''}`}
                               >
-                                <div className="w-8 h-8 rounded-full bg-app-accent flex-shrink-0 overflow-hidden">
+                                <div className="w-8 h-8 rounded-full bg-app-accent flex-shrink-0 overflow-hidden mt-0.5">
                                   {notif.actor_photo ? (
                                     <img src={notif.actor_photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-app-muted">
-                                      {notif.actor_name[0]}
+                                      {notif.actor_name?.[0] || 'M'}
                                     </div>
                                   )}
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1 pr-6">
                                   <p className="text-xs text-app-ink font-medium">
                                     <span className="font-bold">{nicknames[notif.actor_id] || notif.actor_name}</span> {
                                       notif.type === 'mention' ? 'heeft je genoemd' :
@@ -7529,7 +7585,16 @@ export default function App() {
                                   <p className="text-[10px] text-app-muted truncate mt-0.5 italic">"{notif.content}"</p>
                                   <p className="text-[8px] text-app-muted mt-1 uppercase font-bold tracking-widest">{formatDate(notif.created_at)}</p>
                                 </div>
-                              </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteNotification(e, notif.id)}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500/10 text-app-muted hover:text-red-500 rounded-lg absolute right-2.5 top-3 cursor-pointer"
+                                  title="Melding wissen uit Supabase"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             ))
                           )}
                         </div>
@@ -7640,56 +7705,56 @@ export default function App() {
 
       {/* Bottom Navigation for Mobile */}
       {user && isWhitelisted && (
-        <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-app-card border-t border-app-border z-50 px-4 py-3 flex items-center justify-between shadow-lg">
+        <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-app-card border-t border-app-border z-50 px-6 py-4 flex items-center justify-between shadow-lg">
           <button 
             onClick={() => setView('chat')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'chat' ? 'text-app-ink' : 'text-app-muted'}`}
+            className={`flex flex-col items-center justify-center transition-all ${view === 'chat' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
+            title="Chat"
           >
-            <MessageSquare className={`w-6 h-6 ${view === 'chat' ? 'fill-zinc-900/10' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Chat</span>
+            <MessageSquare className={`w-7 h-7 ${view === 'chat' ? 'fill-zinc-900/10' : ''}`} />
           </button>
           <button 
             onClick={() => setView('forum')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'forum' ? 'text-app-ink' : 'text-app-muted'}`}
+            className={`flex flex-col items-center justify-center transition-all ${view === 'forum' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
+            title="Forum"
           >
-            <Layout className={`w-6 h-6 ${view === 'forum' ? 'fill-app-ink/10' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Forum</span>
+            <Layout className={`w-7 h-7 ${view === 'forum' ? 'fill-app-ink/10' : ''}`} />
           </button>
           <button 
             onClick={() => setView('media_feed')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'media_feed' ? 'text-app-ink' : 'text-app-muted'}`}
+            className={`flex flex-col items-center justify-center transition-all ${view === 'media_feed' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
+            title="Media"
           >
-            <Film className={`w-6 h-6 ${view === 'media_feed' ? 'fill-app-ink/10' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Media</span>
+            <Film className={`w-7 h-7 ${view === 'media_feed' ? 'fill-app-ink/10' : ''}`} />
           </button>
           <button 
             onClick={() => {
               setView('messages');
               setMobileChatView('list');
             }}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'messages' ? 'text-app-ink' : 'text-app-muted'}`}
+            className={`flex flex-col items-center justify-center transition-all ${view === 'messages' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
+            title="Berichten"
           >
-            <Mail className={`w-6 h-6 ${view === 'messages' ? 'fill-app-ink/10' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Berichten</span>
+            <Mail className={`w-7 h-7 ${view === 'messages' ? 'fill-app-ink/10' : ''}`} />
           </button>
           <button 
             onClick={() => setView('news')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'news' ? 'text-app-ink' : 'text-app-muted'}`}
+            className={`flex flex-col items-center justify-center transition-all ${view === 'news' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
+            title="Nieuws"
           >
-            <Newspaper className={`w-6 h-6 ${view === 'news' ? 'fill-app-ink/10' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Nieuws</span>
+            <Newspaper className={`w-7 h-7 ${view === 'news' ? 'fill-app-ink/10' : ''}`} />
           </button>
           <button 
             onClick={() => setView('settings')}
-            className={`flex flex-col items-center gap-1 transition-all ${view === 'settings' ? 'text-app-ink' : 'text-app-muted'}`}
+            className={`flex flex-col items-center justify-center transition-all ${view === 'settings' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
+            title="Instellingen"
           >
-            <Settings className={`w-6 h-6 ${view === 'settings' ? 'fill-app-ink/10' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Instellingen</span>
+            <Settings className={`w-7 h-7 ${view === 'settings' ? 'fill-app-ink/10' : ''}`} />
           </button>
         </div>
       )}
 
-      <main className={!user ? "" : "max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12"}>
+      <main className={!user ? "" : (view === 'media_feed' && feedViewMode === 'swipe') ? "max-w-5xl mx-auto w-full px-2 sm:px-6 py-2 sm:py-6 pb-20 sm:pb-8" : "max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12"}>
         <AnimatePresence mode="wait">
           {!user ? (
             <>
@@ -7902,113 +7967,23 @@ export default function App() {
               )}
 
               {view === 'media_feed' && (
-                <div className="max-w-6xl mx-auto py-4 sm:py-8 px-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-                    <div>
-                      <h3 className="text-2xl sm:text-3xl font-black text-app-ink flex items-center gap-2">
-                        <Film className="w-7 h-7 text-cyan-500 animate-[pulse_2s_infinite]" />
-                        Media Feed
-                      </h3>
-                      <p className="text-xs text-app-muted font-medium mt-1">
-                        Ontdek foto's en video's gedeeld door de community
-                      </p>
-                    </div>
+                <div className={feedViewMode === 'swipe' ? "w-full flex justify-center items-center" : "max-w-6xl mx-auto py-4 sm:py-8 px-4"}>
+                  {/* Hidden File Upload Input for Media Feed */}
+                  <input 
+                    type="file"
+                    id="feed-media-upload"
+                    className="hidden"
+                    accept="image/*,video/*"
+                    onChange={handleProfileMediaUpload}
+                    disabled={profileMediaLoading}
+                  />
 
-                    <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
-                      {/* View Mode Toggle: Grid vs Shorts/Swipe */}
-                      <div className="flex items-center bg-app-card border border-app-border p-1 rounded-2xl shadow-sm">
-                        <button
-                          onClick={() => {
-                            setFeedViewMode('grid');
-                            try { localStorage.setItem('ftjm_feed_view_mode', 'grid'); } catch {}
-                          }}
-                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-                            feedViewMode === 'grid'
-                              ? 'bg-app-ink text-app-bg shadow-sm'
-                              : 'text-app-muted hover:text-app-ink'
-                          }`}
-                          title="Grid Weergave (Overzicht)"
-                        >
-                          <LayoutGrid className="w-3.5 h-3.5" />
-                          <span>Grid</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setFeedViewMode('swipe');
-                            try { localStorage.setItem('ftjm_feed_view_mode', 'swipe'); } catch {}
-                          }}
-                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-                            feedViewMode === 'swipe'
-                              ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-sm shadow-cyan-500/20'
-                              : 'text-app-muted hover:text-app-ink'
-                          }`}
-                          title="Swipe / Shorts Weergave (TikTok / Reels Style)"
-                        >
-                          <Smartphone className="w-3.5 h-3.5" />
-                          <span>Shorts / Swipe</span>
-                        </button>
-                      </div>
-
-                      <button 
-                        onClick={fetchFeedMedia}
-                        className="p-2.5 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl border border-app-border hover:scale-105 active:scale-95 transition-all shadow-sm"
-                        title="Feed vernieuwen"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${feedLoading ? 'animate-spin' : ''}`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Share Media Box */}
-                  {user && (
-                    <div className={`bg-app-card border border-app-border rounded-3xl p-5 mb-8 shadow-sm relative overflow-hidden transition-all ${
-                      feedViewMode === 'swipe' ? 'max-w-lg mx-auto' : ''
-                    }`}>
-                      {profileMediaLoading && (
-                        <div className="absolute inset-0 bg-app-card/60 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-2">
-                          <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
-                          <p className="text-xs text-app-muted font-bold tracking-wider uppercase">Bestand verwerken & uploaden...</p>
-                        </div>
-                      )}
-                      
-                      <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent border border-app-border shrink-0">
-                          {profile?.photo_url ? (
-                            <img src={profile.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <UserIcon className="w-5 h-5 text-app-muted" />
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="flex-1">
-                          <h4 className="text-sm font-bold text-app-ink">Deel iets met de community!</h4>
-                          <p className="text-[11px] text-app-muted font-medium mt-0.5">
-                            Upload een foto of video die direct in de feed verschijnt.
-                          </p>
-                          
-                          <div className="mt-3 flex flex-wrap items-center gap-3">
-                            {/* File Upload Input */}
-                            <input 
-                              type="file"
-                              id="feed-media-upload"
-                              className="hidden"
-                              accept="image/*,video/*"
-                              onChange={handleProfileMediaUpload}
-                              disabled={profileMediaLoading}
-                            />
-                            
-                            <button
-                              onClick={() => document.getElementById('feed-media-upload')?.click()}
-                              disabled={profileMediaLoading}
-                              className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-black rounded-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center gap-2 shadow-sm shadow-cyan-500/20 cursor-pointer disabled:opacity-50"
-                            >
-                              <Plus className="w-4 h-4 stroke-[3]" />
-                              <span>Foto of Video uploaden</span>
-                            </button>
-                          </div>
-                        </div>
+                  {/* Upload Processing Overlay */}
+                  {profileMediaLoading && (
+                    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[100] flex flex-col items-center justify-center gap-3">
+                      <div className="p-5 bg-app-card border border-app-border rounded-3xl shadow-2xl flex flex-col items-center gap-3">
+                        <Loader2 className="w-10 h-10 animate-spin text-cyan-500" />
+                        <p className="text-xs text-app-ink font-bold tracking-wider uppercase">Bestand verwerken & uploaden...</p>
                       </div>
                     </div>
                   )}
@@ -8019,19 +7994,20 @@ export default function App() {
                       <p className="text-xs text-app-muted font-bold tracking-wider uppercase">Feed laden...</p>
                     </div>
                   ) : feedMedia.length === 0 ? (
-                    <div className="text-center py-20 bg-app-card border border-app-border rounded-3xl p-8">
+                    <div className="text-center py-20 bg-app-card border border-app-border rounded-3xl p-8 max-w-lg mx-auto">
                       <Film className="w-12 h-12 text-app-muted mx-auto mb-3 opacity-20" />
                       <p className="text-sm text-app-muted font-medium italic">Nog geen media geüpload door de community.</p>
                       <button 
-                        onClick={() => setView('settings')} 
-                        className="mt-4 px-4 py-2 bg-app-ink text-app-bg rounded-xl font-bold text-xs hover:opacity-90 active:scale-95 transition-all shadow"
+                        onClick={() => document.getElementById('feed-media-upload')?.click()} 
+                        className="mt-4 px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-bold text-xs hover:opacity-90 active:scale-95 transition-all shadow flex items-center gap-2 mx-auto"
                       >
-                        Upload je eerste media onder je Profiel!
+                        <Plus className="w-4 h-4 stroke-[3]" />
+                        <span>Upload eerste foto of video</span>
                       </button>
                     </div>
                   ) : feedViewMode === 'swipe' ? (
-                    /* TikTok / YouTube Shorts Vertical Swipe View */
-                    <div className="py-2">
+                    /* TikTok / YouTube Shorts Vertical Swipe View - Full Immersive View */
+                    <div className="w-full flex items-center justify-center">
                       <MediaSwipeFeed
                         mediaList={feedMedia}
                         currentUserId={user?.uid}
@@ -8045,28 +8021,120 @@ export default function App() {
                         isAdmin={isAdmin}
                         profiles={users}
                         onUploadClick={() => document.getElementById('feed-media-upload')?.click()}
+                        onSwitchToGrid={() => {
+                          setFeedViewMode('grid');
+                          try { localStorage.setItem('ftjm_feed_view_mode', 'grid'); } catch {}
+                        }}
+                        onRefresh={fetchFeedMedia}
+                        isUploading={profileMediaLoading}
                         initialMediaId={sharedMediaId}
                       />
                     </div>
                   ) : (
                     /* Classic Grid View */
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {feedMedia.map((media, idx) => (
-                        <MediaFeedCard
-                          key={media.id || idx}
-                          media={media}
-                          currentUserId={user?.uid}
-                          onLike={handleLikeMedia}
-                          onComment={handleCommentMedia}
-                          onDeleteComment={handleDeleteCommentMedia}
-                          onDeleteMedia={handleDeleteFeedMedia}
-                          onOpenProfile={handleOpenProfile}
-                          onViewFullscreen={setSelectedFullscreenMedia}
-                          nicknames={nicknames}
-                          isAdmin={isAdmin}
-                          profiles={users}
-                        />
-                      ))}
+                    <div className="space-y-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                        <div>
+                          <h3 className="text-2xl sm:text-3xl font-black text-app-ink flex items-center gap-2">
+                            <Film className="w-7 h-7 text-cyan-500 animate-[pulse_2s_infinite]" />
+                            Media Feed
+                          </h3>
+                          <p className="text-xs text-app-muted font-medium mt-1">
+                            Ontdek foto's en video's gedeeld door de community
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+                          {/* View Mode Toggle: Grid vs Shorts/Swipe */}
+                          <div className="flex items-center bg-app-card border border-app-border p-1 rounded-2xl shadow-sm">
+                            <button
+                              onClick={() => {
+                                setFeedViewMode('grid');
+                                try { localStorage.setItem('ftjm_feed_view_mode', 'grid'); } catch {}
+                              }}
+                              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all bg-app-ink text-app-bg shadow-sm"
+                              title="Grid Weergave (Overzicht)"
+                            >
+                              <LayoutGrid className="w-3.5 h-3.5" />
+                              <span>Grid</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setFeedViewMode('swipe');
+                                try { localStorage.setItem('ftjm_feed_view_mode', 'swipe'); } catch {}
+                              }}
+                              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all text-app-muted hover:text-app-ink"
+                              title="Swipe / Shorts Weergave (TikTok / Reels Style)"
+                            >
+                              <Smartphone className="w-3.5 h-3.5" />
+                              <span>Shorts / Swipe</span>
+                            </button>
+                          </div>
+
+                          <button 
+                            onClick={fetchFeedMedia}
+                            className="p-2.5 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl border border-app-border hover:scale-105 active:scale-95 transition-all shadow-sm"
+                            title="Feed vernieuwen"
+                          >
+                            <RefreshCw className={`w-4 h-4 ${feedLoading ? 'animate-spin' : ''}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Share Media Box */}
+                      {user && (
+                        <div className="bg-app-card border border-app-border rounded-3xl p-5 mb-8 shadow-sm relative overflow-hidden transition-all">
+                          <div className="flex items-start gap-4">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent border border-app-border shrink-0">
+                              {profile?.photo_url ? (
+                                <img src={profile.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <UserIcon className="w-5 h-5 text-app-muted" />
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex-1">
+                              <h4 className="text-sm font-bold text-app-ink">Deel iets met de community!</h4>
+                              <p className="text-[11px] text-app-muted font-medium mt-0.5">
+                                Upload een foto of video (max. 5 seconden / 5MB) die direct in de feed verschijnt en autoplayed met audio.
+                              </p>
+                              
+                              <div className="mt-3 flex flex-wrap items-center gap-3">
+                                <button
+                                  onClick={() => document.getElementById('feed-media-upload')?.click()}
+                                  disabled={profileMediaLoading}
+                                  className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-black rounded-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center gap-2 shadow-sm shadow-cyan-500/20 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Plus className="w-4 h-4 stroke-[3]" />
+                                  <span>Foto of Video uploaden</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Grid View Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {feedMedia.map((media, idx) => (
+                          <MediaFeedCard
+                            key={media.id || idx}
+                            media={media}
+                            currentUserId={user?.uid}
+                            onLike={handleLikeMedia}
+                            onComment={handleCommentMedia}
+                            onDeleteComment={handleDeleteCommentMedia}
+                            onDeleteMedia={handleDeleteFeedMedia}
+                            onOpenProfile={handleOpenProfile}
+                            onViewFullscreen={setSelectedFullscreenMedia}
+                            nicknames={nicknames}
+                            isAdmin={isAdmin}
+                            profiles={users}
+                          />
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -8110,7 +8178,7 @@ export default function App() {
                   user={user}
                   profile={profile}
                   profiles={users}
-                  conversations={conversations}
+                  conversations={filteredConversations}
                   activeConversation={activeConversation}
                   setActiveConversation={handleSetActiveConversation}
                   messages={messages}
@@ -8137,6 +8205,7 @@ export default function App() {
                   playSound={playSound}
                   onDeleteMessage={handleDeleteDirectMessage}
                   onEditMessage={handleUpdateDirectMessage}
+                  onToggleHideConversation={handleToggleHideConversation}
                 />
               )}
 
@@ -8212,6 +8281,13 @@ export default function App() {
                     reports={reports}
                     onUpdateReportStatus={handleUpdateReportStatus}
                     onDeleteReport={handleDeleteReport}
+                    onClearAllNotifications={handleClearAllNotifications}
+                    notificationsCount={notifications.length}
+                    conversations={conversations}
+                    profiles={users}
+                    hiddenConversationIds={hiddenConversationIds}
+                    onToggleHideConversation={handleToggleHideConversation}
+                    onUnhideAllConversations={handleUnhideAllConversations}
                   />
                 </div>
               )}
@@ -8230,7 +8306,7 @@ export default function App() {
                 <div className="max-w-6xl mx-auto h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
                   <GamesView 
                     userProfile={profile}
-                    conversations={conversations}
+                    conversations={filteredConversations}
                     onSaveHighScore={handleSaveHighScore}
                     onShareHighScore={handleShareHighScore}
                   />
@@ -8281,7 +8357,7 @@ export default function App() {
           onClose={() => setShowUserSearch(false)}
           searchQuery={userSearchQuery}
           setSearchQuery={setUserSearchQuery}
-          users={users.filter(u => u.id !== user?.uid)}
+          users={users.filter(u => u.id !== user?.uid && !u.is_blocked)}
           onSelectUser={(u) => {
             handleStartConversation(u);
             setShowUserSearch(false);
@@ -9197,7 +9273,7 @@ export default function App() {
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
                         <Monitor className="w-5 h-5 text-indigo-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Officiële Desktop App (v1.3.0)</h4>
+                          <h4 className="font-extrabold text-sm text-white">Officiële Desktop App (v1.3.1)</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
                             FTJM herkent nu automatisch je besturingssysteem (macOS, Windows, Linux) en biedt een directe downloadlink naar de officiële standalone release.
                           </p>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip, Video } from 'lucide-react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, Loader2, MessageSquare, ShieldCheck, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip, Video, EyeOff } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../types';
 import { formatDate, formatTime } from '../utils/helpers';
 import { RichContent } from './RichContent';
@@ -36,6 +36,7 @@ interface MessagesViewProps {
   playSound?: (url: string, enabled: boolean, uid: string, name: string) => void;
   onDeleteMessage?: (messageId: string) => void;
   onEditMessage?: (messageId: string, newText: string) => void;
+  onToggleHideConversation?: (conversationId: string) => void;
 }
 
 export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
@@ -68,7 +69,8 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
   groupVoiceCallActiveRooms,
   playSound,
   onDeleteMessage,
-  onEditMessage
+  onEditMessage,
+  onToggleHideConversation,
 }) => {
   const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null);
   const [editInput, setEditInput] = React.useState('');
@@ -77,7 +79,7 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
-  const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | null>(null);
+  const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | 'video' | null>(null);
   const [isCompressing, setIsCompressing] = React.useState<boolean>(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -128,19 +130,45 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
 
     setIsCompressing(true);
     try {
-      if (file.type.startsWith('image/')) {
-        const compressed = await compressImage(file);
-        setSelectedFile(compressed);
-        setSelectedFileType('image');
-      } else if (file.type.startsWith('audio/')) {
+      const isVideoFile = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|ogv|3gp)$/i.test(file.name);
+      const isAudioFile = !isVideoFile && (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|opus|aac|flac)$/i.test(file.name));
+      const isImageFile = !isVideoFile && !isAudioFile && (file.type.startsWith('image/') || /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)$/i.test(file.name));
+
+      if (isVideoFile) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          let dataUrl = evt.target?.result as string;
+          if (dataUrl && dataUrl.startsWith('data:audio/mp4')) {
+            dataUrl = dataUrl.replace('data:audio/mp4', 'data:video/mp4');
+          } else if (dataUrl && dataUrl.startsWith('data:application/octet-stream')) {
+            dataUrl = dataUrl.replace('data:application/octet-stream', 'data:video/mp4');
+          }
+          setSelectedFile(dataUrl);
+          setSelectedFileType('video');
+        };
+        reader.readAsDataURL(file);
+      } else if (isAudioFile) {
         const reader = new FileReader();
         reader.onload = (evt) => {
           setSelectedFile(evt.target?.result as string);
           setSelectedFileType('audio');
         };
         reader.readAsDataURL(file);
+      } else if (isImageFile) {
+        if (file.type === 'image/gif' || file.name.endsWith('.gif')) {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            setSelectedFile(evt.target?.result as string);
+            setSelectedFileType('image');
+          };
+          reader.readAsDataURL(file);
+        } else {
+          const compressed = await compressImage(file);
+          setSelectedFile(compressed);
+          setSelectedFileType('image');
+        }
       } else {
-        alert("Ongeldig bestandstype. Selecteer een afbeelding of audiobestand.");
+        alert("Selecteer een geldige video, afbeelding of audiobestand.");
       }
     } catch (err) {
       console.error("Error reading file:", err);
@@ -188,10 +216,42 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
     return messages.filter(m => m.text?.toLowerCase().includes(q));
   }, [messages, searchQuery]);
 
+  // Filter out DM conversations where the other participant is blocked (is_blocked === true)
+  const displayConversations = React.useMemo(() => {
+    return (conversations || []).filter(conv => {
+      if (!conv.is_group) {
+        const otherParticipants = conv.participants?.filter(uid => uid !== user.uid) || [];
+        const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : conv.participants?.find(uid => uid !== user.uid);
+        if (otherParticipantUid) {
+          const otherProfile = profiles?.find(p => p.id === otherParticipantUid);
+          if (otherProfile?.is_blocked === true) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+  }, [conversations, profiles, user?.uid]);
+
   // Resolve the newest conversation state from the live list to ensure real-time photo/name updates are visible instantly
-  const activeConversation = propActiveConversation 
-    ? (conversations.find(c => c.id === propActiveConversation.id) || propActiveConversation) 
-    : null;
+  const activeConversation = React.useMemo(() => {
+    if (!propActiveConversation) return null;
+    const found = displayConversations.find(c => c.id === propActiveConversation.id);
+    if (!found) {
+      if (!propActiveConversation.is_group) {
+        const otherParticipants = propActiveConversation.participants?.filter(uid => uid !== user.uid) || [];
+        const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : propActiveConversation.participants?.find(uid => uid !== user.uid);
+        if (otherParticipantUid) {
+          const otherProfile = profiles?.find(p => p.id === otherParticipantUid);
+          if (otherProfile?.is_blocked === true) {
+            return null;
+          }
+        }
+      }
+      return propActiveConversation;
+    }
+    return found;
+  }, [propActiveConversation, displayConversations, user?.uid, profiles]);
 
   const getParticipantPhoto = (uid: string, fallbackPhotos: Record<string, string> = {}) => {
     if (uid === user.uid) {
@@ -240,9 +300,9 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
         </div>
         
         <div className="flex-grow overflow-y-auto custom-scrollbar">
-          {conversations.length > 0 ? (
+          {displayConversations.length > 0 ? (
             <div className="divide-y divide-app-border/50">
-              {conversations.map(conv => {
+              {displayConversations.map(conv => {
                 const otherParticipants = conv.participants.filter(uid => uid !== user.uid);
                 const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : null;
                 const displayName = conv.is_group ? (conv.name || 'Groepsgesprek') : (otherParticipantUid ? getParticipantName(otherParticipantUid, conv.participant_names) : 'Onbekend');
@@ -251,13 +311,22 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
                 const isGroupCallActive = conv.is_group && groupVoiceCallActiveRooms?.has(conv.id);
                 
                 return (
-                  <button
+                  <div
                     key={conv.id}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setActiveConversation(conv);
+                        setMobileChatView('chat');
+                      }
+                    }}
                     onClick={() => {
                       setActiveConversation(conv);
                       setMobileChatView('chat');
                     }}
-                    className={`w-full p-6 flex items-center gap-4 transition-all text-left relative group ${
+                    className={`w-full p-6 flex items-center gap-4 transition-all text-left relative group cursor-pointer select-none ${
                       isActive 
                         ? 'bg-app-ink text-app-bg' 
                         : 'hover:bg-app-accent/50 text-app-muted hover:text-app-ink'
@@ -316,9 +385,29 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-0.5">
                         <p className="font-bold text-sm tracking-tight truncate">{displayName}</p>
-                        <p className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'opacity-60 text-app-bg' : 'text-app-muted'}`}>
-                          {formatTime(conv.updated_at)}
-                        </p>
+                        <div className="flex items-center gap-1">
+                          <p className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'opacity-60 text-app-bg' : 'text-app-muted'}`}>
+                            {formatTime(conv.updated_at)}
+                          </p>
+                          {onToggleHideConversation && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleHideConversation(conv.id);
+                              }}
+                              className={`p-1 rounded-md transition-opacity sm:opacity-0 sm:group-hover:opacity-100 ${
+                                isActive 
+                                  ? 'text-app-bg/80 hover:text-app-bg hover:bg-app-bg/20' 
+                                  : 'text-app-muted hover:text-amber-500 hover:bg-app-accent'
+                              }`}
+                              title="Gesprek verbergen"
+                              aria-label="Gesprek verbergen"
+                            >
+                              <EyeOff className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="flex items-center gap-2">
@@ -347,7 +436,7 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -805,7 +894,12 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
                     className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center justify-between gap-4 backdrop-blur-md"
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {selectedFileType === 'image' ? (
+                      {selectedFileType === 'video' ? (
+                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border bg-black flex-shrink-0 relative flex items-center justify-center">
+                          <video src={selectedFile} className="w-full h-full object-cover" muted playsInline />
+                          <Video className="w-4 h-4 text-cyan-400 absolute inset-0 m-auto drop-shadow" />
+                        </div>
+                      ) : selectedFileType === 'image' ? (
                         <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border bg-black flex-shrink-0">
                           <img src={selectedFile} alt="Preview" className="w-full h-full object-cover" />
                         </div>
@@ -816,7 +910,7 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
                       )}
                       <div className="overflow-hidden">
                         <p className="text-xs font-black text-app-ink uppercase tracking-wider truncate">
-                          {selectedFileType === 'image' ? 'Geselecteerde Foto' : 'Geselecteerd Audiobestand'}
+                          {selectedFileType === 'video' ? 'Geselecteerde Video' : selectedFileType === 'image' ? 'Geselecteerde Foto' : 'Geselecteerd Audiobestand'}
                         </p>
                         <p className="text-[10px] text-app-muted font-mono truncate mt-0.5">
                           Klaar om te versturen ({Math.round(selectedFile.length / 1024)} KB)
@@ -858,7 +952,7 @@ export const MessagesView: React.FC<MessagesViewProps> = React.memo(({
                     type="file"
                     ref={fileInputRef}
                     onChange={handleFileChange}
-                    accept="image/*,audio/*"
+                    accept="image/*,video/*,audio/*"
                     className="hidden"
                   />
                   <button 

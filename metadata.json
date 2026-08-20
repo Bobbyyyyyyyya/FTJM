@@ -1,6 +1,6 @@
 {
   "name": "FTJM Forum",
-  "description": "Besloten forum voor FTJM leden.",
+  "description": "Besloten community forum & communicatieplatform van FTJM Enterprise.",
   "requestFramePermissions": [
     "microphone",
     "camera"

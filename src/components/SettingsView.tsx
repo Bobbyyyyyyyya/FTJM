@@ -1,12 +1,12 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical, Download, ExternalLink } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Users, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical, Download, ExternalLink, ChevronDown, ChevronUp, RefreshCw, HardDrive, Smartphone, Globe, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { rateLimiter } from '../utils/rateLimiter';
 import CryptoJS from 'crypto-js';
-import { UserProfile, CustomTheme, NotificationSettings, User, Report } from '../types';
+import { UserProfile, CustomTheme, NotificationSettings, User, Report, Conversation } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, isVerifiedEmail, isBetaTester } from '../constants';
-import { formatDate, convertEmoticons, maskEmail, parseAdminNotes } from '../utils/helpers';
+import { formatDate, convertEmoticons, maskEmail, parseAdminNotes, getDeviceOSInfo } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
 import { supabase } from '../utils/supabase';
 import { Language, t } from '../utils/translations';
@@ -72,6 +72,13 @@ interface SettingsViewProps {
   reports?: Report[];
   onUpdateReportStatus?: (reportId: string, status: string) => Promise<void>;
   onDeleteReport?: (reportId: string) => Promise<void>;
+  onClearAllNotifications?: () => Promise<void>;
+  notificationsCount?: number;
+  conversations?: Conversation[];
+  profiles?: UserProfile[];
+  hiddenConversationIds?: string[];
+  onToggleHideConversation?: (conversationId: string) => void;
+  onUnhideAllConversations?: () => void;
 }
 
 const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: any }> = {
@@ -475,12 +482,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onChangeLanguage,
   reports = [],
   onUpdateReportStatus,
-  onDeleteReport
+  onDeleteReport,
+  onClearAllNotifications,
+  notificationsCount = 0,
+  conversations = [],
+  profiles = [],
+  hiddenConversationIds = [],
+  onToggleHideConversation,
+  onUnhideAllConversations,
 }) => {
+  const [clearingNotifications, setClearingNotifications] = React.useState(false);
   const [adminSubTab, setAdminSubTab] = React.useState<'overview' | 'users' | 'reports' | 'security'>('overview');
   const [adminUserSearch, setAdminUserSearch] = React.useState('');
   const [adminWhitelistSearch, setAdminWhitelistSearch] = React.useState('');
   const [reportFilter, setReportFilter] = React.useState<'all' | 'open' | 'reviewed' | 'resolved'>('all');
+  const [showInstallGuide, setShowInstallGuide] = React.useState(false);
+  const [installGuideOS, setInstallGuideOS] = React.useState<'chromebook' | 'ios' | 'android'>('chromebook');
 
 
 
@@ -1540,6 +1557,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
 
+                <div className="space-y-4 pt-6 border-t border-app-border">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-red-500/5 border border-red-500/20 rounded-2xl">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                        Meldingen Geschiedenis & Opslag
+                      </h4>
+                      <p className="text-xs text-app-muted font-medium">
+                        Wis al je ontvangen meldingen en notificaties definitief uit de Supabase database.
+                      </p>
+                      {notificationsCount > 0 && (
+                        <p className="text-[11px] font-bold text-app-ink">
+                          Huidig aantal meldingen: <span className="text-cyan-600">{notificationsCount}</span>
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={clearingNotifications || !onClearAllNotifications}
+                      onClick={async () => {
+                        if (!onClearAllNotifications) return;
+                        setClearingNotifications(true);
+                        try {
+                          await onClearAllNotifications();
+                        } finally {
+                          setClearingNotifications(false);
+                        }
+                      }}
+                      className="px-5 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer shrink-0"
+                    >
+                      {clearingNotifications ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      <span>Alle Meldingen Wissen</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="pt-6 border-t border-app-border flex justify-end">
                   <button 
                     onClick={handleUpdateNotifications}
@@ -1988,205 +2041,416 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="bg-app-card rounded-3xl p-8 border border-app-border shadow-sm space-y-8"
+              className="bg-app-card rounded-3xl p-6 sm:p-8 border border-app-border shadow-sm space-y-8"
             >
+              {/* Header */}
               <div className="flex items-center gap-4 border-b border-app-border pb-6">
-                <div className="w-16 h-16 bg-app-accent rounded-2xl flex items-center justify-center">
-                  <Layout className="w-8 h-8 text-app-ink" />
+                <div className="w-14 h-14 bg-app-accent rounded-2xl flex items-center justify-center flex-shrink-0">
+                  <Layout className="w-7 h-7 text-app-ink" />
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">{t("App Instellingen")}</h3>
-                  <p className="text-app-muted text-sm font-medium">{t("Beheer hoe de app op je apparaat werkt.")}</p>
+                  <p className="text-app-muted text-sm font-medium">{t("Beheer taal, privégesprekken, installatie en app-prestaties.")}</p>
                 </div>
               </div>
 
+              {/* Grid or Sectional Cards */}
               <div className="space-y-6">
-                {/* Language Selection Card */}
-                <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
-                  <h4 className="font-bold text-app-ink mb-2">{t("Taal / Language")}</h4>
-                  <p className="text-sm text-app-muted mb-4">
-                    {t("Kies de weergavetaal van de applicatie.")}
-                  </p>
+
+                {/* 1. Taal & Weergave */}
+                <div className="p-6 bg-app-accent/20 rounded-2xl border border-app-border">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-app-accent flex items-center justify-center text-app-ink">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-app-ink text-base">{t("Taal & Weergave")}</h4>
+                        <p className="text-xs text-app-muted">{t("Kies de gewenste weergavetaal van het forum.")}</p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-app-accent text-[11px] font-bold text-app-ink border border-app-border">
+                      {language === 'nl' ? 'Nederlands' : 'English'}
+                    </span>
+                  </div>
                   
-                  <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button 
                       onClick={() => onChangeLanguage('nl')}
                       type="button"
-                      className={`flex-1 py-3 px-4 rounded-xl font-bold border transition-all flex items-center justify-center gap-2 ${
+                      className={`p-4 rounded-xl font-bold border text-left transition-all flex items-center justify-between ${
                         language === 'nl'
-                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md'
-                          : 'bg-app-accent/40 text-app-muted border-app-border hover:bg-app-accent/60 hover:text-app-ink'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.01]'
+                          : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent/50 hover:text-app-ink'
                       }`}
                     >
-                      <span className="text-lg">🇳🇱</span>
-                      {t("Nederlands (Standaard)")}
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">🇳🇱</span>
+                        <div>
+                          <p className="text-sm font-bold">Nederlands</p>
+                          <p className={`text-[11px] font-medium ${language === 'nl' ? 'text-app-bg/80' : 'text-app-muted'}`}>Standaardtaal</p>
+                        </div>
+                      </div>
+                      {language === 'nl' && <Check className="w-5 h-5" />}
                     </button>
+
                     <button 
                       onClick={() => onChangeLanguage('en')}
                       type="button"
-                      className={`flex-1 py-3 px-4 rounded-xl font-bold border transition-all flex items-center justify-center gap-2 ${
+                      className={`p-4 rounded-xl font-bold border text-left transition-all flex items-center justify-between ${
                         language === 'en'
-                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md'
-                          : 'bg-app-accent/40 text-app-muted border-app-border hover:bg-app-accent/60 hover:text-app-ink'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.01]'
+                          : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent/50 hover:text-app-ink'
                       }`}
                     >
-                      <span className="text-lg">🇬🇧</span>
-                      {t("Engels (English)")}
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">🇬🇧</span>
+                        <div>
+                          <p className="text-sm font-bold">English</p>
+                          <p className={`text-[11px] font-medium ${language === 'en' ? 'text-app-bg/80' : 'text-app-muted'}`}>International</p>
+                        </div>
+                      </div>
+                      {language === 'en' && <Check className="w-5 h-5" />}
                     </button>
                   </div>
                 </div>
 
-                <div className="p-6 bg-app-accent/30 rounded-3xl border border-app-border">
-                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                    <h4 className="font-bold text-app-ink text-base flex items-center gap-2">
-                      <Monitor className="w-5 h-5 text-cyan-500" />
-                      {t("Officiële Desktop App (macOS, Windows, Linux)")}
-                    </h4>
-                    <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-mono text-[10px] font-bold border border-cyan-500/30">
-                      v1.3.0 Release
+                {/* 2. Verborgen Privégesprekken (Hidden DMs) */}
+                <div className="p-6 bg-app-accent/20 rounded-2xl border border-app-border">
+                  <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-app-accent flex items-center justify-center text-app-ink">
+                        <EyeOff className="w-4 h-4 text-amber-500" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-app-ink text-base">{t("Privégesprekken & Verborgen DM's")}</h4>
+                        <p className="text-xs text-app-muted">{t("Verberg specifieke privéchats uit je actieve inbox om je berichtenoverzicht overzichtelijk en privé te houden.")}</p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-app-accent text-[11px] font-mono font-bold text-app-ink border border-app-border">
+                      {hiddenConversationIds.length} {t("Verborgen")}
                     </span>
                   </div>
-                  <p className="text-sm text-app-muted mb-4 font-medium leading-relaxed">
-                    Download de nieuwste zelfstandige FTJM applicatie voor Windows (.exe), macOS of Linux. Geniet van achtergrondnotificaties, superieure prestaties en directe bureaubladintegratie.
-                  </p>
-                  
-                  <a
-                    href="https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.3.0"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-3.5 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-2xl font-bold transition-all shadow-md shadow-cyan-600/20 flex items-center justify-center gap-2.5 mb-6 text-sm active:scale-[0.99]"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Download FTJM v1.3.0 (GitHub)</span>
-                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                  </a>
 
-                  <div className="border-t border-app-border/60 pt-4">
-                    <h5 className="font-bold text-app-ink text-xs uppercase tracking-wider mb-2">
-                      {t("Web PWA / Browser Installatie")}
-                    </h5>
-                    <p className="text-xs text-app-muted mb-3 font-medium">
-                      {t("Installeer FTJM als een zelfstandige app op je computer of ChromeOS apparaat voor een snellere ervaring en directe toegang vanaf je bureaublad.")}
-                    </p>
-                  </div>
-                  
-                  <div className="mb-6 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-tight">
-                      {t("Belangrijk: Zorg ervoor dat pop-ups zijn toegestaan in je browser voor een optimale werking van de app en verificaties.")}
-                    </p>
-                  </div>
-                  
                   {(() => {
-                    const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
-                    if (isInIframe) {
+                    const hiddenConvs = (conversations || []).filter(c => hiddenConversationIds.includes(c.id));
+                    if (hiddenConvs.length === 0) {
                       return (
-                        <div className="p-4 bg-blue-500/10 text-blue-700 rounded-2xl border border-blue-500/20 flex flex-col gap-2">
-                          <div className="flex items-center gap-3">
-                            <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                            <p className="text-xs font-bold font-primary">{t("Voorbeeldweergave gedetecteerd")}</p>
+                        <div className="p-5 bg-app-card rounded-xl border border-app-border/80 text-center">
+                          <div className="w-10 h-10 rounded-full bg-app-accent flex items-center justify-center mx-auto mb-2 text-app-muted">
+                            <MessageSquare className="w-5 h-5" />
                           </div>
-                          <p className="text-[11px] text-blue-800 font-medium font-primary leading-normal">
-                            {t("De browser blokkeert PWA app-installatie binnen een iframe (deze ontwikkelomgeving). Klik rechtsboven op \"Open in nieuw tabblad\" en navigeer daar naar Instellingen om de app live op je PC/telefoon te downloaden!")}
+                          <p className="text-xs font-bold text-app-ink">{t("Geen verborgen gesprekken")}</p>
+                          <p className="text-[11px] text-app-muted mt-1 max-w-md mx-auto">
+                            {t("Je hebt momenteel geen verborgen DM's. Klik in de inbox op het oog-icoontje naast een gesprek om het te verbergen.")}
                           </p>
                         </div>
                       );
                     }
-                    if (showInstallButton) {
-                      return (
-                        <button 
-                          onClick={handleInstallClick}
-                          className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2 mb-6"
-                        >
-                          <Plus className="w-5 h-5 animate-bounce" />
-                          {t("Nu Installeren")}
-                        </button>
-                      );
-                    }
-                    return null;
+
+                    return (
+                      <div className="space-y-3">
+                        <div className="max-h-60 overflow-y-auto custom-scrollbar divide-y divide-app-border/60 bg-app-card rounded-xl border border-app-border">
+                          {hiddenConvs.map(conv => {
+                            const otherUid = !conv.is_group ? conv.participants?.find(uid => uid !== user.uid) : null;
+                            const otherProfile = otherUid ? profiles?.find(p => p.id === otherUid) : null;
+                            const name = conv.is_group 
+                              ? (conv.name || 'Groepsgesprek') 
+                              : (otherProfile?.display_name || (otherUid ? conv.participant_names?.[otherUid] : null) || 'Onbekend');
+                            const photo = conv.is_group 
+                              ? null 
+                              : (otherProfile?.photo_url || (otherUid ? conv.participant_photos?.[otherUid] : null) || null);
+
+                            return (
+                              <div key={conv.id} className="p-3 sm:p-4 flex items-center justify-between gap-3 hover:bg-app-accent/30 transition-colors">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-10 h-10 rounded-xl bg-app-accent overflow-hidden flex-shrink-0 flex items-center justify-center border border-app-border">
+                                    {photo ? (
+                                      <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      conv.is_group ? (
+                                        <Users className="w-5 h-5 text-app-muted" />
+                                      ) : (
+                                        <UserIcon className="w-5 h-5 text-app-muted" />
+                                      )
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                      <p className="text-xs font-bold text-app-ink truncate">{name}</p>
+                                      {conv.is_group && (
+                                        <span className="text-[9px] font-bold bg-app-accent px-1.5 py-0.5 rounded-md text-app-muted border border-app-border">
+                                          {conv.participants?.length || 0} leden
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-app-muted truncate font-medium">
+                                      {conv.last_message || 'Geen berichten'}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => onToggleHideConversation?.(conv.id)}
+                                  className="px-3 py-1.5 rounded-lg bg-app-accent hover:bg-app-ink hover:text-app-bg text-app-ink text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 border border-app-border"
+                                  title="Gesprek weergeven in Inbox"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>{t("Zichtbaar maken")}</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {hiddenConvs.length > 1 && (
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => onUnhideAllConversations?.()}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-app-accent hover:bg-app-accent/80 text-app-ink transition-colors flex items-center gap-1.5 border border-app-border"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{t("Alle gesprekken zichtbaar maken")}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
                   })()}
+                </div>
 
-                  {/* Manual Installation Guide */}
-                  <div className="mt-4 border-t border-app-border/60 pt-4">
-                    <h5 className="text-xs font-bold text-app-ink uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Monitor className="w-4 h-4 text-app-muted" />
-                      {t("Handmatige installatie / Chromebook gids")}
-                    </h5>
-                    
-                    <div className="space-y-3">
-                      {/* Chromebook / Chrome Step */}
-                      <div className="p-3 bg-app-card rounded-xl border border-app-border text-xs">
-                        <p className="font-bold text-app-ink flex items-center gap-1.5 mb-1">
-                          <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                          Google Chrome & Chromebook (ChromeOS)
-                        </p>
-                        <ul className="list-decimal list-inside space-y-1 text-app-muted font-medium ml-1">
-                          <li>{t("Open de webapp in een nieuw tabblad.")}</li>
-                          <li>{t("Zoek rechts in de adresbalk naar het installatie-icoontje (een PC-scherm met een pijltje naar beneden of de '+' knop).")}</li>
-                          <li>{t("Klik hierop en selecteer 'Installeren'.")}</li>
-                          <li>{t("Als het icoon er niet staat: Klik rechtsboven op de drie puntjes, kies 'Opslaan en delen' -> 'App installeren'.")}</li>
-                        </ul>
+                {/* 3. Downloads & Standalone App */}
+                <div className="p-6 bg-app-accent/20 rounded-2xl border border-app-border">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-app-accent flex items-center justify-center text-app-ink">
+                        <Monitor className="w-4 h-4 text-cyan-500" />
                       </div>
-
-                      {/* iPhone & iPad */}
-                      <div className="p-3 bg-app-card rounded-xl border border-app-border text-xs">
-                        <p className="font-bold text-app-ink flex items-center gap-1.5 mb-1">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                          iPhone & iPad (Safari)
-                        </p>
-                        <ul className="list-decimal list-inside space-y-1 text-app-muted font-medium ml-1">
-                          <li>{t("Open deze site in de Safari browser.")}</li>
-                          <li>{t("Tik onderin op de Deel-knop (vierkant met pijl omhoog).")}</li>
-                          <li>{t("Scroll naar beneden en kies 'Zet op beginscherm' (Add to Home Screen).")}</li>
-                        </ul>
-                      </div>
-
-                      {/* Android */}
-                      <div className="p-3 bg-app-card rounded-xl border border-app-border text-xs">
-                        <p className="font-bold text-app-ink flex items-center gap-1.5 mb-1">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                          Android (Google Chrome)
-                        </p>
-                        <ul className="list-decimal list-inside space-y-1 text-app-muted font-medium ml-1">
-                          <li>{t("Tik rechtsboven op de drie puntjes menu-knop.")}</li>
-                          <li>{t("Tik op 'App installeren' of 'Toevoegen aan startscherm'.")}</li>
-                        </ul>
+                      <div>
+                        <h4 className="font-bold text-app-ink text-base">{t("App Installatie & Downloads")}</h4>
+                        <p className="text-xs text-app-muted">{t("Download de app voor snellere prestaties en bureaubladintegratie.")}</p>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {/* Desktop App Card */}
+                    <div className="p-4 bg-app-card rounded-xl border border-app-border flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-app-ink">Desktop App</span>
+                          <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono text-[10px] font-bold border border-cyan-500/25">
+                            v1.3.1 Release
+                          </span>
+                        </div>
+                        <p className="text-xs text-app-muted mb-4 leading-relaxed">
+                          Zelfstandige app voor Windows (.exe), macOS en Linux met native pushnotificaties.
+                        </p>
+                      </div>
+                      <a
+                        href="https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.3.1"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download Desktop App</span>
+                        <ExternalLink className="w-3 h-3 opacity-80" />
+                      </a>
+                    </div>
+
+                    {/* PWA / Browser Card */}
+                    <div className="p-4 bg-app-card rounded-xl border border-app-border flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-app-ink">Progressive Web App</span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-bold border border-emerald-500/25">
+                            Web Standalone
+                          </span>
+                        </div>
+                        <p className="text-xs text-app-muted mb-4 leading-relaxed">
+                          Installeer direct via Chrome, Safari of Edge zonder losse installatiebestanden.
+                        </p>
+                      </div>
+
+                      {(() => {
+                        const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+                        if (isInIframe) {
+                          return (
+                            <div className="p-2.5 bg-blue-500/10 text-blue-700 dark:text-blue-400 rounded-xl border border-blue-500/20 text-[11px] font-medium flex items-center gap-2">
+                              <Info className="w-4 h-4 flex-shrink-0" />
+                              <span>Open in nieuw tabblad om PWA te installeren</span>
+                            </div>
+                          );
+                        }
+                        if (showInstallButton) {
+                          return (
+                            <button 
+                              onClick={handleInstallClick}
+                              className="w-full py-2.5 px-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 transition-all text-xs flex items-center justify-center gap-2 shadow-sm"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>{t("Nu Installeren")}</span>
+                            </button>
+                          );
+                        }
+                        return (
+                          <div className="p-2.5 bg-app-accent text-app-muted rounded-xl text-[11px] font-medium text-center border border-app-border">
+                            {t("Geïnstalleerd of gereed in browser")}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Clean Collapsible Manual Guide */}
+                  <div className="bg-app-card rounded-xl border border-app-border overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowInstallGuide(!showInstallGuide)}
+                      className="w-full p-3.5 flex items-center justify-between text-xs font-bold text-app-ink hover:bg-app-accent/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="w-4 h-4 text-app-muted" />
+                        <span>{t("Handmatige installatiehandleiding")} (Chromebook, iOS & Android)</span>
+                      </div>
+                      {showInstallGuide ? <ChevronUp className="w-4 h-4 text-app-muted" /> : <ChevronDown className="w-4 h-4 text-app-muted" />}
+                    </button>
+
+                    <AnimatePresence>
+                      {showInstallGuide && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="border-t border-app-border p-4 bg-app-bg/30 space-y-3"
+                        >
+                          <div className="flex gap-2 border-b border-app-border pb-2">
+                            {(['chromebook', 'ios', 'android'] as const).map(os => (
+                              <button
+                                key={os}
+                                type="button"
+                                onClick={() => setInstallGuideOS(os)}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                  installGuideOS === os
+                                    ? 'bg-app-ink text-app-bg'
+                                    : 'text-app-muted hover:text-app-ink hover:bg-app-accent'
+                                }`}
+                              >
+                                {os === 'chromebook' ? 'Chrome & Chromebook' : os === 'ios' ? 'iPhone & iPad' : 'Android'}
+                              </button>
+                            ))}
+                          </div>
+
+                          {installGuideOS === 'chromebook' && (
+                            <ul className="list-disc list-inside space-y-1.5 text-xs text-app-muted font-medium ml-1">
+                              <li>{t("Open de webapp in een nieuw tabblad.")}</li>
+                              <li>{t("Zoek rechts in de adresbalk naar het installatie-icoontje (PC met pijl omlaag of '+' knop).")}</li>
+                              <li>{t("Klik hierop en kies 'Installeren'.")}</li>
+                              <li>{t("Of: Drie puntjes rechtsboven -> 'Opslaan en delen' -> 'App installeren'.")}</li>
+                            </ul>
+                          )}
+
+                          {installGuideOS === 'ios' && (
+                            <ul className="list-disc list-inside space-y-1.5 text-xs text-app-muted font-medium ml-1">
+                              <li>{t("Open deze site in Safari.")}</li>
+                              <li>{t("Tik onderin op de Deel-knop (vierkant met pijl omhoog).")}</li>
+                              <li>{t("Kies 'Zet op beginscherm' (Add to Home Screen).")}</li>
+                            </ul>
+                          )}
+
+                          {installGuideOS === 'android' && (
+                            <ul className="list-disc list-inside space-y-1.5 text-xs text-app-muted font-medium ml-1">
+                              <li>{t("Tik rechtsboven op het menu (drie puntjes).")}</li>
+                              <li>{t("Tik op 'App installeren' of 'Toevoegen aan startscherm'.")}</li>
+                            </ul>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
 
-                <div className="p-6 bg-app-accent/10 rounded-3xl border border-app-border border-dashed">
-                  <h4 className="text-xs font-bold text-app-muted uppercase tracking-wide mb-2">App Info</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-app-muted">Versie</span>
-                      <span className="font-bold text-app-ink">2.4.5</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-app-muted">Platform</span>
-                      <span className="font-bold text-app-ink">Progressive Web App</span>
+                {/* 4. Systeem, Opslag & Cache */}
+                <div className="p-6 bg-app-accent/20 rounded-2xl border border-app-border">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-app-accent flex items-center justify-center text-app-ink">
+                        <HardDrive className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-app-ink text-base">{t("Systeem & Opslag")}</h4>
+                        <p className="text-xs text-app-muted">{t("App-versie, status en cache beheer.")}</p>
+                      </div>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => {
-                      if ('serviceWorker' in navigator) {
-                        navigator.serviceWorker.getRegistration().then(reg => {
-                          if (reg) {
-                            reg.update().then(() => {
-                              toast.success('Gecontroleerd op updates', {
-                                description: 'Als er een update is, verschijnt er zo een melding.'
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                    <div className="p-3 bg-app-card rounded-xl border border-app-border text-center">
+                      <p className="text-[10px] uppercase font-bold text-app-muted tracking-wider">Versie</p>
+                      <p className="text-sm font-bold text-app-ink mt-0.5">v2.5.0</p>
+                    </div>
+                    <div className="p-3 bg-app-card rounded-xl border border-app-border text-center">
+                      <p className="text-[10px] uppercase font-bold text-app-muted tracking-wider">Platform</p>
+                      <p className="text-sm font-bold text-app-ink mt-0.5">FTJM PWA</p>
+                    </div>
+                    <div className="p-3 bg-app-card rounded-xl border border-app-border text-center col-span-2 sm:col-span-1">
+                      <p className="text-[10px] uppercase font-bold text-app-muted tracking-wider">Status</p>
+                      <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center justify-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Online
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        if ('serviceWorker' in navigator) {
+                          navigator.serviceWorker.getRegistration().then(reg => {
+                            if (reg) {
+                              reg.update().then(() => {
+                                toast.success('Gecontroleerd op updates', {
+                                  description: 'Als er een update is, verschijnt er direct een melding.'
+                                });
                               });
-                            });
-                          }
-                        });
-                      }
-                    }}
-                    className="w-full mt-4 py-2 bg-app-accent text-app-ink rounded-xl text-[10px] font-bold uppercase tracking-wide hover:bg-app-accent/80 transition-all"
-                  >
-                    Controleer op updates
-                  </button>
+                            } else {
+                              toast.info('Je gebruikt de meest actuele versie.');
+                            }
+                          });
+                        } else {
+                          toast.info('Je gebruikt de meest actuele versie.');
+                        }
+                      }}
+                      className="flex-1 py-2.5 px-4 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-app-border"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Controleer op updates</span>
+                    </button>
+
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        try {
+                          sessionStorage.clear();
+                          toast.success(t("Cache opgeschoond"), {
+                            description: 'Tijdelijke cache is succesvol geleegd.'
+                          });
+                        } catch (e) {
+                          toast.error('Kon cache niet legen');
+                        }
+                      }}
+                      className="flex-1 py-2.5 px-4 bg-app-card hover:bg-app-accent/50 text-app-muted hover:text-app-ink rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-app-border"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t("Lokale cache opschonen")}</span>
+                    </button>
+                  </div>
                 </div>
+
               </div>
             </motion.div>
           )}
@@ -2722,6 +2986,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <span className="font-bold text-emerald-950 text-[10px] uppercase block mb-1">CITY / REGIO</span>
                                 <span className="text-emerald-700 font-bold">{ownTel.location || 'Onbekend'}</span>
                               </div>
+                              {(() => {
+                                const osInfo = getDeviceOSInfo(ownTel.device);
+                                return (
+                                  <div className="bg-white/90 p-3 rounded-xl border border-emerald-100 shadow-sm col-span-1 sm:col-span-2 flex items-center justify-between">
+                                    <div>
+                                      <span className="font-bold text-emerald-950 text-[10px] uppercase block mb-0.5">BESTURINGSSYSTEEM / APPARAAT</span>
+                                      <div className="flex items-center gap-1.5 font-bold text-emerald-800">
+                                        <span>{osInfo.icon}</span>
+                                        <span>{osInfo.formattedLabel}</span>
+                                      </div>
+                                    </div>
+                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${osInfo.badgeClass}`}>
+                                      {osInfo.name}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                               {ownTel.org && (
                                 <div className="bg-white/90 p-3 rounded-xl border border-emerald-100 shadow-sm col-span-2">
                                   <span className="font-bold text-emerald-950 text-[10px] uppercase block mb-1">PROVIDER / ORG</span>
@@ -3049,6 +3330,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <span className="text-rose-500 font-bold truncate inline-block max-w-[120px] align-bottom">{tel.location || 'Onbekend'}</span>
                                     </div>
                                   </div>
+
+                                  {(() => {
+                                    const osInfo = getDeviceOSInfo(tel.device);
+                                    return (
+                                      <div className="flex items-center justify-between border-t border-app-border/40 pt-1">
+                                        <div className="flex items-center gap-1.5 truncate">
+                                          <span>{osInfo.icon}</span>
+                                          <span className="font-bold text-app-ink">{osInfo.formattedLabel}</span>
+                                        </div>
+                                        <span className={`text-[7.5px] font-black uppercase px-1.5 py-0.2 rounded ${osInfo.badgeClass}`}>
+                                          {osInfo.name}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
 
                                   {tel.mac_address && (
                                     <div>

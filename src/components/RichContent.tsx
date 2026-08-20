@@ -140,14 +140,14 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
     );
   }
   
-  const urlRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+)/g;
+  const urlRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:video\/[a-zA-Z0-9+.-]+;base64,[^\s]+)/g;
   const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
   
-  const combinedRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|@[a-zA-Z0-9_]+)/g;
+  const combinedRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:video\/[a-zA-Z0-9+.-]+;base64,[^\s]+|@[a-zA-Z0-9_]+)/g;
   const parts = safeDecryptedContent.split(combinedRegex);
 
-  // Calculate actual text length excluding base64 media attachments to avoid counting image data
-  const textOnlyForLengthCheck = safeDecryptedContent.replace(/data:(image|audio)\/[a-zA-Z0-9+.-]+;base64,[^\s]+/g, '');
+  // Calculate actual text length excluding base64 media attachments to avoid counting image/audio/video data
+  const textOnlyForLengthCheck = safeDecryptedContent.replace(/data:(image|audio|video)\/[a-zA-Z0-9+.-]+;base64,[^\s]+/g, '');
   const isLongMessage = textOnlyForLengthCheck.length > 350;
 
   const getYoutubeId = (url: string) => {
@@ -157,8 +157,17 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
     return (match && match[2].length === 11) ? match[2] : null;
   };
 
+  const isVideo = (url: string) => {
+    if (!url || typeof url !== 'string') return false;
+    if (url.startsWith('data:video/')) return true;
+    if (url.startsWith('data:audio/mp4') || url.startsWith('data:audio/webm') || url.startsWith('data:audio/quicktime')) return true;
+    const videoExtensions = /\.(mp4|webm|mov|mkv|m4v|ogv|avi|3gp)(\?.*)?$/i;
+    return videoExtensions.test(url);
+  };
+
   const isImage = (url: string) => {
     if (!url || typeof url !== 'string') return false;
+    if (isVideo(url)) return false;
     if (url.startsWith('data:image/')) return true;
     const imageExtensions = /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)(\?.*)?$/i;
     const imageHosts = [
@@ -186,8 +195,9 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
 
   const isAudio = (url: string) => {
     if (!url || typeof url !== 'string') return false;
+    if (isVideo(url)) return false;
     if (url.startsWith('data:audio/')) return true;
-    const audioExtensions = /\.(mp3|wav|m4a|ogg|opus)(\?.*)?$/i;
+    const audioExtensions = /\.(mp3|wav|m4a|ogg|opus|aac|flac)(\?.*)?$/i;
     const matched = url.match(audioExtensions);
     return matched ? true : false;
   };
@@ -296,6 +306,20 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
             );
           }
           
+          if (isVideo(url)) {
+            return (
+              <div key={i} className="max-w-md rounded-xl overflow-hidden shadow-md border border-app-border bg-black">
+                <video 
+                  src={url} 
+                  controls 
+                  playsInline 
+                  preload="metadata" 
+                  className="w-full h-auto max-h-[350px] object-contain"
+                />
+              </div>
+            );
+          }
+
           if (isImage(url)) {
             return (
               <div key={i} className="max-w-md rounded-xl overflow-hidden shadow-md border border-zinc-200">

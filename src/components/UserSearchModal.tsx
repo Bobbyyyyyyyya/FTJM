@@ -29,10 +29,12 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
   const [groupName, setGroupName] = useState('');
   const [mode, setMode] = useState<'single' | 'group'>('single');
 
-  const filteredUsers = users.filter(u => 
-    u.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users
+    .filter(u => u.is_blocked !== true)
+    .filter(u => 
+      u.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
   const toggleUserSelection = (u: UserProfile) => {
     if (selectedUsers.some(selected => selected.id === u.id)) {

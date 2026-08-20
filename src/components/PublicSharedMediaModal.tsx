@@ -37,7 +37,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
   const [mediaItem, setMediaItem] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showComments, setShowComments] = useState(false);
   const [loginPromptReason, setLoginPromptReason] = useState<string | null>(null);
@@ -52,7 +52,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
       try {
         const supabase = createSupabaseClient();
         
-        // 1. Try to fetch from profile_media
+        // 1. Try to fetch from profile_media by ID
         const { data, error: fetchErr } = await supabase
           .from('profile_media')
           .select('*')
@@ -72,34 +72,6 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
             .select('*')
             .limit(100);
           foundMedia = allMedia?.find((m: any) => m.id === mediaId || m.media_url?.includes(mediaId));
-        }
-
-        // 3. If still not found, check profiles table custom_theme.media
-        if (!foundMedia) {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, display_name, photo_url, custom_theme, email, role');
-          if (profiles) {
-            for (const p of profiles) {
-              const themeMedia = p.custom_theme?.media || [];
-              const match = themeMedia.find((m: any) => m.id === mediaId || m.media_url?.includes(mediaId));
-              if (match) {
-                foundMedia = {
-                  id: match.id || mediaId,
-                  user_id: p.id,
-                  media_url: match.media_url,
-                  media_type: match.media_type || (match.media_url?.includes('video') || match.media_url?.endsWith('.mp4') ? 'video' : 'image'),
-                  created_at: match.created_at || new Date().toISOString(),
-                  author_name: p.display_name || 'Anoniem',
-                  author_photo: p.photo_url || null,
-                  author_profile: p,
-                  likes: match.likes || [],
-                  comments: match.comments || []
-                };
-                break;
-              }
-            }
-          }
         }
 
         if (!foundMedia) {
@@ -144,6 +116,25 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
       isMounted = false;
     };
   }, [mediaId]);
+
+  useEffect(() => {
+    if (mediaItem?.media_type === 'video' && videoRef.current) {
+      videoRef.current.muted = isMuted;
+      if (isPlaying) {
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            if (videoRef.current && !isMuted) {
+              videoRef.current.muted = true;
+              videoRef.current.play().catch(() => {});
+            }
+          });
+        }
+      } else {
+        videoRef.current.pause();
+      }
+    }
+  }, [mediaItem, isPlaying, isMuted]);
 
   const handleMediaClick = () => {
     if (mediaItem?.media_type === 'video') {
@@ -471,7 +462,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
                 Wil je swipen, liken & reageren?
               </span>
             </div>
-            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.3.0</span>
+            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.3.1</span>
           </div>
 
           <button
