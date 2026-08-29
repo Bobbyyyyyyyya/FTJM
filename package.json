@@ -19,7 +19,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "compression": "^1.8.1",
     "crypto-js": "^4.2.0",
-    "discord.js": "^14.26.4",
+    "discord.js": "^14.27.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
