@@ -37,6 +37,33 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
     return () => clearInterval(interval);
   }, []);
 
+  const activeRoomIdRef = useRef(activeRoomId);
+  useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+  }, [activeRoomId]);
+
+  // Cleanly disconnect when window is closed
+  useEffect(() => {
+    const handleUnload = () => {
+      if (activeRoomIdRef.current && channelRef.current) {
+        // Fire-and-forget signaling message so the group knows we dropped
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'group_leave',
+          payload: { senderId: user?.uid }
+        });
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('unload', handleUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('unload', handleUnload);
+    };
+  }, [user?.uid]);
+
   const cleanup = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
@@ -155,8 +182,9 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
           autoGainControl: true
         },
         video: isVideo ? {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 15, max: 20 },
           facingMode: "user"
         } : false
       });

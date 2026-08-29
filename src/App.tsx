@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { supabase, setSupabaseFirebaseUid, createSupabaseClient } from './utils/supabase';
+import { supabase, setSupabaseFirebaseUid, createSupabaseClient, resetSupabaseClients } from './utils/supabase';
 import { User, UserProfile, Post, Conversation, DirectMessage, CustomTheme, ForumThread, ForumComment, AppNotification, NotificationSettings, Report } from './types';
 import { MentionOverlay } from './components/MentionOverlay';
 import { EmojiOverlay } from './components/EmojiOverlay';
+import { Logo } from './components/Logo';
+import { 
+  AnimatedMailIcon, 
+  AnimatedChatIcon, 
+  AnimatedMenuIcon, 
+  AnimatedMediaIcon, 
+  AnimatedBellIcon, 
+  AnimatedKeyboardIcon, 
+  AnimatedThemeIcon, 
+  AnimatedForumIcon, 
+  AnimatedNewsIcon, 
+  AnimatedArcadeIcon 
+} from './components/AnimatedIcons';
 import { Toaster, toast } from 'sonner';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,7 +39,6 @@ import {
   ShieldCheck, 
   Activity,
   AlertCircle, 
-  Loader2, 
   AlertTriangle, 
   Send, 
   X, 
@@ -59,20 +71,17 @@ import { LandingPage } from './components/LandingPage';
 import { RichContent } from './components/RichContent';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { ChatView } from './components/ChatView';
-import { ForumView } from './components/ForumView';
-import { MessagesView } from './components/MessagesView';
-import { SettingsView } from './components/SettingsView';
-import { NewsView } from './components/NewsView';
 import { UserSearchModal } from './components/UserSearchModal';
-import { ReportModal } from './components/ReportModal';
-import { UserProfileModal } from './components/UserProfileModal';
-import { AudioLogsView } from './components/AudioLogsView';
-import { GamesView } from './components/GamesView';
+// Lazy load major views
+const ChatView = React.lazy(() => import('./components/ChatView').then(module => ({ default: module.ChatView })));
+const ForumView = React.lazy(() => import('./components/ForumView').then(module => ({ default: module.ForumView })));
+const MessagesView = React.lazy(() => import('./components/MessagesView').then(module => ({ default: module.MessagesView })));
+const SettingsView = React.lazy(() => import('./components/SettingsView').then(module => ({ default: module.SettingsView })));
+const AudioLogsView = React.lazy(() => import('./components/AudioLogsView').then(module => ({ default: module.AudioLogsView })));
+const GamesView = React.lazy(() => import('./components/GamesView').then(module => ({ default: module.GamesView })));
 import { MediaFeedCard } from './components/MediaFeedCard';
 import { MediaSwipeFeed } from './components/MediaSwipeFeed';
 import { PublicSharedMediaModal } from './components/PublicSharedMediaModal';
-import { MessageEditArea } from './components/MessageEditArea';
 import { DesktopAppPromptModal, getDesktopOperatingSystem } from './components/DesktopAppPromptModal';
 import { useVoiceCall } from './hooks/useVoiceCall';
 import { VoiceCallUI } from './components/VoiceCallUI';
@@ -81,12 +90,24 @@ import { GroupVoiceCallUI } from './components/GroupVoiceCallUI';
 import { t, Language, getLanguage, setLanguage } from './utils/translations';
 
 // Constants & Helpers
-import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVerifiedEmail, isBetaTester } from './constants';
-import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes } from './utils/helpers';
+import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVerifiedEmail, isBetaTester, isTestUser, isValidEmail, isProtectedNameOrImpersonation } from './constants';
+import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba } from './utils/helpers';
+import { AntiNamePiracyModal } from './components/AntiNamePiracyModal';
 
 import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
+import { saveDMsBatchLocally, getLocalDMsForConversation, savePostsBatchLocally, getLocalPosts } from './utils/localMessageArchive';
+import { runAutoBase64Migration, containsBase64DataUrl, migrateFeedMediaList } from './utils/base64Migration';
 import { rateLimiter } from './utils/rateLimiter';
 import CryptoJS from 'crypto-js';
+import { ModernSidebar, ModernMobileNav } from './components/ModernSidebar';
+import { ModernTopDMBar } from './components/ModernTopDMBar';
+import { ModernProfileList } from './components/ModernProfileList';
+import { ModernUICustomizerModal } from './components/ModernUICustomizerModal';
+import { useLocalModernUI, getAccentHex } from './utils/modernUICustom';
+import { VideoTrimmerModal } from './components/VideoTrimmerModal';
+import { FeedSortDropdown } from './components/FeedSortDropdown';
+import { applyThemeFont } from './utils/fontManager';
+import { ThemedLoadingScreen, ThemedSpinner, ThemedInlineLoader } from './components/ThemedLoadingScreen';
 
 // Human Verification Challenge for Anti-DDoS bypass
 function HumanVerificationChallenge() {
@@ -187,6 +208,11 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'enhanced'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark' | 'enhanced') || 'light';
   });
+  
+  const [modernCustom, setModernCustom] = useLocalModernUI();
+  const [showModernCustomizer, setShowModernCustomizer] = useState(false);
+  
+  const [videoToTrim, setVideoToTrim] = useState<{file: File, callback: (dataUrl: string) => void} | null>(null);
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
@@ -260,6 +286,14 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<'profile' | 'notifications' | 'theme' | 'admin' | 'app' | 'audiologs' | 'security' | 'discord'>('profile');
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [showDesktopPromptModal, setShowDesktopPromptModal] = useState(false);
+  const [antiPiracyModalState, setAntiPiracyModalState] = useState<{
+    isOpen: boolean;
+    attemptedName: string;
+    reason?: string;
+  }>({
+    isOpen: false,
+    attemptedName: ''
+  });
 
   useEffect(() => {
     if (user) {
@@ -443,7 +477,7 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v2.5') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.5.5') !== 'true';
   });
   const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
@@ -459,7 +493,7 @@ export default function App() {
       notify_new_messages: true,
       notify_mentions: true,
       message_sound: SOUND_OPTIONS[0].url,
-      post_sound: SOUND_OPTIONS[1].url,
+      post_sound: SOUND_OPTIONS[0].url,
       ringtone_url: RINGTONE_OPTIONS[0].url,
       discord_webhook_url: '',
       discord_notify_general: false,
@@ -482,7 +516,7 @@ export default function App() {
       discord_notify_dm: settings.discord_notify_dm !== undefined ? settings.discord_notify_dm : defaultSettings.discord_notify_dm
     };
 
-    // Migration: Reset problematic old Mixkit URLs
+    // Migration: Reset problematic old Mixkit URLs or old default chime to Fears to Fathom
     const oldMixkitUrls = [
       'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3',
       'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3'
@@ -492,7 +526,7 @@ export default function App() {
       cleaned.message_sound = SOUND_OPTIONS[0].url;
     }
     if (oldMixkitUrls.includes(cleaned.post_sound)) {
-      cleaned.post_sound = SOUND_OPTIONS[1].url;
+      cleaned.post_sound = SOUND_OPTIONS[0].url;
     }
 
     return cleaned;
@@ -708,41 +742,18 @@ export default function App() {
   const [profileMediaLoading, setProfileMediaLoading] = React.useState<boolean>(false);
   const [selectedFullscreenMedia, setSelectedFullscreenMedia] = React.useState<string | null>(null);
 
-  // Image Compressor for Profile Media
-  const compressProfileMediaImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const MAX_DIM = 720;
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width > height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL('image/jpeg', 0.62);
-            resolve(compressed);
-          } else {
-            resolve(event.target?.result as string);
-          }
-        };
-        img.src = event.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-    });
+  // Image Compressor for Profile Media (Binary WebP optimization)
+  const compressProfileMediaImage = async (file: File): Promise<string> => {
+    try {
+      const blob = await compressImageToBlob(file, 640, 480, 0.60, 'image/webp');
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return compressImage(file, 640, 480, 0.60);
+    }
   };
 
   // Add Profile Media Handler
@@ -756,8 +767,34 @@ export default function App() {
     setProfileMediaLoading(true);
     let finalMediaUrl = url;
 
-    // 1. Direct Supabase Storage upload attempt for permanent CDN hosting
-    if (fileBlob) {
+    if (type === 'image' && finalMediaUrl && finalMediaUrl.startsWith('data:image')) {
+      try {
+        finalMediaUrl = await compressImage(finalMediaUrl, 640, 480, 0.55);
+      } catch (cErr) {
+        console.warn('Compress image in handleAddProfileMedia failed:', cErr);
+      }
+    } else if (type === 'video' && finalMediaUrl && finalMediaUrl.startsWith('data:video')) {
+      try {
+        finalMediaUrl = await compressVideo(finalMediaUrl, { maxDuration: 5, maxDimension: 320, videoBitrate: 300_000, fps: 15 });
+      } catch (cErr) {
+        console.warn('Compress video in handleAddProfileMedia failed:', cErr);
+      }
+    }
+
+    // 1. Try ImgBB CDN first for images for 0% database egress
+    if ((type === 'image' || type === 'gif') && (fileBlob || (finalMediaUrl && finalMediaUrl.startsWith('data:')))) {
+      try {
+        const imgbbRes = await uploadImageToImgBB((fileBlob || finalMediaUrl) as any, 'profile_media');
+        if (imgbbRes?.url) {
+          finalMediaUrl = imgbbRes.url;
+        }
+      } catch (imgbbErr) {
+        console.warn('ImgBB upload note:', imgbbErr);
+      }
+    }
+
+    // 2. Direct Supabase Storage upload attempt for permanent CDN hosting
+    if (fileBlob && finalMediaUrl.startsWith('data:')) {
       try {
         const isVid = type === 'video' || fileBlob.type.includes('video');
         const fileExt = isVid
@@ -816,7 +853,7 @@ export default function App() {
       const { data, error } = await supabaseClient
         .from('profile_media')
         .insert([newRecord])
-        .select();
+        .select('id, user_id, media_url, media_type, caption, likes, comments, created_at');
 
       if (error) {
         console.error('Failed to insert into public.profile_media:', error);
@@ -953,57 +990,13 @@ export default function App() {
       const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|ogv)$/i.test(file.name);
       
       if (isVideo) {
-        let isDone = false;
-
-        const processAndUploadVideo = () => {
-          if (isDone) return;
-          isDone = true;
-
-          const reader = new FileReader();
-          reader.onload = async (event) => {
-            const base64Url = event.target?.result as string;
-            await handleAddProfileMedia(base64Url, 'video', file);
+        setVideoToTrim({
+          file,
+          callback: async (dataUrl: string) => {
+            await handleAddProfileMedia(dataUrl, 'video', file);
             setProfileMediaLoading(false);
-          };
-          reader.onerror = () => {
-            toast.error('Kan de video niet inlezen.');
-            setProfileMediaLoading(false);
-          };
-          reader.readAsDataURL(file);
-        };
-
-        const blobUrl = URL.createObjectURL(file);
-        const videoEl = document.createElement('video');
-        videoEl.preload = 'metadata';
-        
-        videoEl.onloadedmetadata = () => {
-          setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 1000);
-          const duration = videoEl.duration;
-          if (isFinite(duration) && duration > 5.5) {
-            toast.error('Video is te lang. Maximaal 5 seconden toegestaan.');
-            setProfileMediaLoading(false);
-            isDone = true;
-            return;
           }
-          processAndUploadVideo();
-        };
-
-        videoEl.onerror = () => {
-          setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 1000);
-          // If metadata fails to read preview on some devices, still proceed to read file & upload
-          processAndUploadVideo();
-        };
-
-        videoEl.src = blobUrl;
-        videoEl.load();
-
-        // Safety fallback timer if onloadedmetadata hangs or does not trigger
-        setTimeout(() => {
-          if (!isDone) {
-            URL.revokeObjectURL(blobUrl);
-            processAndUploadVideo();
-          }
-        }, 1800);
+        });
       } else {
         const compressed = await compressProfileMediaImage(file);
         await handleAddProfileMedia(compressed, 'image', file);
@@ -1030,9 +1023,10 @@ export default function App() {
       try {
         const { data, error } = await supabaseClient
           .from('profile_media')
-          .select('*')
+          .select('id, user_id, media_url, media_type, caption, likes, comments, created_at')
           .eq('user_id', selectedUser.id)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(50);
 
         if (error) {
           console.error('Error fetching public.profile_media:', error);
@@ -1062,6 +1056,52 @@ export default function App() {
       return 'grid';
     }
   });
+
+  const [feedSortOption, setFeedSortOption] = useState<'recommended' | 'latest' | 'popular' | 'discussed' | 'oldest'>(() => {
+    try {
+      return (localStorage.getItem('ftjm_feed_sort_option') as any) || 'recommended';
+    } catch {
+      return 'recommended';
+    }
+  });
+
+  const sortedFeedMedia = useMemo(() => {
+    const list = [...feedMedia];
+    const now = Date.now();
+
+    switch (feedSortOption) {
+      case 'latest':
+        return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      case 'oldest':
+        return list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      case 'popular':
+        return list.sort((a, b) => {
+          const scoreA = (a.likes?.length || 0) * 2 + (a.comments?.length || 0) * 3;
+          const scoreB = (b.likes?.length || 0) * 2 + (b.comments?.length || 0) * 3;
+          if (scoreB !== scoreA) return scoreB - scoreA;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+      case 'discussed':
+        return list.sort((a, b) => {
+          const commsA = (a.comments?.length || 0);
+          const commsB = (b.comments?.length || 0);
+          if (commsB !== commsA) return commsB - commsA;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+      case 'recommended':
+      default:
+        // Smart recommendation algorithm: balances engagement (likes & comments) with recency decay
+        return list.sort((a, b) => {
+          const ageHoursA = Math.max(0.1, (now - new Date(a.created_at).getTime()) / (1000 * 3600));
+          const ageHoursB = Math.max(0.1, (now - new Date(b.created_at).getTime()) / (1000 * 3600));
+          
+          const scoreA = ((a.likes?.length || 0) * 3 + (a.comments?.length || 0) * 5 + 2) / Math.pow(ageHoursA + 2, 1.25);
+          const scoreB = ((b.likes?.length || 0) * 3 + (b.comments?.length || 0) * 5 + 2) / Math.pow(ageHoursB + 2, 1.25);
+          
+          return scoreB - scoreA;
+        });
+    }
+  }, [feedMedia, feedSortOption]);
 
   const [sharedMediaId, setSharedMediaId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -1094,9 +1134,9 @@ export default function App() {
       // Fetch strictly from public.profile_media table in Supabase
       const { data: dbMediaData, error: dbError } = await supabaseClient
         .from('profile_media')
-        .select('*')
+        .select('id, user_id, media_url, media_type, caption, likes, comments, created_at')
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(30);
 
       if (dbError) {
         console.error('Error fetching public.profile_media for feed:', dbError);
@@ -1105,7 +1145,10 @@ export default function App() {
       }
 
       const dbList = Array.isArray(dbMediaData) ? dbMediaData : [];
-      const userIds = Array.from(new Set(dbList.map((m: any) => m.user_id)));
+      const userIds = Array.from(new Set([
+        ...dbList.map((m: any) => m.user_id),
+        ...dbList.flatMap((m: any) => (Array.isArray(m.comments) ? m.comments.map((c: any) => c.user_id) : []))
+      ])).filter(Boolean);
 
       let fetchedProfiles: UserProfile[] = [];
       if (userIds.length > 0) {
@@ -1133,13 +1176,29 @@ export default function App() {
           || (user && m.user_id === user.uid ? profile : null);
         const isVid = m.media_type === 'video' || (m.media_url && (m.media_url.startsWith('data:video/') || /\.(mp4|webm|mov|mkv|m4v)(\?.*)?$/i.test(m.media_url)));
 
+        // Enrich comments so author_name is never 'Anoniem' if profile is available
+        const enrichedComments = (Array.isArray(m.comments) ? m.comments : []).map((c: any) => {
+          const cProfile = fetchedProfiles.find(u => u.id === c.user_id)
+            || usersRef.current.find(u => u.id === c.user_id)
+            || (user && c.user_id === user.uid ? profile : null);
+          const resolvedName = (cProfile?.display_name && cProfile.display_name !== 'Anoniem')
+            ? cProfile.display_name
+            : (c.author_name && c.author_name !== 'Anoniem' ? c.author_name : (cProfile?.email?.split('@')[0] || (user && c.user_id === user.uid ? (profile?.display_name || user.displayName || user.email?.split('@')[0]) : null) || 'Gebruiker'));
+          const resolvedPhoto = cProfile?.photo_url || c.author_photo || (user && c.user_id === user.uid ? (profile?.photo_url || user.photoURL) : null) || null;
+          return {
+            ...c,
+            author_name: resolvedName,
+            author_photo: resolvedPhoto
+          };
+        });
+
         return {
           ...m,
           media_type: isVid ? 'video' : (m.media_type || 'image'),
           author_name: authorProfile?.display_name || (user && m.user_id === user.uid ? (profile?.display_name || user.displayName) : null) || 'Anoniem',
           author_photo: authorProfile?.photo_url || (user && m.user_id === user.uid ? (profile?.photo_url || user.photoURL) : null) || null,
           likes: m.likes || [],
-          comments: m.comments || []
+          comments: enrichedComments
         };
       });
 
@@ -1153,6 +1212,16 @@ export default function App() {
       });
 
       setFeedMedia(mappedList);
+
+      // Auto-migrate non-CDN feed media items (especially for admin or all legacy items)
+      const isUserAdmin = profile?.role === 'admin' || (user?.email && user.email.toLowerCase() === 'markohoksen@gmail.com');
+      if (mappedList.some((m: any) => containsBase64DataUrl(m.media_url))) {
+        setTimeout(() => {
+          migrateFeedMediaList(supabaseClient, mappedList, setFeedMedia, setProfileMedia).catch(e =>
+            console.warn('[FeedCDNAutoMigration] Background conversion notice:', e)
+          );
+        }, 200);
+      }
     } catch (err) {
       console.error('Error loading media feed:', err);
     } finally {
@@ -1255,11 +1324,14 @@ export default function App() {
       const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
       const comments = currentMediaItem?.comments || [];
 
+      const commentAuthorName = profile?.display_name || user.displayName || (user.email ? user.email.split('@')[0] : null) || 'Gebruiker';
+      const commentAuthorPhoto = profile?.photo_url || user.photoURL || null;
+
       const newComment = {
         id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(),
         user_id: user.uid,
-        author_name: profile?.display_name || user.displayName || 'Anoniem',
-        author_photo: profile?.photo_url || user.photoURL || null,
+        author_name: commentAuthorName,
+        author_photo: commentAuthorPhoto,
         text: text.trim(),
         created_at: new Date().toISOString()
       };
@@ -1300,12 +1372,12 @@ export default function App() {
         await supabaseClient.from('notifications').insert({
           user_id: authorId,
           actor_id: user.uid,
-          actor_name: profile?.display_name || user.displayName || 'Anoniem',
-          actor_photo: profile?.photo_url || user.photoURL || null,
+          actor_name: commentAuthorName,
+          actor_photo: commentAuthorPhoto,
           type: 'mention',
           resource_type: 'post',
           resource_id: 'media_feed',
-          content: `${profile?.display_name || user.displayName || 'Anoniem'} reageerde op je foto: "${text.trim().substring(0, 30)}${text.trim().length > 30 ? '...' : ''}" 💬`,
+          content: `${commentAuthorName} reageerde op je foto: "${text.trim().substring(0, 30)}${text.trim().length > 30 ? '...' : ''}" 💬`,
           is_read: false,
           created_at: new Date().toISOString()
         });
@@ -1426,6 +1498,54 @@ export default function App() {
     }
   };
 
+  const handleToggleBlockFeedMedia = async (mediaId: string, authorId: string) => {
+    if (!user || !isAdmin) {
+      toast.error('Alleen beheerders kunnen media blokkeren.');
+      return;
+    }
+
+    try {
+      const currentMediaItem = feedMedia.find(m => m.id === mediaId || m.media_url === mediaId);
+      const newBlockedState = !currentMediaItem?.is_blocked;
+
+      // Try updating database
+      const { error: dbError } = await supabaseClient
+        .from('profile_media')
+        .update({ is_blocked: newBlockedState })
+        .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
+
+      if (dbError) {
+        console.warn('Database update note for is_blocked:', dbError.message);
+      }
+
+      // Update local feedMedia state
+      setFeedMedia(prev => prev.map(m => {
+        if (m.id === mediaId || m.media_url === mediaId) {
+          return { ...m, is_blocked: newBlockedState };
+        }
+        return m;
+      }));
+
+      // Realtime broadcast
+      try {
+        supabaseClient.channel('media_feed_realtime').send({
+          type: 'broadcast',
+          event: 'media_event',
+          payload: { type: 'BLOCK_TOGGLE', mediaId, is_blocked: newBlockedState }
+        });
+      } catch (e) {}
+
+      if (newBlockedState) {
+        toast.success('Media tijdelijk geblokkeerd voor gewone gebruikers.');
+      } else {
+        toast.success('Media gedeblokkeerd!');
+      }
+    } catch (err: any) {
+      console.error('Error toggling block media:', err);
+      toast.error('Fout bij het wijzigen van de blokkering.');
+    }
+  };
+
   // Real-time Media Feed Subscription (Supabase Postgres Changes + Instant Broadcasts)
   useEffect(() => {
     if (!user || isWhitelisted !== true) return;
@@ -1537,6 +1657,14 @@ export default function App() {
         } else if (payload.type === 'DELETE_MEDIA') {
           const { mediaId } = payload;
           setFeedMedia(prev => prev.filter(m => m.id !== mediaId && m.media_url !== mediaId));
+        } else if (payload.type === 'BLOCK_TOGGLE') {
+          const { mediaId, is_blocked } = payload;
+          setFeedMedia(prev => prev.map(m => {
+            if (m.id === mediaId || m.media_url === mediaId) {
+              return { ...m, is_blocked };
+            }
+            return m;
+          }));
         }
       })
       .subscribe();
@@ -1598,11 +1726,11 @@ export default function App() {
       try {
         const { data: followersData, error: followersError } = await supabaseClient
           .from('profiles')
-          .select('id, display_name, photo_url, custom_theme, bio')
+          .select('id, display_name, photo_url, bio')
           .contains('custom_theme', { following: [selectedUser.id] });
 
         if (!followersError && followersData) {
-          setSelectedUserFollowers(followersData);
+          setSelectedUserFollowers(followersData as any);
         } else {
           setSelectedUserFollowers(users.filter(u => u.custom_theme?.following?.includes(selectedUser.id)));
         }
@@ -1611,11 +1739,11 @@ export default function App() {
         if (followingIds.length > 0) {
           const { data: followingData, error: followingError } = await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, custom_theme, bio')
+            .select('id, display_name, photo_url, bio')
             .in('id', followingIds);
 
           if (!followingError && followingData) {
-            setSelectedUserFollowing(followingData);
+            setSelectedUserFollowing(followingData as any);
           } else {
             setSelectedUserFollowing(users.filter(u => followingIds.includes(u.id)));
           }
@@ -1638,6 +1766,14 @@ export default function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileChatView, setMobileChatView] = useState<'list' | 'chat'>('list');
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [mentionSearch, setMentionSearch] = useState('');
@@ -1658,7 +1794,7 @@ export default function App() {
   const savePostsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
-  const [messagesLimit, setMessagesLimit] = useState(50);
+  const [messagesLimit, setMessagesLimit] = useState(25);
 
   const [websiteStatus, setWebsiteStatus] = useState<string>(() => {
     return secureLocalStorage.getItem('cached_websiteStatus') || 'Online';
@@ -1885,6 +2021,10 @@ export default function App() {
 
       const { email, password } = JSON.parse(decryptedText);
 
+      if (!email || !isValidEmail(email)) {
+        throw new Error("Ongeldig e-mailadres gekoppeld aan deze passkey.");
+      }
+
       // Log in with Supabase
       const { data, error } = await supabaseClient.auth.signInWithPassword({
         email,
@@ -1949,20 +2089,19 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
-    
+    document.documentElement.setAttribute('data-theme', theme);
+
     if (useCustomTheme) {
       document.documentElement.setAttribute('data-custom-theme', 'true');
     } else {
       document.documentElement.removeAttribute('data-custom-theme');
-    }
-
-    // Always set data-theme
-    document.documentElement.setAttribute('data-theme', theme);
-
-    if (theme === 'light') {
-      document.documentElement.classList.remove('dark');
-    } else {
-      document.documentElement.classList.add('dark');
+      if (theme === 'light') {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.style.colorScheme = 'light';
+      } else {
+        document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = 'dark';
+      }
     }
   }, [theme, useCustomTheme]);
 
@@ -2082,8 +2221,14 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement;
     
-    if (!useCustomTheme) {
+    // Always apply fonts to DOM and body reliably
+    applyThemeFont(customTheme);
+
+    const isThemeActive = useCustomTheme || Boolean(customTheme?.modern_ui);
+
+    if (!isThemeActive) {
       root.removeAttribute('data-custom-theme');
+      root.removeAttribute('data-modern-ui');
       // Reset custom theme variables when disabled
       root.style.removeProperty('--custom-primary');
       root.style.removeProperty('--custom-secondary');
@@ -2093,6 +2238,9 @@ export default function App() {
       root.style.removeProperty('--custom-sidebar-bg');
       root.style.removeProperty('--custom-header-bg');
       root.style.removeProperty('--custom-body-bg');
+      root.style.removeProperty('--custom-muted');
+      root.style.removeProperty('--custom-card-border');
+      root.style.removeProperty('--custom-accent-bg');
       root.style.removeProperty('--custom-blur');
       root.style.removeProperty('--custom-opacity');
       root.style.removeProperty('--custom-wallpaper-x');
@@ -2101,16 +2249,44 @@ export default function App() {
       root.style.removeProperty('--custom-glass-chat-bg');
       root.style.removeProperty('--custom-glass-profile-bg');
       root.style.removeProperty('--custom-glass-blur');
+      root.style.removeProperty('--custom-glass-chat-border');
+      root.style.removeProperty('--custom-glass-chat-shadow');
+      root.style.removeProperty('--custom-glass-profile-border');
+      root.style.removeProperty('--custom-glass-profile-shadow');
       root.style.removeProperty('--custom-pattern');
       root.style.removeProperty('--custom-pattern-size');
       root.style.removeProperty('--custom-main-bg');
       root.style.removeProperty('--custom-main-bg-size');
       root.style.removeProperty('--custom-main-bg-pos');
+      
+      if (theme === 'light') {
+        root.classList.remove('dark');
+        root.style.colorScheme = 'light';
+      } else {
+        root.classList.add('dark');
+        root.style.colorScheme = 'dark';
+      }
       return;
     }
 
-    if (useCustomTheme) {
-      root.setAttribute('data-custom-theme', 'true');
+    root.setAttribute('data-custom-theme', 'true');
+    if (customTheme?.modern_ui) {
+      root.setAttribute('data-modern-ui', 'true');
+    } else {
+      root.removeAttribute('data-modern-ui');
+    }
+
+    const textRgb = hexToRgb(customTheme.text_color, { r: 24, g: 24, b: 27 });
+    const cardRgb = hexToRgb(customTheme.card_bg_color, { r: 255, g: 255, b: 255 });
+    const accentRgb = hexToRgb(customTheme.accent_color, { r: 6, g: 182, b: 212 });
+    const isDark = isDarkColor(customTheme.body_bg_color || customTheme.card_bg_color || '#ffffff');
+
+    if (isDark) {
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.style.colorScheme = 'light';
     }
 
     if (customTheme.primary_color) root.style.setProperty('--custom-primary', customTheme.primary_color);
@@ -2121,6 +2297,12 @@ export default function App() {
     if (customTheme.sidebar_bg_color) root.style.setProperty('--custom-sidebar-bg', customTheme.sidebar_bg_color);
     if (customTheme.header_bg_color) root.style.setProperty('--custom-header-bg', customTheme.header_bg_color);
     if (customTheme.body_bg_color) root.style.setProperty('--custom-body-bg', customTheme.body_bg_color);
+    
+    // Dynamic contrast & border tokens
+    root.style.setProperty('--custom-muted', `rgba(${textRgb.r}, ${textRgb.g}, ${textRgb.b}, 0.65)`);
+    root.style.setProperty('--custom-card-border', isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)');
+    root.style.setProperty('--custom-accent-bg', `rgba(${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}, ${isDark ? 0.2 : 0.08})`);
+
     if (customTheme.blur_amount !== undefined) root.style.setProperty('--custom-blur', `${customTheme.blur_amount}px`);
     if (customTheme.opacity !== undefined) root.style.setProperty('--custom-opacity', `${customTheme.opacity / 100}`);
     if (customTheme.wallpaper_x !== undefined) root.style.setProperty('--custom-wallpaper-x', `${customTheme.wallpaper_x}%`);
@@ -2131,38 +2313,30 @@ export default function App() {
       root.style.setProperty('--app-radius', `${customTheme.border_radius}px`);
     }
 
-    // Font Family
-    let fontFamily = '"Inter", sans-serif';
-    if (customTheme.font_family === 'serif') fontFamily = 'ui-serif, Georgia, serif';
-    root.style.setProperty('--custom-font', fontFamily);
-
     // Glass Effect Variables
+    const a = (100 - (customTheme.opacity || 0)) / 100;
+    const chatA = (100 - (customTheme.chat_opacity ?? 0)) / 100;
+    const profileA = (100 - (customTheme.profile_card_opacity ?? 0)) / 100;
+    
     if (customTheme.glass_effect) {
-      const r = parseInt(customTheme.card_bg_color?.slice(1,3) || 'ff', 16);
-      const g = parseInt(customTheme.card_bg_color?.slice(3,5) || 'ff', 16);
-      const b = parseInt(customTheme.card_bg_color?.slice(5,7) || 'ff', 16);
-      const a = (100 - (customTheme.opacity || 0)) / 100;
-      const chatA = (100 - (customTheme.chat_opacity ?? 0)) / 100;
-      const profileA = (100 - (customTheme.profile_card_opacity ?? 0)) / 100;
-      
-      root.style.setProperty('--custom-glass-bg', `rgba(${r}, ${g}, ${b}, ${a})`);
-      root.style.setProperty('--custom-glass-chat-bg', `rgba(${r}, ${g}, ${b}, ${chatA})`);
-      root.style.setProperty('--custom-glass-profile-bg', `rgba(${r}, ${g}, ${b}, ${profileA})`);
+      root.style.setProperty('--custom-glass-bg', `rgba(${cardRgb.r}, ${cardRgb.g}, ${cardRgb.b}, ${a})`);
+      root.style.setProperty('--custom-glass-chat-bg', `rgba(${cardRgb.r}, ${cardRgb.g}, ${cardRgb.b}, ${chatA})`);
+      root.style.setProperty('--custom-glass-profile-bg', `rgba(${cardRgb.r}, ${cardRgb.g}, ${cardRgb.b}, ${profileA})`);
       root.style.setProperty('--custom-glass-blur', `blur(${customTheme.blur_amount || 10}px)`);
 
       // Handle borders and shadows for transparency
-      root.style.setProperty('--custom-glass-chat-border', chatA === 0 ? 'transparent' : 'var(--app-border)');
+      root.style.setProperty('--custom-glass-chat-border', chatA === 0 ? 'transparent' : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'));
       root.style.setProperty('--custom-glass-chat-shadow', chatA === 0 ? 'none' : 'var(--shadow-sm)');
-      root.style.setProperty('--custom-glass-profile-border', profileA === 0 ? 'transparent' : 'var(--app-border)');
+      root.style.setProperty('--custom-glass-profile-border', profileA === 0 ? 'transparent' : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'));
       root.style.setProperty('--custom-glass-profile-shadow', profileA === 0 ? 'none' : 'var(--shadow-sm)');
     } else {
       root.style.setProperty('--custom-glass-bg', customTheme.card_bg_color || '#ffffff');
       root.style.setProperty('--custom-glass-chat-bg', customTheme.card_bg_color || '#ffffff');
       root.style.setProperty('--custom-glass-profile-bg', customTheme.card_bg_color || '#ffffff');
       root.style.setProperty('--custom-glass-blur', 'none');
-      root.style.setProperty('--custom-glass-chat-border', 'var(--app-border)');
+      root.style.setProperty('--custom-glass-chat-border', isDark ? 'rgba(255, 255, 255, 0.12)' : 'var(--app-border)');
       root.style.setProperty('--custom-glass-chat-shadow', 'var(--shadow-sm)');
-      root.style.setProperty('--custom-glass-profile-border', 'var(--app-border)');
+      root.style.setProperty('--custom-glass-profile-border', isDark ? 'rgba(255, 255, 255, 0.12)' : 'var(--app-border)');
       root.style.setProperty('--custom-glass-profile-shadow', 'var(--shadow-sm)');
     }
     
@@ -2202,7 +2376,7 @@ export default function App() {
       root.style.setProperty('--custom-main-bg-size', 'auto');
       root.style.setProperty('--custom-main-bg-pos', 'center');
     }
-  }, [customTheme, useCustomTheme]);
+  }, [customTheme, useCustomTheme, theme]);
 
   useEffect(() => {
     activeConversationRef.current = activeConversation;
@@ -2255,6 +2429,7 @@ export default function App() {
         const { data, error } = await supabaseClient
           .from('notifications')
           .select('id, user_id, actor_id, actor_name, actor_photo, type, resource_id, resource_type, content, is_read, created_at')
+          .eq('user_id', user.uid)
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -2470,6 +2645,17 @@ export default function App() {
                 setUseCustomTheme(profileData.use_custom_theme);
               }
               hasFetchedProfile.current = true;
+
+              // Automatically trigger background migration of legacy Base64 data to ImgBB (All media if Admin)
+              const isUserAdmin = profileData.role === 'admin' || mappedUser.email?.toLowerCase() === 'markohoksen@gmail.com';
+              runAutoBase64Migration(newClient, mappedUser, profileData, {
+                setProfile,
+                setPosts,
+                setMessages,
+                setConversations,
+                setProfileMedia,
+                setFeedMedia
+              }, isUserAdmin).catch(e => console.warn('[AutoBase64Migration] Background error:', e));
             } else if (whitelisted) {
               // Automatically provision profile inline on first login
               const newProfile: UserProfile = {
@@ -2504,6 +2690,17 @@ export default function App() {
                 setProfile(newProfile);
                 localStorage.setItem('cached_profile', JSON.stringify(newProfile));
                 hasFetchedProfile.current = true;
+
+                // Trigger background migration if needed
+                const isUserAdmin = mappedUser.email?.toLowerCase() === 'markohoksen@gmail.com';
+                runAutoBase64Migration(newClient, mappedUser, newProfile, {
+                  setProfile,
+                  setPosts,
+                  setMessages,
+                  setConversations,
+                  setProfileMedia,
+                  setFeedMedia
+                }, isUserAdmin).catch(e => console.warn('[AutoBase64Migration] Background error:', e));
               }
             }
           } catch (err) {
@@ -2735,7 +2932,7 @@ export default function App() {
     };
   }, [user?.uid, isWhitelisted]);
 
-  // Periodic polling fallback (every 10 seconds) to guarantee sync of warnings and bans
+  // Periodic polling fallback (every 60 seconds) to guarantee sync of warnings and bans
   useEffect(() => {
     if (!user || isWhitelisted === false) return;
 
@@ -2743,19 +2940,17 @@ export default function App() {
       try {
         const { data, error } = await supabaseClient
           .from('profiles')
-          .select('id, display_name, original_name, email, photo_url, bio, role, notification_settings, custom_theme, use_custom_theme, custom_sounds, created_at, admin_notes, is_blocked, name_locked_until, bio_locked_until')
+          .select('id, role, is_blocked, name_locked_until, bio_locked_until, updated_at')
           .eq('id', user.uid)
           .maybeSingle();
         
         if (data && !error) {
-          const upP = data as UserProfile;
-          setProfile(upP);
-          localStorage.setItem('cached_profile', JSON.stringify(upP));
+          setProfile(prev => prev ? { ...prev, ...data } : (data as UserProfile));
         }
       } catch (err) {
         console.warn('Periodic safety check sync failed:', err);
       }
-    }, 10000);
+    }, 60000);
 
     return () => {
       clearInterval(interval);
@@ -2951,27 +3146,27 @@ export default function App() {
             try {
               const res = await supabaseClient
                 .from('profiles')
-                .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme, name_locked_until, bio_locked_until')
-                .limit(200);
+                .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, name_locked_until, bio_locked_until')
+                .limit(30);
               if (!res.error && res.data) return res;
               console.warn('Ophalen met admin_notes mislukt, proberen zonder...', res.error);
               return await supabaseClient
                 .from('profiles')
-                .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme, name_locked_until, bio_locked_until')
-                .limit(200);
+                .select('id, display_name, photo_url, email, created_at, is_blocked, name_locked_until, bio_locked_until')
+                .limit(30);
             } catch (e) {
-              console.warn('Mislukt met custom_theme, proberen basisvelden...', e);
+              console.warn('Mislukt met admin_notes, proberen basisvelden...', e);
               return await supabaseClient
                 .from('profiles')
-                .select('id, display_name, photo_url, email, created_at, is_blocked, name_locked_until, bio_locked_until')
-                .limit(200);
+                .select('id, display_name, photo_url, email, created_at, is_blocked')
+                .limit(30);
             }
           };
 
           const [wRes, uRes, rRes] = await Promise.all([
-            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
+            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(30),
             fetchProfilesWithFallback(),
-            supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+            supabaseClient.from('reports').select('id, reporter_id, reported_id, reporter_name, reported_name, target_type, reason, status, details, created_at, resource_id').order('created_at', { ascending: false }).limit(50)
           ]);
           
           if (wRes.error) {
@@ -2991,7 +3186,7 @@ export default function App() {
           }
           if (uRes.data) {
             const sorted = [...uRes.data].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
-            setUsers(sorted);
+            setUsers(sorted as any);
           }
           if (rRes.data) {
             setReports(rRes.data.filter((r: any) => r.status !== 'deleted'));
@@ -3007,7 +3202,7 @@ export default function App() {
       const fetchAdminData = async () => {
         try {
           const [wRes] = await Promise.all([
-            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100)
+            supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(30)
           ]);
           if (wRes.data) {
             setWhitelist(wRes.data);
@@ -3034,27 +3229,27 @@ export default function App() {
         try {
           const res = await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, custom_theme, name_locked_until, bio_locked_until')
-            .limit(200);
+            .select('id, display_name, photo_url, email, created_at, is_blocked, admin_notes, name_locked_until, bio_locked_until')
+            .limit(30);
           if (!res.error && res.data) return res;
           console.warn('Ophalen met admin_notes mislukt, proberen zonder...', res.error);
           return await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme, name_locked_until, bio_locked_until')
-            .limit(200);
+            .select('id, display_name, photo_url, email, created_at, is_blocked, name_locked_until, bio_locked_until')
+            .limit(30);
         } catch (e) {
-          console.warn('Mislukt met custom_theme, proberen basisvelden...', e);
+          console.warn('Mislukt met admin_notes, proberen basisvelden...', e);
           return await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, email, created_at, is_blocked, name_locked_until, bio_locked_until')
-            .limit(200);
+            .select('id, display_name, photo_url, email, created_at, is_blocked')
+            .limit(30);
         }
       };
 
       const [wRes, uRes, rRes] = await Promise.all([
-        supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(100),
+        supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(30),
         fetchProfilesWithFallback(),
-        supabaseClient.from('reports').select('*').order('created_at', { ascending: false })
+        supabaseClient.from('reports').select('id, reporter_id, reported_id, reporter_name, reported_name, target_type, reason, status, details, created_at, resource_id').order('created_at', { ascending: false }).limit(50)
       ]);
       
       if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
@@ -3080,7 +3275,7 @@ export default function App() {
         if (missingIds.size > 0) {
           const { data: missingUsers } = await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, email, created_at, is_blocked, custom_theme, name_locked_until, bio_locked_until')
+            .select('id, display_name, photo_url, email, created_at, is_blocked, name_locked_until, bio_locked_until')
             .in('id', Array.from(missingIds));
           if (missingUsers) {
             fetchedUsers = [...fetchedUsers, ...missingUsers];
@@ -3090,7 +3285,7 @@ export default function App() {
 
       if (fetchedUsers.length > 0) {
         const sorted = fetchedUsers.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
-        setUsers(sorted);
+        setUsers(sorted as any);
       }
 
       hasFetchedAdminData.current = true;
@@ -3621,22 +3816,24 @@ export default function App() {
       }));
 
       const conversationsWithLastMsg = await Promise.all(decryptedData.map(async (conv) => {
-        const { data: lastMsg } = await supabaseClient
-          .from('messages')
-          .select('text, sender_id, created_at')
-          .eq('conversation_id', conv.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(); // Use maybeSingle to avoid error if no messages
-        
-        if (lastMsg) {
-          const decryptedLastMsg = decryptGeneralChat(lastMsg.text);
-          return {
-            ...conv,
-            last_message: decryptedLastMsg,
-            last_message_sender_id: lastMsg.sender_id,
-            updated_at: lastMsg.created_at
-          };
+        if (!conv.last_message) {
+          const { data: lastMsg } = await supabaseClient
+            .from('messages')
+            .select('text, sender_id, created_at')
+            .eq('conversation_id', conv.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(); // Use maybeSingle to avoid error if no messages
+          
+          if (lastMsg) {
+            const decryptedLastMsg = decryptGeneralChat(lastMsg.text);
+            return {
+              ...conv,
+              last_message: decryptedLastMsg,
+              last_message_sender_id: lastMsg.sender_id,
+              updated_at: lastMsg.created_at
+            };
+          }
         }
         return conv;
       }));
@@ -3694,6 +3891,7 @@ export default function App() {
               playSound(notificationSettingsRef.current.message_sound || SOUND_OPTIONS[0].url, notificationSettingsRef.current.enable_sounds, user.uid, profile?.display_name || user.displayName || 'Anoniem');
             }
             
+            saveDMsBatchLocally([processedMsg]);
             setMessages(prev => {
               const exists = prev.find(m => m.id === processedMsg.id);
               if (exists) {
@@ -3774,9 +3972,16 @@ export default function App() {
 
     messageChannelRef.current = channel;
 
-    // Initial fetch
+    // Initial fetch with local IndexedDB archive merge
     const fetchMessages = async () => {
       setLoadingMoreMessages(true);
+
+      // Load locally archived DMs from IndexedDB first for instant offline/long-term availability
+      const localDMs = await getLocalDMsForConversation(activeConversation.id);
+      if (localDMs.length > 0) {
+        setMessages(localDMs);
+      }
+
       const { data } = await supabaseClient
         .from('messages')
         .select('id, conversation_id, sender_id, text, created_at')
@@ -3786,13 +3991,25 @@ export default function App() {
       
       if (data) {
         // Decrypt messages
-        const decryptedMessages = (data as DirectMessage[]).map(m => ({
+        const decryptedServerMsgs = (data as DirectMessage[]).map(m => ({
           ...m,
           text: decryptGeneralChat(m.text)
         }));
-        // Don't reverse - we want newest first at index 0 for flex-col-reverse
-        setMessages(decryptedMessages);
+
+        // Merge local IndexedDB history with server data (server updates take priority)
+        const messageMap = new Map<string, DirectMessage>();
+        localDMs.forEach(m => messageMap.set(m.id, m));
+        decryptedServerMsgs.forEach(m => messageMap.set(m.id, m));
+
+        const mergedMessages = Array.from(messageMap.values()).sort((a, b) => 
+          (b.created_at || '').localeCompare(a.created_at || '')
+        );
+
+        setMessages(mergedMessages);
         setHasMoreMessages(data.length === messagesLimit);
+
+        // Save merged history back to local IndexedDB asynchronously
+        saveDMsBatchLocally(mergedMessages);
       }
       setLoadingMoreMessages(false);
     };
@@ -3875,7 +4092,7 @@ export default function App() {
           const uids = Object.keys(users);
           
           uids.forEach(uid => {
-            if (now - users[uid].lastSeen > 5000) {
+            if (now - users[uid].lastSeen > 10000) {
               delete users[uid];
               usersChanged = true;
               changed = true;
@@ -3925,7 +4142,7 @@ export default function App() {
     sendTypingBroadcast();
 
     // Send periodically while typing
-    const interval = setInterval(sendTypingBroadcast, 2000);
+    const interval = setInterval(sendTypingBroadcast, 5000);
 
     return () => {
       clearInterval(interval);
@@ -4046,7 +4263,7 @@ export default function App() {
         query.ilike('display_name', `%${userSearchQuery}%`);
       }
       
-      const { data } = await query.limit(50);
+      const { data } = await query.limit(30);
       if (data) {
         const unblockedData = data.filter(u => !u.is_blocked);
         setUsers(prev => {
@@ -4100,6 +4317,7 @@ export default function App() {
         if (payload.eventType === 'INSERT') {
           const rawPost = payload.new as Post;
           const latestPost = { ...rawPost, content: decryptGeneralChat(rawPost.content) };
+          savePostsBatchLocally([latestPost]);
           
           // Skip if we already have it
           let alreadyExists = false;
@@ -4216,15 +4434,21 @@ export default function App() {
 
     postsChannelRef.current = channel;
 
-    // Initial fetch
+    // Initial fetch with local IndexedDB archive merge
     const fetchPosts = async () => {
       if (isPostingRef.current || hasFetchedPosts.current) return;
       
+      // Load local IndexedDB posts first
+      const localPosts = await getLocalPosts();
+      if (localPosts.length > 0) {
+        setPosts(localPosts);
+      }
+
       let query = supabaseClient
         .from('posts')
         .select('id, content, author_id, author_name, author_photo, created_at, parent_id')
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(30);
 
       const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
       if (!isSystemAdmin && joinDate) {
@@ -4235,10 +4459,22 @@ export default function App() {
       
       if (data) {
         const decryptedPosts = (data as Post[]).map(p => ({ ...p, content: decryptGeneralChat(p.content) }));
-        setPosts(decryptedPosts);
-        localStorage.setItem('cached_posts', JSON.stringify(decryptedPosts));
-        if (data.length > 0) {
-          lastPostId.current = data[0].id;
+        
+        // Merge local IndexedDB archive with server posts
+        const postMap = new Map<string, Post>();
+        localPosts.forEach(p => postMap.set(p.id, p));
+        decryptedPosts.forEach(p => postMap.set(p.id, p));
+
+        const mergedPosts = Array.from(postMap.values()).sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        setPosts(mergedPosts);
+        localStorage.setItem('cached_posts', JSON.stringify(mergedPosts.slice(0, 50)));
+        savePostsBatchLocally(mergedPosts);
+
+        if (mergedPosts.length > 0) {
+          lastPostId.current = mergedPosts[0].id;
         }
         hasFetchedPosts.current = true;
       }
@@ -4263,7 +4499,7 @@ export default function App() {
           .from('forum_threads')
           .select('id, author_id, author_name, author_photo, title, content, created_at, updated_at, comment_count')
           .order('updated_at', { ascending: false })
-          .limit(50);
+          .limit(30);
 
         const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
         if (!isSystemAdmin && joinDate) {
@@ -4413,7 +4649,7 @@ export default function App() {
 
   const sendDiscordNotification = async (type: 'general' | 'dm', authorName: string, content: string) => {
     const settings = notificationSettingsRef.current;
-    const webhookUrl = settings.discord_webhook_url;
+    return; const webhookUrl = settings.discord_webhook_url;
     if (!webhookUrl || !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
       return;
     }
@@ -4467,6 +4703,9 @@ export default function App() {
   const handleLogin = async () => {
     setIsAuthModalOpen(true);
     setAuthError(null);
+    setAuthStep('email');
+    setLookupProfile(null);
+    setAuthPassword('');
   };
 
   const handleUpdateNotifications = async () => {
@@ -4533,11 +4772,14 @@ export default function App() {
     isSavingThemeRef.current = true;
     try {
       const currentTheme = profile?.custom_theme || {};
-      const updatedTheme = {
+      let updatedTheme = sanitizeCustomTheme({
         ...currentTheme,
         ...customTheme,
         agreed_terms_v2: true
-      };
+      });
+      if (updatedTheme.wallpaper && updatedTheme.wallpaper.startsWith('data:image')) {
+        updatedTheme.wallpaper = await compressImage(updatedTheme.wallpaper, 640, 360, 0.5);
+      }
       const { error } = await supabaseClient
         .from('profiles')
         .update({ 
@@ -4547,6 +4789,7 @@ export default function App() {
         .eq('id', user.uid);
       
       if (error) throw error;
+      setCustomTheme(updatedTheme);
       setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme, use_custom_theme: useCustomTheme } : null);
       toast.success('Thema instellingen opgeslagen');
       logAudioEvent('system', 'success', 'Thema bijgewerkt', user.uid, profile?.display_name || user.displayName || 'Anoniem');
@@ -4562,9 +4805,51 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await supabaseClient.auth.signOut();
+      await Promise.allSettled([
+        supabaseClient.auth.signOut({ scope: 'local' }),
+        supabaseClient.auth.signOut(),
+        supabase.auth.signOut({ scope: 'local' }),
+        supabase.auth.signOut()
+      ]);
     } catch (err) {
       console.error('Logout error:', err);
+    } finally {
+      await resetSupabaseClients();
+
+      try {
+        secureLocalStorage.removeItem('cached_profile');
+        secureLocalStorage.removeItem('cached_isWhitelisted');
+        secureLocalStorage.removeItem('cached_conversations');
+        secureLocalStorage.removeItem('cached_nicknames');
+        if (typeof window !== 'undefined') {
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < window.localStorage.length; i++) {
+            const k = window.localStorage.key(i);
+            if (k && (k.startsWith('sb-') || k.includes('supabase') || k.includes('auth-token') || k.includes('cached_'))) {
+              keysToRemove.push(k);
+            }
+          }
+          keysToRemove.forEach(k => window.localStorage.removeItem(k));
+          window.sessionStorage.clear();
+        }
+      } catch (e) {
+        console.warn('Storage cleanup notice:', e);
+      }
+
+      setUser(null);
+      setProfile(null);
+      setIsWhitelisted(null);
+      currentUidRef.current = null;
+      setSupabaseFirebaseUid(null);
+      telemetryRecordedUidRef.current = null;
+      hasFetchedProfile.current = false;
+      setActiveConversation(null);
+      setMessages([]);
+      setSelectedUser(null);
+      setView('chat');
+      setSupabaseClient(createSupabaseClient(null));
+
+      toast.success('Je bent succesvol uitgelogd.');
     }
   };
 
@@ -4583,6 +4868,18 @@ export default function App() {
     const targetDisplayName = displayNameInput.trim() || user.displayName || 'Anoniem';
     if (isNameLocked && targetDisplayName !== profile?.display_name) {
       toast.error('Je weergavenaam is vergrendeld door een administrator!');
+      setSaving(false);
+      return;
+    }
+
+    const piracyCheck = isProtectedNameOrImpersonation(targetDisplayName, user.email);
+    if (piracyCheck.isPirated) {
+      setAntiPiracyModalState({
+        isOpen: true,
+        attemptedName: targetDisplayName,
+        reason: piracyCheck.reason
+      });
+      toast.error('Gereserveerde naam gedetecteerd (Anti Name Piracy).');
       setSaving(false);
       return;
     }
@@ -4609,12 +4906,11 @@ export default function App() {
         message_sound: notificationSettings.message_sound,
         post_sound: notificationSettings.post_sound
       },
-      custom_theme: {
+      custom_theme: sanitizeCustomTheme({
         ...(profile?.custom_theme || {}),
         ...customTheme,
-        banner_url: bannerURLInput.trim() || null,
         agreed_terms_v2: true
-      },
+      }),
       use_custom_theme: useCustomTheme,
       custom_sounds: customSounds,
       updated_at: new Date().toISOString()
@@ -4718,7 +5014,7 @@ export default function App() {
           const timeout = setTimeout(() => {
             cleanup();
             reject(new Error('Time-out bij laden audio. Is de URL een direct audio bestand?'));
-          }, 10000);
+          }, 60000);
 
           const cleanup = () => {
             clearTimeout(timeout);
@@ -5138,15 +5434,16 @@ export default function App() {
     setError(null);
 
     const postPromise = (async () => {
+      const processedContent = await autoCompressAllDataUrlsInText(content);
       // Moderation check
-      const moderation = await moderateContent(content);
+      const moderation = await moderateContent(processedContent);
       if (!moderation.allowed) {
         isPostingRef.current = false;
         throw new Error(moderation.reason || 'Je bericht is geblokkeerd vanwege negatieve uitlatingen over personen.');
       }
 
-      console.log('Attempting to insert post:', { content, author_id: user.uid, parent_id: replyingTo?.id });
-      const encryptedContent = encryptGeneralChat(content);
+      console.log('Attempting to insert post:', { content: processedContent, author_id: user.uid, parent_id: replyingTo?.id });
+      const encryptedContent = encryptGeneralChat(processedContent);
       const { data: insertData, error } = await supabaseClient.from('posts').insert({
         author_id: user.uid,
         author_name: profile?.display_name || user.displayName || 'Anoniem',
@@ -5154,7 +5451,7 @@ export default function App() {
         content: encryptedContent,
         created_at: new Date().toISOString(),
         parent_id: replyingTo?.id || null
-      }).select().single();
+      }).select('id, content, author_id, author_name, author_photo, created_at, parent_id').single();
 
       if (error) {
         console.error('Insert post error:', error);
@@ -5187,6 +5484,7 @@ export default function App() {
       if (insertData) {
         handleMentions(content, insertData.id, 'post');
         const decryptedPost = { ...insertData, content: content };
+        savePostsBatchLocally([decryptedPost]);
         setPosts((prev) => {
           const alreadyExists = prev.some(p => p.id === decryptedPost.id);
           if (alreadyExists) return prev;
@@ -5247,8 +5545,10 @@ export default function App() {
     
     setSending(true);
 
+    const processedContent = await autoCompressAllDataUrlsInText(threadContentInput.trim());
+
     // Moderation check
-    const moderation = await moderateContent(threadContentInput.trim());
+    const moderation = await moderateContent(processedContent);
     if (!moderation.allowed) {
       toast.error(moderation.reason || 'Je topic is geblokkeerd vanwege negatieve uitlatingen over personen.', {
         icon: '🛡️',
@@ -5263,7 +5563,7 @@ export default function App() {
       author_name: profile?.display_name || user.displayName || 'Anoniem',
       author_photo: profile?.photo_url || user.photoURL || undefined,
       title: encryptGeneralChat(threadTitleInput.trim()),
-      content: encryptGeneralChat(threadContentInput.trim()),
+      content: encryptGeneralChat(processedContent),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -5271,7 +5571,7 @@ export default function App() {
     console.log('Attempting to insert forum thread. Payload:', JSON.stringify(payload, null, 2));
     
     try {
-      const { data, error } = await supabaseClient.from('forum_threads').insert(payload).select().single();
+      const { data, error } = await supabaseClient.from('forum_threads').insert(payload).select('id, author_id, author_name, author_photo, title, content, created_at, updated_at, comment_count').single();
 
       if (error) throw error;
       
@@ -5323,8 +5623,10 @@ export default function App() {
     
     setSending(true);
 
+    const processedComment = await autoCompressAllDataUrlsInText(commentInput.trim());
+
     // Moderation check
-    const moderation = await moderateContent(commentInput.trim());
+    const moderation = await moderateContent(processedComment);
     if (!moderation.allowed) {
       toast.error(moderation.reason || 'Je reactie is geblokkeerd vanwege negatieve uitlatingen over personen.', {
         icon: '🛡️',
@@ -5335,7 +5637,7 @@ export default function App() {
     }
 
     try {
-      const encryptedComment = encryptGeneralChat(commentInput.trim());
+      const encryptedComment = encryptGeneralChat(processedComment);
       const { data, error } = await supabaseClient.from('forum_comments').insert({
         thread_id: threadId,
         author_id: user.uid,
@@ -5344,7 +5646,7 @@ export default function App() {
         content: encryptedComment,
         created_at: new Date().toISOString(),
         parent_id: replyingToComment?.id || null
-      }).select().single();
+      }).select('id, thread_id, author_id, author_name, author_photo, content, created_at, parent_id').single();
 
       if (error) throw error;
       
@@ -5388,28 +5690,135 @@ export default function App() {
     }
   };
 
+  const handleDeleteThread = async (threadId: string) => {
+    if (!user || isWhitelisted !== true) return;
+    if (!checkRateLimit()) return;
+    try {
+      // 1. Delete all forum comments attached to this thread first
+      try {
+        await supabaseClient.from('forum_comments').delete().eq('thread_id', threadId);
+      } catch (e) {
+        console.warn('Error deleting forum comments:', e);
+      }
+
+      // 2. Delete notifications linked to this thread
+      try {
+        await supabaseClient.from('notifications').delete().eq('resource_id', threadId);
+      } catch {}
+
+      // 3. Delete the thread itself
+      let query = supabaseClient.from('forum_threads').delete().eq('id', threadId).select('id');
+      if (!isAdmin) {
+        query = query.eq('author_id', user.uid);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Kon topic niet verwijderen. Mogelijk heb je niet de juiste rechten (RLS).');
+      }
+
+      setThreads(prev => prev.filter(t => t.id !== threadId));
+      if (activeThread?.id === threadId) {
+        setActiveThread(null);
+        setThreadComments([]);
+      }
+      toast.success('Topic en alle reacties verwijderd');
+    } catch (err) {
+      handleSupabaseError(err, 'topic verwijderen', user, isAdmin);
+    }
+  };
+
+  const handleDeleteForumComment = async (commentId: string, threadId: string) => {
+    if (!user || isWhitelisted !== true) return;
+    if (!checkRateLimit()) return;
+    try {
+      // Delete any child comments attached to this comment
+      try {
+        await supabaseClient.from('forum_comments').delete().eq('parent_id', commentId);
+      } catch {}
+
+      let query = supabaseClient.from('forum_comments').delete().eq('id', commentId).select('id');
+      if (!isAdmin) {
+        query = query.eq('author_id', user.uid);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Kon reactie niet verwijderen. Mogelijk heb je niet de juiste rechten (RLS).');
+      }
+
+      setThreadComments(prev => prev.filter(c => c.id !== commentId && c.parent_id !== commentId));
+      setThreads(prev => prev.map(t => t.id === threadId ? { ...t, comment_count: Math.max(0, (t.comment_count || 1) - 1) } : t));
+      toast.success('Reactie verwijderd');
+    } catch (err) {
+      handleSupabaseError(err, 'reactie verwijderen', user, isAdmin);
+    }
+  };
+
+  const handleBlockPost = async (postId: string, currentBlockStatus: boolean) => {
+    if (!isAdmin || !checkRateLimit()) return;
+    
+    try {
+      const { error } = await supabaseClient
+        .from('posts')
+        .update({ is_blocked: !currentBlockStatus })
+        .eq('id', postId);
+        
+      if (error) throw error;
+      
+      setPosts(prev => {
+        const updated = prev.map(p => p.id === postId ? { ...p, is_blocked: !currentBlockStatus } : p);
+        localStorage.setItem('cached_posts', JSON.stringify(updated));
+        return updated;
+      });
+      toast.success(!currentBlockStatus ? 'Post geblokkeerd' : 'Post gedeblokkeerd');
+    } catch (err) {
+      console.error('Error blocking post:', err);
+      toast.error('Kon post niet blokkeren');
+    }
+  };
+
   const handleDeletePost = async (postId: string) => {
     if (!checkRateLimit()) return;
     
     isPostingRef.current = true;
     const deletePromise = (async () => {
-      console.log('Attempting to delete post:', postId);
+      console.log('Attempting to delete post and attached replies/comments:', postId);
       
+      // 1. Delete all replies / comments attached to this post
+      try {
+        await supabaseClient.from('posts').delete().eq('parent_id', postId);
+      } catch (err) {
+        console.warn('Error deleting replies for post:', err);
+      }
+
+      // 2. Delete any attached notifications for this post
+      try {
+        await supabaseClient.from('notifications').delete().eq('resource_id', postId);
+      } catch {}
+
+      // 3. Delete the post itself
       let query = supabaseClient
         .from('posts')
         .delete()
-        .eq('id', postId);
+        .eq('id', postId)
+        .select('id');
       
       if (!isAdmin) {
         query = query.eq('author_id', user.uid);
       }
 
-      const { error } = await query;
+      const { data, error } = await query;
 
       if (error) {
         console.error('Delete post error details:', error);
         isPostingRef.current = false;
         throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        isPostingRef.current = false;
+        throw new Error('Kon bericht niet verwijderen. Mogelijk heb je niet de juiste rechten in de database (Supabase RLS).');
       }
 
       // Broadcast delete to others
@@ -5421,9 +5830,9 @@ export default function App() {
         });
       }
 
-      // Update local state immediately for better UX
+      // Update local state immediately for better UX (remove post and its replies)
       setPosts(prev => {
-        const newPosts = prev.filter(p => p.id !== postId);
+        const newPosts = prev.filter(p => p.id !== postId && p.parent_id !== postId);
         localStorage.setItem('cached_posts', JSON.stringify(newPosts));
         return newPosts;
       });
@@ -5432,8 +5841,8 @@ export default function App() {
     })();
 
     toast.promise(deletePromise, {
-      loading: 'Bericht verwijderen...',
-      success: 'Bericht verwijderd',
+      loading: 'Bericht en reacties verwijderen...',
+      success: 'Bericht en alle reacties verwijderd',
       error: (err) => `Fout: ${err.message || 'Kon bericht niet verwijderen'}`
     });
 
@@ -5649,17 +6058,22 @@ export default function App() {
       let query = supabaseClient
         .from('messages')
         .delete()
-        .eq('id', messageId);
+        .eq('id', messageId)
+        .select('id');
       
       if (!isAdmin) {
         query = query.eq('sender_id', user.uid);
       }
 
-      const { error } = await query;
+      const { data, error } = await query;
 
       if (error) {
         console.error('Delete message error:', error);
         throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        throw new Error('Kon bericht niet verwijderen. Mogelijk heb je niet de juiste rechten (RLS).');
       }
 
       // Broadcast delete to others
@@ -5725,6 +6139,11 @@ export default function App() {
     if (!isAdmin || !whitelistInput.trim()) return;
     if (!checkRateLimit()) return;
     const email = whitelistInput.trim().toLowerCase();
+
+    if (!isValidEmail(email)) {
+      toast.error('Voer een geldig e-mailadres in.');
+      return;
+    }
     
     try {
       const { error } = await supabaseClient.from('whitelist').insert({
@@ -5782,7 +6201,7 @@ export default function App() {
           updated_at: new Date().toISOString()
         })
         .eq('id', userId)
-        .select();
+        .select('id, is_blocked');
 
       if (error) {
         console.error('[Admin] Supabase error during block operation:', error);
@@ -6237,39 +6656,76 @@ export default function App() {
     }
   };
 
-  const handleWallpaperUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleWallpaperUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 4 * 1024 * 1024) {
-      toast.error('Afbeelding is te groot (max 4MB)');
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('Afbeelding is te groot (max 8MB)');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
-      setCustomTheme(prev => ({ ...prev, wallpaper: base64String }));
-    };
-    reader.readAsDataURL(file);
+    try {
+      // 1. Binary compression (pure WebP Blob)
+      const binaryBlob = await compressImageToBlob(file, 800, 600, 0.60, 'image/webp');
+      
+      // 2. Try ImgBB CDN first for 0% database bloat
+      const imgbbRes = await uploadImageToImgBB(binaryBlob, 'wallpaper');
+      if (imgbbRes?.url) {
+        setCustomTheme(prev => ({ ...prev, wallpaper: imgbbRes.url }));
+        toast.success('Achtergrond geüpload via ImgBB CDN!');
+        return;
+      }
+
+      // 3. Fallback to Supabase Storage
+      const storageUrl = await uploadBinaryToStorage(binaryBlob, 'wallpapers', user?.uid);
+      if (storageUrl) {
+        setCustomTheme(prev => ({ ...prev, wallpaper: storageUrl }));
+        toast.success('Achtergrond geüpload via CDN opslag!');
+      } else {
+        const compressed = await compressImage(file, 640, 360, 0.50);
+        setCustomTheme(prev => ({ ...prev, wallpaper: compressed }));
+        toast.success('Achtergrond geoptimaliseerd en geladen!');
+      }
+    } catch {
+      toast.error('Kon achtergrond niet verwerken');
+    }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 4 * 1024 * 1024) {
-      toast.error('Profielfoto is te groot (max 4MB)');
+    if (file.size > 6 * 1024 * 1024) {
+      toast.error('Profielfoto is te groot (max 6MB)');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
-      setPhotoURLInput(base64String);
-      toast.success('Profielfoto geüpload! Vergeet niet op te slaan.');
-    };
-    reader.readAsDataURL(file);
+    try {
+      // 1. Binary compression (pure WebP Blob)
+      const binaryBlob = await compressImageToBlob(file, 300, 300, 0.75, 'image/webp');
+      
+      // 2. Try ImgBB CDN first
+      const imgbbRes = await uploadImageToImgBB(binaryBlob, 'avatar');
+      if (imgbbRes?.url) {
+        setPhotoURLInput(imgbbRes.url);
+        toast.success('Profielfoto geüpload via ImgBB CDN! Vergeet niet op te slaan.');
+        return;
+      }
+
+      // 3. Fallback to Supabase Storage
+      const storageUrl = await uploadBinaryToStorage(binaryBlob, 'avatars', user?.uid);
+      if (storageUrl) {
+        setPhotoURLInput(storageUrl);
+        toast.success('Profielfoto geüpload naar CDN opslag! Vergeet niet op te slaan.');
+      } else {
+        const compressed = await compressImage(file, 200, 200, 0.70);
+        setPhotoURLInput(compressed);
+        toast.success('Profielfoto geüpload! Vergeet niet op te slaan.');
+      }
+    } catch {
+      toast.error('Kon profielfoto niet verwerken');
+    }
   };
 
   const handleUpdateReportStatus = async (reportId: string, status: string) => {
@@ -6357,7 +6813,7 @@ export default function App() {
       const { data, error } = await supabaseClient
         .from('conversations')
         .insert(newGroupConv)
-        .select();
+        .select('id, participants, participant_names, participant_photos, last_message, last_message_sender_id, updated_at, is_group, name, created_by');
         
       console.log('Group insert result:', { data, error });
 
@@ -6437,7 +6893,7 @@ export default function App() {
       const { data, error } = await supabaseClient
         .from('conversations')
         .insert(newConv)
-        .select();
+        .select('id, participants, participant_names, participant_photos, last_message, last_message_sender_id, updated_at, is_group, name, created_by');
         
       console.log('1-on-1 insert result:', { data, error });
 
@@ -6530,7 +6986,7 @@ export default function App() {
           try {
             const { data, error } = await supabaseClient
               .from('forum_threads')
-              .select('*')
+              .select('id, author_id, author_name, author_photo, title, content, created_at, updated_at, comment_count')
               .eq('id', notif.resource_id)
               .single();
             if (data && !error) {
@@ -6678,12 +7134,16 @@ export default function App() {
           content: encryptedContent,
           author_id: user.uid,
           created_at: new Date().toISOString()
-        }).select().single();
+        }).select('id, content, author_id, created_at').single();
         
         if (error) throw error;
         
         if (insertData) {
-          const decryptedPost = { ...insertData, content: messageText };
+          const decryptedPost: Post = {
+            ...(insertData as any),
+            content: messageText,
+            author_name: profile?.display_name || user.displayName || 'Anoniem'
+          };
           setPosts(prev => [decryptedPost, ...prev].slice(0, 100));
           
           if (postsChannelRef.current) {
@@ -6721,7 +7181,7 @@ export default function App() {
             text: encryptedText,
             created_at: new Date().toISOString()
           })
-          .select()
+          .select('id, conversation_id, sender_id, text, created_at')
           .single();
           
         if (msgError) throw msgError;
@@ -6752,7 +7212,7 @@ export default function App() {
     const rawText = (customContent !== undefined ? customContent : messageInput).trim();
     if (!user || !rawText || !activeConversation || isWhitelisted !== true) return;
     
-    const text = rawText;
+    const text = await autoCompressAllDataUrlsInText(rawText);
     const hasUpload = text.includes('data:image/') || text.includes('data:audio/') || text.includes('data:video/');
     const maxAllowed = hasUpload ? 20000000 : MAX_CONTENT_LENGTH;
     if (text.length > maxAllowed) {
@@ -6786,7 +7246,7 @@ export default function App() {
           text: payloadText,
           created_at: new Date().toISOString()
         })
-        .select()
+        .select('id, conversation_id, sender_id, text, created_at')
         .single();
       
       if (msgError) {
@@ -6800,6 +7260,7 @@ export default function App() {
       // Update local state immediately for better UX
       if (insertedMsg) {
         const localMsg = { ...insertedMsg, text: text }; // Use cleartext for the sender's local view
+        saveDMsBatchLocally([localMsg]);
         setMessages(prev => {
           if (prev.some(m => m.id === localMsg.id)) return prev;
           return [localMsg, ...prev];
@@ -7150,25 +7611,29 @@ export default function App() {
 
   if (loading && !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-zinc-400 mx-auto mb-4" />
-          <p className="text-zinc-500 text-sm font-medium">Laden...</p>
-        </div>
-      </div>
+      <ThemedLoadingScreen 
+        fullScreen 
+        message="FTJM Forum Laden..." 
+        submessage="Bezig met initialiseren van beveiligde sessie"
+        customTheme={customTheme}
+        modernCustom={modernCustom}
+      />
     );
   }
 
   if (user && isWhitelisted === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-zinc-400 mx-auto mb-4" />
-          <p className="text-zinc-500 text-sm font-medium">Toegang controleren...</p>
-        </div>
-      </div>
+      <ThemedLoadingScreen 
+        fullScreen 
+        message="Toegang controleren..." 
+        submessage={`Verifiëren van autorisatie voor ${user.email || 'gebruiker'}`}
+        customTheme={customTheme}
+        modernCustom={modernCustom}
+      />
     );
   }
+
+  const isModernUI = Boolean(customTheme?.modern_ui);
 
   return (
     <div className="min-h-screen relative overflow-x-hidden">
@@ -7179,13 +7644,8 @@ export default function App() {
             animate={{ scale: 1, opacity: 1 }}
             className="max-w-md space-y-8"
           >
-            <div className="w-24 h-24 bg-transparent rounded-full flex items-center justify-center mx-auto mb-8 overflow-hidden">
-              <img 
-                src="/logo.png" 
-                alt="FTJM Logo" 
-                className="w-full h-full object-cover scale-[1.35]"
-                referrerPolicy="no-referrer"
-              />
+            <div className="w-24 h-24 bg-[#001E36] rounded-full flex items-center justify-center mx-auto mb-8 overflow-hidden relative border border-white/10">
+              <Logo className="w-full h-full object-contain p-0.5" fallbackTextSize="text-lg font-black tracking-tighter" />
             </div>
             <div className="space-y-4">
               <h1 className="text-4xl font-black text-white uppercase tracking-tight leading-none">
@@ -7321,7 +7781,7 @@ export default function App() {
           backgroundAttachment: 'fixed'
         } : {}}
       >
-      {user && (
+      {user && !isModernUI && (
         <nav 
           className={`border-b border-app-border sticky top-0 z-[100] transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass bg-app-card/75 backdrop-blur-md' : 'bg-app-card/90 backdrop-blur-md'}`}
           style={useCustomTheme ? { 
@@ -7331,13 +7791,8 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('chat')}>
-              <div className="w-8 h-8 bg-transparent rounded-lg flex items-center justify-center overflow-hidden">
-                <img 
-                  src="/logo.png" 
-                  alt="FTJM Logo" 
-                  className="w-full h-full object-cover scale-[1.35]"
-                  referrerPolicy="no-referrer"
-                />
+              <div className="w-8 h-8 bg-app-accent rounded-lg flex items-center justify-center overflow-hidden relative border border-app-border">
+                <Logo className="w-full h-full object-contain p-0.5" fallbackTextSize="text-[9px] font-black tracking-tighter" />
               </div>
               <span className="font-semibold tracking-tight text-sm sm:text-base text-app-ink">FTJM Forum</span>
             </div>
@@ -7356,14 +7811,14 @@ export default function App() {
                   onClick={() => setView('chat')}
                   className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'chat' ? 'bg-app-card text-app-ink shadow-sm' : 'text-app-muted hover:text-app-ink'}`}
                 >
-                  <MessageSquare className="w-4 h-4" />
+                  <AnimatedChatIcon isActive={view === 'chat'} className="w-4 h-4" />
                   {t("Chat")}
                 </button>
                 <button 
                   onClick={() => setView('messages')}
                   className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === 'messages' ? 'bg-app-card text-app-ink shadow-sm' : 'text-app-muted hover:text-app-ink'}`}
                 >
-                  <Mail className="w-4 h-4" />
+                  <AnimatedMailIcon isActive={view === 'messages'} className="w-4 h-4" />
                   {t("Berichten")}
                 </button>
               </div>
@@ -7379,7 +7834,7 @@ export default function App() {
                   }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all relative ${['forum', 'settings', 'news'].includes(view) ? 'bg-app-ink text-app-bg shadow-md' : 'bg-app-accent text-app-muted hover:text-app-ink'}`}
                 >
-                  <Settings className={`w-4 h-4 ${showNavDropdown ? 'rotate-90' : ''} transition-transform`} />
+                  <AnimatedMenuIcon isOpen={showNavDropdown} isActive={['forum', 'settings', 'news'].includes(view)} className="w-4 h-4" />
                   {t("Menu")}
                   <ChevronLeft className={`w-4 h-4 -rotate-90 transition-transform ${showNavDropdown ? 'rotate-90' : ''}`} />
                   {!hasSeenMenu && (
@@ -7416,7 +7871,7 @@ export default function App() {
                           onClick={() => { setView('forum'); setShowNavDropdown(false); }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'forum' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
-                          <Layout className="w-4 h-4" />
+                          <AnimatedForumIcon isActive={view === 'forum'} className="w-4 h-4" />
                           {t("Community Forum")}
                         </button>
                         <button 
@@ -7430,7 +7885,7 @@ export default function App() {
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all relative ${view === 'news' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
-                          <Newspaper className="w-4 h-4" />
+                          <AnimatedNewsIcon isActive={view === 'news'} className="w-4 h-4" />
                           {t("Laatste Nieuws")}
                           {!hasSeenNews && (
                             <motion.div 
@@ -7447,7 +7902,7 @@ export default function App() {
                           onClick={() => { setView('settings'); setShowNavDropdown(false); }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'settings' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
-                          <Settings className="w-4 h-4" />
+                          <AnimatedMenuIcon isActive={view === 'settings'} className="w-4 h-4" />
                           {t("Instellingen")}
                         </button>
                         <div className="h-px bg-app-border my-2 mx-2" />
@@ -7455,7 +7910,7 @@ export default function App() {
                           onClick={() => { setView('arcade'); setShowNavDropdown(false); }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${view === 'arcade' ? 'bg-app-accent text-app-ink' : 'text-app-muted hover:bg-app-accent/50 hover:text-app-ink'}`}
                         >
-                          <Gamepad2 className="w-4 h-4 text-cyan-500 animate-[pulse_2s_infinite]" />
+                          <AnimatedArcadeIcon isActive={view === 'arcade'} className="w-4 h-4 text-cyan-500" />
                           {t("🕹️ Arcade (Geheim!)")}
                         </button>
                         <div className="h-px bg-app-border my-2 mx-2" />
@@ -7482,7 +7937,7 @@ export default function App() {
                   className={`p-2 rounded-full transition-all group relative ${view === 'media_feed' ? 'bg-app-accent text-cyan-500' : 'hover:bg-app-accent text-app-muted hover:text-app-ink'}`}
                   title={t("Media Feed")}
                 >
-                  <Film className="w-5 h-5" />
+                  <AnimatedMediaIcon isActive={view === 'media_feed'} className="w-5 h-5" />
                   <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-app-ink text-app-bg text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
                     {t("Media Feed")}
                   </span>
@@ -7492,7 +7947,11 @@ export default function App() {
                     onClick={() => setShowNotifications(!showNotifications)}
                   className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink relative"
                 >
-                  <Bell className="w-5 h-5" />
+                  <AnimatedBellIcon 
+                    hasUnread={notifications.some(n => !n.is_read)} 
+                    isActive={showNotifications} 
+                    className="w-5 h-5" 
+                  />
                   {notifications.some(n => !n.is_read) && (
                     <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-app-card" />
                   )}
@@ -7610,7 +8069,7 @@ export default function App() {
               className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink relative"
               title="Toon Snelkoppelingen (Druk op ?)"
             >
-              <Keyboard className="w-4 h-4 sm:w-5 sm:h-5" />
+              <AnimatedKeyboardIcon className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <button 
               onClick={() => {
@@ -7623,7 +8082,7 @@ export default function App() {
               className="p-2 hover:bg-app-accent rounded-full transition-colors text-app-muted hover:text-app-ink relative"
               title={useCustomTheme ? 'Thema vergrendeld door Custom Thema' : (theme === 'light' ? 'Donkere modus' : theme === 'dark' ? 'Enhanced modus' : 'Lichte modus')}
             >
-              {theme === 'light' ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : theme === 'dark' ? <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
+              <AnimatedThemeIcon themeMode={theme} className="w-4 h-4 sm:w-5 sm:h-5" />
               {useCustomTheme && (
                 <div className="absolute -top-1 -right-1 bg-app-ink text-app-bg p-0.5 rounded-full border border-app-border">
                   <LockIcon className="w-2.5 h-2.5" />
@@ -7655,9 +8114,9 @@ export default function App() {
                     <p className="text-sm font-medium leading-none text-app-ink">{profile?.display_name || user.displayName || 'Anoniem'}</p>
                     <p className="text-xs text-app-muted mt-1">{user.email}</p>
                   </div>
-                  {(profile?.photo_url || user.photoURL) ? (
+                  {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                     <img 
-                      src={profile?.photo_url || user.photoURL} 
+                      src={profile?.photo_url || user.photoURL || undefined} 
                       alt={profile?.display_name || user.displayName || ''} 
                       className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-app-border object-cover"
                       referrerPolicy="no-referrer"
@@ -7704,28 +8163,28 @@ export default function App() {
       )}
 
       {/* Bottom Navigation for Mobile */}
-      {user && isWhitelisted && (
-        <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-app-card border-t border-app-border z-50 px-6 py-4 flex items-center justify-between shadow-lg">
+      {user && isWhitelisted && !isModernUI && (
+        <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-app-card border-t border-app-border z-50 px-6 py-3 flex items-center justify-between shadow-lg">
           <button 
             onClick={() => setView('chat')}
             className={`flex flex-col items-center justify-center transition-all ${view === 'chat' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
             title="Chat"
           >
-            <MessageSquare className={`w-7 h-7 ${view === 'chat' ? 'fill-zinc-900/10' : ''}`} />
+            <AnimatedChatIcon isActive={view === 'chat'} className="w-6 h-6" />
           </button>
           <button 
             onClick={() => setView('forum')}
             className={`flex flex-col items-center justify-center transition-all ${view === 'forum' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
             title="Forum"
           >
-            <Layout className={`w-7 h-7 ${view === 'forum' ? 'fill-app-ink/10' : ''}`} />
+            <AnimatedForumIcon isActive={view === 'forum'} className="w-6 h-6" />
           </button>
           <button 
             onClick={() => setView('media_feed')}
             className={`flex flex-col items-center justify-center transition-all ${view === 'media_feed' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
             title="Media"
           >
-            <Film className={`w-7 h-7 ${view === 'media_feed' ? 'fill-app-ink/10' : ''}`} />
+            <AnimatedMediaIcon isActive={view === 'media_feed'} className="w-6 h-6" />
           </button>
           <button 
             onClick={() => {
@@ -7735,26 +8194,170 @@ export default function App() {
             className={`flex flex-col items-center justify-center transition-all ${view === 'messages' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
             title="Berichten"
           >
-            <Mail className={`w-7 h-7 ${view === 'messages' ? 'fill-app-ink/10' : ''}`} />
+            <AnimatedMailIcon isActive={view === 'messages'} className="w-6 h-6" />
           </button>
           <button 
             onClick={() => setView('news')}
             className={`flex flex-col items-center justify-center transition-all ${view === 'news' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
             title="Nieuws"
           >
-            <Newspaper className={`w-7 h-7 ${view === 'news' ? 'fill-app-ink/10' : ''}`} />
+            <AnimatedNewsIcon isActive={view === 'news'} className="w-6 h-6" />
           </button>
           <button 
             onClick={() => setView('settings')}
             className={`flex flex-col items-center justify-center transition-all ${view === 'settings' ? 'text-app-ink scale-110' : 'text-app-muted hover:text-app-ink'}`}
             title="Instellingen"
           >
-            <Settings className={`w-7 h-7 ${view === 'settings' ? 'fill-app-ink/10' : ''}`} />
+            <AnimatedMenuIcon isActive={view === 'settings'} className="w-6 h-6" />
           </button>
         </div>
       )}
 
-      <main className={!user ? "" : (view === 'media_feed' && feedViewMode === 'swipe') ? "max-w-5xl mx-auto w-full px-2 sm:px-6 py-2 sm:py-6 pb-20 sm:pb-8" : "max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12"}>
+      {/* Modern UI Ambient Aura Glow */}
+      {isModernUI && modernCustom?.aura_background !== false && (
+        <div 
+          className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-25 dark:opacity-35 blur-3xl transition-all duration-700 select-none"
+          style={{
+            background: `radial-gradient(circle at 12% 18%, ${getAccentHex(modernCustom, customTheme)}22 0%, transparent 40%), radial-gradient(circle at 88% 82%, ${getAccentHex(modernCustom, customTheme)}18 0%, transparent 45%)`
+          }}
+        />
+      )}
+
+      {user && isWhitelisted && isModernUI && (
+        <>
+          <ModernSidebar 
+            view={view} 
+            setView={setView} 
+            isAdmin={isAdmin} 
+            websiteStatus={websiteStatus}
+            profileListPosition={customTheme.profile_list_position || 'right'}
+            users={users}
+            onlineUsers={onlineUsers}
+            currentUserId={user?.uid}
+            modernCustom={modernCustom}
+            customTheme={customTheme}
+            onOpenCustomizer={() => setShowModernCustomizer(true)}
+            onOpenProfile={(userId) => {
+              const u = users.find(x => x.id === userId);
+              if (u) setSelectedUser(u);
+            }}
+            onStartDM={(u) => {
+              handleStartConversation(u);
+              setView('messages');
+              setMobileChatView('chat');
+            }}
+            onLogout={handleLogout}
+          />
+          {view === 'messages' && !activeConversation && (
+            <ModernTopDMBar
+              user={user}
+              profile={profile}
+              conversations={filteredConversations}
+              activeConversation={activeConversation}
+              onSelectConversation={(conv) => {
+                handleSetActiveConversation(conv);
+                setView('messages');
+                setMobileChatView('chat');
+              }}
+              onNewDM={() => setShowUserSearch(true)}
+              users={users}
+              onlineUsers={onlineUsers}
+              profileListPosition={customTheme.profile_list_position || 'right'}
+              modernCustom={modernCustom}
+              onOpenCustomizer={() => setShowModernCustomizer(true)}
+              onChangeProfileListPosition={async (pos) => {
+                const updatedTheme = { ...customTheme, profile_list_position: pos };
+                setCustomTheme(updatedTheme);
+                setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme } : null);
+                if (user) {
+                  try {
+                    await supabaseClient.from('profiles').update({ custom_theme: updatedTheme }).eq('id', user.uid);
+                  } catch (e) {
+                    console.error('Failed to save profile list position:', e);
+                  }
+                }
+              }}
+              onOpenOwnProfile={() => {
+                if (profile) setSelectedUser(profile);
+              }}
+              onLogout={handleLogout}
+              websiteStatus={websiteStatus}
+              useCustomTheme={useCustomTheme}
+              customTheme={customTheme}
+            />
+          )}
+          {(customTheme.profile_list_position || 'right') !== 'sidebar' && view !== 'messages' && (
+            <ModernProfileList
+              users={users}
+              onlineUsers={onlineUsers}
+              currentUserId={user?.uid}
+              position={customTheme.profile_list_position === 'left' ? 'left' : 'right'}
+              modernCustom={modernCustom}
+              onChangePosition={async (pos) => {
+                const updatedTheme = { ...customTheme, profile_list_position: pos };
+                setCustomTheme(updatedTheme);
+                setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme } : null);
+                if (user) {
+                  try {
+                    await supabaseClient.from('profiles').update({ custom_theme: updatedTheme }).eq('id', user.uid);
+                  } catch (e) {
+                    console.error('Failed to save profile list position:', e);
+                  }
+                }
+              }}
+              onOpenProfile={(userId) => {
+                const u = users.find(x => x.id === userId);
+                if (u) setSelectedUser(u);
+              }}
+              onStartDM={(u) => {
+                handleStartConversation(u);
+                setView('messages');
+                setMobileChatView('chat');
+              }}
+              useCustomTheme={useCustomTheme}
+              customTheme={customTheme}
+            />
+          )}
+          <ModernMobileNav 
+            view={view} 
+            setView={setView} 
+            setMobileChatView={setMobileChatView} 
+            onLogout={handleLogout}
+            onOpenCustomizer={() => setShowModernCustomizer(true)}
+            modernCustom={modernCustom}
+            customTheme={customTheme}
+          />
+        </>
+      )}
+
+      <main className={
+        !user ? "" : 
+        isModernUI ? (
+          `${
+            view === 'messages' ? 'pt-16' : 'pt-6 sm:pt-8'
+          } w-full max-w-7xl mx-auto px-4 ${
+            (modernCustom?.sidebar_position || 'left') === 'right'
+              ? 'sm:pl-6 sm:pr-28'
+              : (modernCustom?.sidebar_position || 'left') === 'compact'
+              ? 'sm:pl-22 sm:pr-6'
+              : (modernCustom?.sidebar_position || 'left') === 'bottom_dock'
+              ? 'sm:px-8'
+              : 'sm:pl-28 sm:pr-8'
+          } ${
+            view !== 'messages' && customTheme.profile_list_position === 'left'
+              ? ((modernCustom?.sidebar_position || 'left') === 'bottom_dock' || (modernCustom?.sidebar_position || 'left') === 'right' ? 'lg:pl-[280px]' : 'lg:pl-[340px]')
+              : ''
+          } ${
+            view !== 'messages' && (customTheme.profile_list_position || 'right') === 'right'
+              ? ((modernCustom?.sidebar_position || 'left') === 'right' ? 'lg:pr-[340px]' : 'lg:pr-[280px]')
+              : ''
+          } ${
+            (modernCustom?.sidebar_position || 'left') === 'bottom_dock' ? 'pb-32 sm:pb-28' : 'pb-28 sm:pb-12'
+          } transition-all duration-500`
+        ) :
+        (view === 'media_feed' && feedViewMode === 'swipe') ? "max-w-5xl mx-auto w-full px-2 sm:px-6 py-2 sm:py-6 pb-20 sm:pb-8" : 
+        "max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12"
+      }>
         <AnimatePresence mode="wait">
           {!user ? (
             <>
@@ -7776,10 +8379,12 @@ export default function App() {
               )}
             </>
           ) : isWhitelisted === null ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="w-12 h-12 text-app-ink animate-spin mb-4" />
-              <p className="text-app-muted font-medium">Toegang controleren...</p>
-            </div>
+            <ThemedLoadingScreen 
+              message="Toegang controleren..." 
+              submessage="Bezig met autorisatieverificatie"
+              customTheme={customTheme}
+              modernCustom={modernCustom}
+            />
           ) : isWhitelisted === false ? (
             <motion.div 
               key="not-whitelisted"
@@ -7788,13 +8393,8 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="max-w-md mx-auto text-center py-20 px-6"
             >
-              <div className="w-24 h-24 bg-transparent rounded-[2rem] flex items-center justify-center mx-auto mb-8 overflow-hidden">
-                <img 
-                  src="/logo.png" 
-                  alt="FTJM Logo" 
-                  className="w-full h-full object-cover scale-[1.35]"
-                  referrerPolicy="no-referrer"
-                />
+              <div className="w-24 h-24 bg-app-accent rounded-[2rem] flex items-center justify-center mx-auto mb-8 overflow-hidden relative border border-app-border">
+                <Logo className="w-full h-full object-contain p-0.5" fallbackTextSize="text-lg font-black tracking-tighter" />
               </div>
               <h1 className="text-4xl font-bold tracking-tight text-app-ink mb-4">Geen Toegang</h1>
               <div className="bg-app-card p-6 rounded-3xl border border-app-border shadow-sm mb-10">
@@ -7853,6 +8453,7 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="w-full relative"
             >
+              <React.Suspense fallback={<ThemedLoadingScreen message="Module laden..." submessage="De gewenste pagina wordt voorbereid" size="md" customTheme={customTheme} modernCustom={modernCustom} />}>
               {/* Privacy Banner voor specifiek account */}
               {user && user.email && user.email.toLowerCase() === '137903@edu.singelland.nl' && (
                 <div id="singelland-privacy-alert" className="mb-8 p-5 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 text-app-ink rounded-[2rem] shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -7886,9 +8487,9 @@ export default function App() {
                     >
                       <div className="flex flex-col items-center text-center">
                         <div className="relative mb-6">
-                          {(profile?.photo_url || user.photoURL) ? (
+                          {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                             <img 
-                              src={profile?.photo_url || user.photoURL} 
+                              src={profile?.photo_url || user.photoURL || undefined} 
                               alt={profile?.display_name || user.displayName || ''} 
                               className="w-24 h-24 rounded-3xl border-4 border-app-card shadow-md"
                               referrerPolicy="no-referrer"
@@ -7916,14 +8517,19 @@ export default function App() {
                               Online
                             </span>
                           </div>
-                          {isAdmin && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-app-muted">Rol</span>
-                              <span className="flex items-center justify-center bg-red-500/15 border border-red-500/30 text-red-400 p-1 rounded-md">
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                              </span>
-                            </div>
-                          )}
+                          <div className="flex justify-between text-sm">
+                            <span className="text-app-muted">Rol</span>
+                            <span className="text-app-ink font-medium flex items-center gap-1">
+                              {profile?.role === 'admin' || user?.email?.toLowerCase() === 'markohoksen@gmail.com' ? (
+                                <>
+                                  <ShieldCheck className="w-4 h-4 text-red-500 shrink-0" />
+                                  <span>Admin</span>
+                                </>
+                              ) : (
+                                <span>Lid</span>
+                              )}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -7948,6 +8554,7 @@ export default function App() {
                       setEditingPostId={setEditingPostId}
                       setEditPostInput={setEditPostInput}
                       handleUpdatePost={handleUpdatePost}
+                      handleBlockPost={handleBlockPost}
                       handleDeletePost={handleDeletePost}
                       handleStartConversation={handleStartConversation}
                       editingPostId={editingPostId}
@@ -7973,26 +8580,30 @@ export default function App() {
                     type="file"
                     id="feed-media-upload"
                     className="hidden"
-                    accept="image/*,video/*"
+                    accept="image/*"
                     onChange={handleProfileMediaUpload}
                     disabled={profileMediaLoading}
                   />
 
                   {/* Upload Processing Overlay */}
                   {profileMediaLoading && (
-                    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[100] flex flex-col items-center justify-center gap-3">
-                      <div className="p-5 bg-app-card border border-app-border rounded-3xl shadow-2xl flex flex-col items-center gap-3">
-                        <Loader2 className="w-10 h-10 animate-spin text-cyan-500" />
-                        <p className="text-xs text-app-ink font-bold tracking-wider uppercase">Bestand verwerken & uploaden...</p>
-                      </div>
-                    </div>
+                    <ThemedLoadingScreen 
+                      fullScreen 
+                      message="Bestand verwerken & uploaden..." 
+                      submessage="Afbeelding of video wordt geoptimaliseerd en opgeslagen"
+                      customTheme={customTheme}
+                      modernCustom={modernCustom}
+                    />
                   )}
 
                   {feedLoading ? (
-                    <div className="flex flex-col items-center justify-center py-20 gap-3">
-                      <Loader2 className="w-10 h-10 animate-spin text-cyan-500" />
-                      <p className="text-xs text-app-muted font-bold tracking-wider uppercase">Feed laden...</p>
-                    </div>
+                    <ThemedLoadingScreen 
+                      message="Media feed laden..." 
+                      submessage="Recente community foto's & video's ophalen"
+                      customTheme={customTheme}
+                      modernCustom={modernCustom}
+                      size="md"
+                    />
                   ) : feedMedia.length === 0 ? (
                     <div className="text-center py-20 bg-app-card border border-app-border rounded-3xl p-8 max-w-lg mx-auto">
                       <Film className="w-12 h-12 text-app-muted mx-auto mb-3 opacity-20" />
@@ -8009,12 +8620,13 @@ export default function App() {
                     /* TikTok / YouTube Shorts Vertical Swipe View - Full Immersive View */
                     <div className="w-full flex items-center justify-center">
                       <MediaSwipeFeed
-                        mediaList={feedMedia}
+                        mediaList={sortedFeedMedia}
                         currentUserId={user?.uid}
                         onLike={handleLikeMedia}
                         onComment={handleCommentMedia}
                         onDeleteComment={handleDeleteCommentMedia}
                         onDeleteMedia={handleDeleteFeedMedia}
+                        onToggleBlockMedia={handleToggleBlockFeedMedia}
                         onOpenProfile={handleOpenProfile}
                         onViewFullscreen={setSelectedFullscreenMedia}
                         nicknames={nicknames}
@@ -8033,7 +8645,7 @@ export default function App() {
                   ) : (
                     /* Classic Grid View */
                     <div className="space-y-6">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                         <div>
                           <h3 className="text-2xl sm:text-3xl font-black text-app-ink flex items-center gap-2">
                             <Film className="w-7 h-7 text-cyan-500 animate-[pulse_2s_infinite]" />
@@ -8045,6 +8657,14 @@ export default function App() {
                         </div>
 
                         <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+                          {/* Sorteer Dropdown */}
+                          <FeedSortDropdown
+                            sortOption={feedSortOption}
+                            onChangeSortOption={setFeedSortOption}
+                            useCustomTheme={useCustomTheme}
+                            customTheme={customTheme}
+                          />
+
                           {/* View Mode Toggle: Grid vs Shorts/Swipe */}
                           <div className="flex items-center bg-app-card border border-app-border p-1 rounded-2xl shadow-sm">
                             <button
@@ -8118,7 +8738,7 @@ export default function App() {
 
                       {/* Grid View Cards */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {feedMedia.map((media, idx) => (
+                        {sortedFeedMedia.map((media, idx) => (
                           <MediaFeedCard
                             key={media.id || idx}
                             media={media}
@@ -8127,6 +8747,7 @@ export default function App() {
                             onComment={handleCommentMedia}
                             onDeleteComment={handleDeleteCommentMedia}
                             onDeleteMedia={handleDeleteFeedMedia}
+                            onToggleBlockMedia={handleToggleBlockFeedMedia}
                             onOpenProfile={handleOpenProfile}
                             onViewFullscreen={setSelectedFullscreenMedia}
                             nicknames={nicknames}
@@ -8170,11 +8791,14 @@ export default function App() {
                   customTheme={customTheme}
                   profiles={users}
                   userProfile={profile}
+                  isModernUI={isModernUI}
+                  onDeleteThread={handleDeleteThread}
+                  onDeleteComment={handleDeleteForumComment}
                 />
               )}
 
               {view === 'messages' && (
-                <MessagesView 
+                <MessagesView isModernUI={isModernUI} 
                   user={user}
                   profile={profile}
                   profiles={users}
@@ -8288,6 +8912,7 @@ export default function App() {
                     hiddenConversationIds={hiddenConversationIds}
                     onToggleHideConversation={handleToggleHideConversation}
                     onUnhideAllConversations={handleUnhideAllConversations}
+                    handleLogout={handleLogout}
                   />
                 </div>
               )}
@@ -8348,6 +8973,7 @@ export default function App() {
                   </div>
                 </div>
               )}
+              </React.Suspense>
             </motion.div>
           )}
         </AnimatePresence>
@@ -8357,7 +8983,7 @@ export default function App() {
           onClose={() => setShowUserSearch(false)}
           searchQuery={userSearchQuery}
           setSearchQuery={setUserSearchQuery}
-          users={users.filter(u => u.id !== user?.uid && !u.is_blocked)}
+          users={users.filter(u => u.id !== user?.uid && !u.is_blocked && !isTestUser(u))}
           onSelectUser={(u) => {
             handleStartConversation(u);
             setShowUserSearch(false);
@@ -8389,13 +9015,8 @@ export default function App() {
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    <div className="absolute inset-0 opacity-10">
-                      <img 
-                        src="/logo.png" 
-                        alt="" 
-                        className="w-64 h-64 -rotate-12 -translate-x-12 -translate-y-12"
-                        referrerPolicy="no-referrer"
-                      />
+                    <div className="absolute inset-0 opacity-10 pointer-events-none">
+                      <Logo className="w-64 h-64 object-contain opacity-20 -rotate-12 -translate-x-12 -translate-y-12" fallbackTextSize="text-4xl font-black tracking-tighter" />
                     </div>
                   )}
                   <button 
@@ -8516,7 +9137,7 @@ export default function App() {
                             }`}
                           >
                             {followLoading ? (
-                              <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
+                              <ThemedSpinner size="xs" color="#06b6d4" />
                             ) : profile?.custom_theme?.following?.includes(selectedUser.id) ? (
                               <>
                                 <Check className="w-4 h-4 text-emerald-500 font-black" />
@@ -8557,7 +9178,7 @@ export default function App() {
                               type="file"
                               id="profile-media-upload"
                               className="hidden"
-                              accept="image/*,video/*"
+                              accept="image/*"
                               onChange={handleProfileMediaUpload}
                               disabled={profileMediaLoading}
                             />
@@ -8574,8 +9195,8 @@ export default function App() {
                       </div>
 
                       {profileMediaLoading ? (
-                        <div className="flex justify-center py-6">
-                          <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
+                        <div className="py-6">
+                          <ThemedInlineLoader message="Media ophalen..." />
                         </div>
                       ) : profileMedia.length === 0 ? (
                         <div className="py-6 text-center border border-dashed border-app-border rounded-2xl">
@@ -8583,39 +9204,59 @@ export default function App() {
                         </div>
                       ) : (
                         <div className="grid grid-cols-3 gap-2">
-                          {profileMedia.map((media, idx) => (
-                            <div key={media.id || idx} className="group relative aspect-square rounded-xl overflow-hidden border border-app-border bg-app-bg">
-                              {media.media_type === 'video' ? (
-                                <video 
-                                  src={media.media_url} 
-                                  className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all"
-                                  onClick={() => setSelectedFullscreenMedia(media.media_url)}
-                                  muted
-                                  playsInline
-                                />
-                              ) : (
-                                <img 
-                                  src={media.media_url} 
-                                  alt="" 
-                                  className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all"
-                                  onClick={() => setSelectedFullscreenMedia(media.media_url)}
-                                  referrerPolicy="no-referrer"
-                                />
-                              )}
-                              {user && user.uid === selectedUser.id && (
-                                <button
-                                  onClick={() => handleDeleteProfileMedia(media.id, media.media_url)}
-                                  className="absolute top-1 right-1 p-1 bg-red-500/85 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-sm cursor-pointer"
-                                  title="Verwijderen"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                              <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/50 text-[7px] font-black text-white uppercase rounded tracking-widest">
-                                {media.media_type}
-                              </span>
-                            </div>
-                          ))}
+                          {profileMedia.map((media, idx) => {
+                            const isBlockedMedia = media.is_blocked === true;
+                            const viewerIsAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+                            return (
+                              <div key={media.id || idx} className="group relative aspect-square rounded-xl overflow-hidden border border-app-border bg-app-bg">
+                                {isBlockedMedia && !viewerIsAdmin ? (
+                                  <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center p-2 text-center text-red-400 gap-1 select-none">
+                                    <ShieldAlert className="w-5 h-5 text-red-500 shrink-0" />
+                                    <span className="text-[9px] font-black uppercase tracking-wider">Blocked</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {isBlockedMedia && viewerIsAdmin && (
+                                      <div className="absolute top-1 left-1 z-10 bg-red-600/90 text-white text-[7px] px-1 py-0.5 rounded font-black uppercase tracking-widest">
+                                        Blocked
+                                      </div>
+                                    )}
+                                    {media.media_type === 'video' ? (
+                                      <video 
+                                        src={media.media_url} 
+                                        className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all"
+                                        onClick={() => setSelectedFullscreenMedia(media.media_url)}
+                                        muted
+                                        playsInline
+                                      />
+                                    ) : (
+                                      <img 
+                                        src={media.media_url} 
+                                        alt="" 
+                                        className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all"
+                                        onClick={() => setSelectedFullscreenMedia(media.media_url)}
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    )}
+                                  </>
+                                )}
+                                {user && user.uid === selectedUser.id && (
+                                  <button
+                                    onClick={() => handleDeleteProfileMedia(media.id, media.media_url)}
+                                    className="absolute top-1 right-1 p-1 bg-red-500/85 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-sm cursor-pointer z-10"
+                                    title="Verwijderen"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                                {!isBlockedMedia && (
+                                  <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/50 text-[7px] font-black text-white uppercase rounded tracking-widest z-10">
+                                    {media.media_type}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -8695,7 +9336,7 @@ export default function App() {
                             }`}
                           >
                             {saving ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <ThemedSpinner size="xs" color="#ffffff" />
                             ) : selectedUser.is_blocked ? (
                               <>Deblokkeren</>
                             ) : (
@@ -8722,7 +9363,7 @@ export default function App() {
                             }`}
                           >
                             {saving ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <ThemedSpinner size="xs" color="#ffffff" />
                             ) : selectedUser.name_locked_until && new Date(selectedUser.name_locked_until) > new Date() ? (
                               <>Naam Ontgrendelen</>
                             ) : (
@@ -8749,7 +9390,7 @@ export default function App() {
                             }`}
                           >
                             {saving ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <ThemedSpinner size="xs" color="#ffffff" />
                             ) : selectedUser.bio_locked_until && new Date(selectedUser.bio_locked_until) > new Date() ? (
                               <>Bio Ontgrendelen</>
                             ) : (
@@ -8761,6 +9402,18 @@ export default function App() {
                     )}
 
                     <div className="flex gap-3">
+                      {user.uid === selectedUser.id && (
+                        <button 
+                          onClick={() => {
+                            setSelectedUser(null);
+                            handleLogout();
+                          }}
+                          className="flex-1 p-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-2xl font-bold transition-all active:scale-[0.98] border border-red-500/20 flex items-center justify-center gap-2"
+                        >
+                          <LogOut className="w-5 h-5" />
+                          Uitloggen
+                        </button>
+                      )}
                       {user.uid !== selectedUser.id && (
                         <>
                           <button 
@@ -9159,9 +9812,9 @@ export default function App() {
                     <button 
                       type="submit"
                       disabled={sending || !reportReason || cooldownRemaining > 0}
-                      className="flex-[2] p-4 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-red-600/20"
+                      className="flex-[2] p-4 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-red-600/20 cursor-pointer"
                     >
-                      {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Flag className="w-5 h-5" />}
+                      {sending ? <ThemedSpinner size="xs" color="#ffffff" /> : <Flag className="w-5 h-5" />}
                       Rapport Indienen
                     </button>
                   </div>
@@ -9248,10 +9901,10 @@ export default function App() {
                       </div>
                       <div>
                         <h2 className="text-2xl font-black text-white tracking-tighter uppercase leading-none">
-                          V2.5.0 Update
+                          V2.5.5 Update
                         </h2>
                         <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1">
-                          DESKTOP APP, 4MB UPLOADS & AUDIO REFRESH
+                          MODERN UI 2.5.5 & FEARS TO FATHOM AUDIO
                         </p>
                       </div>
                     </div>
@@ -9261,21 +9914,11 @@ export default function App() {
                   <div className="space-y-3 py-1">
                     <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Zap className="w-5 h-5 text-cyan-400 shrink-0" />
+                        <Layout className="w-5 h-5 text-cyan-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">4 MB Uploadlimiet</h4>
+                          <h4 className="font-extrabold text-sm text-white">Modern UI v2.5.5</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            De limiet voor alle bestanden, foto's, profielfoto's, achtergronden en audio is verdubbeld naar maar liefst 4 MB.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Monitor className="w-5 h-5 text-indigo-400 shrink-0" />
-                        <div>
-                          <h4 className="font-extrabold text-sm text-white">Officiële Desktop App (v1.3.1)</h4>
-                          <p className="text-xs text-blue-100/70 mt-1">
-                            FTJM herkent nu automatisch je besturingssysteem (macOS, Windows, Linux) en biedt een directe downloadlink naar de officiële standalone release.
+                            Geoptimaliseerde Glass & Float layout met ultrasnelle navigatiebalk, dynamische profielenlijst (links, rechts of in de sidebar) en vloeiende animaties.
                           </p>
                         </div>
                       </div>
@@ -9283,19 +9926,29 @@ export default function App() {
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
                         <Volume2 className="w-5 h-5 text-purple-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Nieuwe Audio & Beltonen</h4>
+                          <h4 className="font-extrabold text-sm text-white">Fears to Fathom als Standaard Geluid</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Volledig vernieuwde bibliotheek met moderne geluidseffecten (o.a. Fears to Fathom, 007 Sound) en beltonen (Skype New, iPhone Remixes).
+                            De iconische 'Fears to Fathom' toon is nu het standaard notificatiegeluid voor alle chatberichten en nieuwe forumposts.
                           </p>
                         </div>
                       </div>
 
                       <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <Zap className="w-5 h-5 text-amber-400 shrink-0" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-white">Geverifieerde Badges & Optimalisaties</h4>
+                          <h4 className="font-extrabold text-sm text-white">Automatische CDN Media Migratie</h4>
                           <p className="text-xs text-blue-100/70 mt-1">
-                            Duidelijke badges voor officiële en geverifieerde accounts, snellere laadtijden en verbeterde sessiebeveiliging.
+                            Oude Base64-afbeeldingen worden bij het inloggen automatisch omgezet naar snelle CDN-links voor bliksemsnelle laadtijden.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
+                        <Monitor className="w-5 h-5 text-indigo-400 shrink-0" />
+                        <div>
+                          <h4 className="font-extrabold text-sm text-white">Desktop App & 4MB Uploads</h4>
+                          <p className="text-xs text-blue-100/70 mt-1">
+                            Download de desktop client (v1.3.1) of gebruik de webversie met ondersteuning voor bestanden en media tot 4 MB.
                           </p>
                         </div>
                       </div>
@@ -9308,7 +9961,7 @@ export default function App() {
                     <button
                       onClick={() => {
                         setShowWhatsNew(false);
-                        localStorage.setItem('has_seen_whats_new_v2.5', 'true');
+                        localStorage.setItem('has_seen_whats_new_v2.5.5', 'true');
                       }}
                       className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
                     >
@@ -9366,13 +10019,9 @@ export default function App() {
 
                 <div className="flex flex-col items-center mb-8 relative z-10">
                   {/* Glowing logo badge */}
-                  <div className="w-16 h-16 bg-white/5 rounded-[1.5rem] p-2 flex items-center justify-center mb-4 overflow-hidden border border-white/10 shadow-lg shadow-black/35 relative group">
+                  <div className="w-16 h-16 bg-[#001E36] rounded-[1.5rem] p-2 flex items-center justify-center mb-4 overflow-hidden border border-white/10 shadow-lg shadow-black/35 relative group">
                     <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <img 
-                      src="/logo.png" 
-                      alt="FTJM Logo" 
-                      className="w-full h-full object-cover scale-[1.35] relative z-10"
-                    />
+                    <Logo className="w-full h-full object-contain p-0.5 relative z-10" fallbackTextSize="text-sm font-black tracking-tighter" />
                   </div>
                   <h3 className="text-3xl font-black text-white tracking-tighter text-center leading-none">
                     {isRegisterMode 
@@ -9390,6 +10039,17 @@ export default function App() {
                   </p>
                 </div>
 
+                {/* Backup Server Active Banner in Auth Modal */}
+                <div className="mb-6 p-4 rounded-2xl bg-amber-500/15 border border-amber-500/35 text-amber-200 text-xs leading-relaxed flex flex-col gap-1.5 relative z-10 backdrop-blur-md shadow-lg shadow-amber-950/20">
+                  <div className="flex items-center gap-2 font-black text-amber-300 uppercase tracking-wider text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                    <span>⚠️ Back-up Server Geactiveerd</span>
+                  </div>
+                  <p className="text-[11px] font-medium text-amber-100/90 leading-snug">
+                    Het platform draait momenteel op de <strong>back-upserver</strong>. Accounts van de primaire server zijn hier <strong>niet op overgezet</strong>. Lukt inloggen niet? Registreer dan een nieuw account voor deze back-upomgeving.
+                  </p>
+                </div>
+
                 <form onSubmit={async (e) => {
                   e.preventDefault();
                   setAuthError(null);
@@ -9397,11 +10057,21 @@ export default function App() {
                   const email = authEmail.trim();
 
                   if (!email) {
-                    setAuthError('E-mail of gebruikersnaam is verplicht');
+                    setAuthError(isRegisterMode ? 'E-mailadres is verplicht' : 'E-mail of gebruikersnaam is verplicht');
+                    return;
+                  }
+
+                  if (isRegisterMode && !isValidEmail(email)) {
+                    setAuthError('Voer een geldig e-mailadres in (bijv. naam@domein.nl).');
                     return;
                   }
 
                   if (!isRegisterMode && authStep === 'email') {
+                    if (email.includes('@') && !isValidEmail(email)) {
+                      setAuthError('Voer een geldig e-mailadres in (bijv. naam@domein.nl).');
+                      return;
+                    }
+
                     setAuthLoading(true);
                     try {
                       const { data: profiles, error: lookupError } = await supabaseClient
@@ -9424,23 +10094,34 @@ export default function App() {
                         if (foundProfile.email) {
                           setAuthEmail(foundProfile.email);
                         }
+                        setAuthStep('password');
                       } else {
-                        // Use fallback so they can still try to log in (e.g. if profile row hasn't been created yet)
+                        // Use fallback only if they entered a valid email
+                        if (isValidEmail(email)) {
+                          setLookupProfile({
+                            display_name: email,
+                            email: email,
+                            photo_url: null
+                          });
+                          setAuthStep('password');
+                        } else {
+                          setAuthError('Geen account gevonden met deze gebruikersnaam. Voer een geldig e-mailadres in.');
+                          return;
+                        }
+                      }
+                    } catch (err: any) {
+                      console.error('Profile lookup error:', err);
+                      if (isValidEmail(email)) {
                         setLookupProfile({
                           display_name: email,
                           email: email,
                           photo_url: null
                         });
+                        setAuthStep('password');
+                      } else {
+                        setAuthError('Geen account gevonden. Voer een geldig e-mailadres in.');
+                        return;
                       }
-                      setAuthStep('password');
-                    } catch (err: any) {
-                      console.error('Profile lookup error:', err);
-                      setLookupProfile({
-                        display_name: email,
-                        email: email,
-                        photo_url: null
-                      });
-                      setAuthStep('password');
                     } finally {
                       setAuthLoading(false);
                     }
@@ -9451,6 +10132,11 @@ export default function App() {
 
                   if (!password) {
                     setAuthError('Wachtwoord is verplicht');
+                    return;
+                  }
+
+                  if (!isValidEmail(email)) {
+                    setAuthError('Voer een geldig e-mailadres in om in te loggen.');
                     return;
                   }
 
@@ -9466,6 +10152,31 @@ export default function App() {
                       const displayName = authDisplayName.trim();
                       if (!displayName) {
                         setAuthError('Weergavenaam is verplicht');
+                        setAuthLoading(false);
+                        return;
+                      }
+
+                      // Anti Name Piracy Checks (Jonatech, Marko Hoksen, and variations)
+                      const namePiracyCheck = isProtectedNameOrImpersonation(displayName, email);
+                      if (namePiracyCheck.isPirated) {
+                        setAntiPiracyModalState({
+                          isOpen: true,
+                          attemptedName: displayName,
+                          reason: namePiracyCheck.reason
+                        });
+                        setAuthError('Deze weergavenaam is gereserveerd (Anti Name Piracy Protocol). Kies een eigen unieke naam.');
+                        setAuthLoading(false);
+                        return;
+                      }
+
+                      const emailPiracyCheck = isProtectedNameOrImpersonation(email, email);
+                      if (emailPiracyCheck.isPirated) {
+                        setAntiPiracyModalState({
+                          isOpen: true,
+                          attemptedName: email,
+                          reason: 'Dit e-mailadres bevat een gereserveerde merknaam of beheerdersidentiteit.'
+                        });
+                        setAuthError('Dit e-mailadres is gereserveerd (Anti Name Piracy Protocol). Gebruik een eigen persoonlijk e-mailadres.');
                         setAuthLoading(false);
                         return;
                       }
@@ -9496,16 +10207,14 @@ export default function App() {
                       }
 
                       // Extra controle: Controleer of het e-mailadres of een variant daarvan al geregistreerd staat
-                      const normalizedInputEmail = normalizeEmail(email);
                       const { data: existingProfiles, error: fetchProfilesError } = await supabaseClient
                         .from('profiles')
-                        .select('email');
+                        .select('email')
+                        .ilike('email', email.trim())
+                        .limit(1);
 
-                      if (!fetchProfilesError && existingProfiles) {
-                        const isDuplicate = existingProfiles.some(p => p.email && normalizeEmail(p.email) === normalizedInputEmail);
-                        if (isDuplicate) {
-                          throw new Error('Dit e-mailadres (of een variant daarvan) is al in gebruik door een ander geregistreerd lid.');
-                        }
+                      if (!fetchProfilesError && existingProfiles && existingProfiles.length > 0) {
+                        throw new Error('Dit e-mailadres (of een variant daarvan) is al in gebruik door een ander geregistreerd lid.');
                       }
 
                       const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({
@@ -9597,7 +10306,13 @@ export default function App() {
                     }
                   } catch (err: any) {
                     console.error('Auth error:', err);
-                    setAuthError(err.message || 'Er is een fout opgetreden.');
+                    let msg = err.message || 'Er is een fout opgetreden.';
+                    if (msg.toLowerCase().includes('user already registered') || msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('email address is already in use')) {
+                      msg = 'Dit e-mailadres is al geregistreerd. Log in met je bestaande account.';
+                    } else if (msg.toLowerCase().includes('invalid login credentials')) {
+                      msg = 'Onjuist e-mailadres of wachtwoord.';
+                    }
+                    setAuthError(msg);
                   } finally {
                     setAuthLoading(false);
                   }
@@ -9676,7 +10391,7 @@ export default function App() {
                         className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                       >
                         {authLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
+                          <ThemedSpinner size="xs" color="#002f54" />
                         ) : (
                           'Registreren & Inloggen'
                         )}
@@ -9711,7 +10426,7 @@ export default function App() {
                             className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                           >
                             {authLoading ? (
-                              <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
+                              <ThemedSpinner size="xs" color="#002f54" />
                             ) : (
                               'Volgende'
                             )}
@@ -9781,7 +10496,7 @@ export default function App() {
                             className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                           >
                             {authLoading ? (
-                              <Loader2 className="w-4 h-4 animate-spin text-[#002f54]" />
+                              <ThemedSpinner size="xs" color="#002f54" />
                             ) : (
                               'Inloggen'
                             )}
@@ -10052,6 +10767,32 @@ export default function App() {
           onClose={() => setShowDesktopPromptModal(false)} 
         />
 
+        <AntiNamePiracyModal
+          isOpen={antiPiracyModalState.isOpen}
+          attemptedName={antiPiracyModalState.attemptedName}
+          reason={antiPiracyModalState.reason}
+          onClose={() => setAntiPiracyModalState(prev => ({ ...prev, isOpen: false }))}
+        />
+
+        <ModernUICustomizerModal
+          isOpen={showModernCustomizer}
+          onClose={() => setShowModernCustomizer(false)}
+          customTheme={customTheme}
+          setCustomTheme={setCustomTheme}
+          onChangeProfileListPosition={async (pos) => {
+            const updatedTheme = { ...customTheme, profile_list_position: pos };
+            setCustomTheme(updatedTheme);
+            setProfile(prev => prev ? { ...prev, custom_theme: updatedTheme } : null);
+            if (user) {
+              try {
+                await supabaseClient.from('profiles').update({ custom_theme: updatedTheme }).eq('id', user.uid);
+              } catch (e) {
+                console.error('Failed to save profile list position:', e);
+              }
+            }
+          }}
+        />
+
         <Toaster 
           position="top-right" 
           richColors 
@@ -10063,6 +10804,21 @@ export default function App() {
           }}
         />
       </div>
+
+      {videoToTrim && (
+        <VideoTrimmerModal
+          file={videoToTrim.file}
+          onTrimmed={(dataUrl) => {
+            const callback = videoToTrim.callback;
+            setVideoToTrim(null);
+            callback(dataUrl);
+          }}
+          onCancel={() => {
+            setProfileMediaLoading(false);
+            setVideoToTrim(null);
+          }}
+        />
+      )}
     </div>
   );
 }

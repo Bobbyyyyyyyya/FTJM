@@ -30,9 +30,9 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
     >
       <div className="flex flex-col items-center text-center">
         <div className="relative mb-6">
-          {(profile?.photo_url || user.photoURL) ? (
+          {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
             <img 
-              src={profile?.photo_url || user.photoURL} 
+              src={profile?.photo_url || user.photoURL || undefined} 
               alt={profile?.display_name || user.displayName || ''} 
               className="w-24 h-24 rounded-3xl border-4 border-app-card shadow-md"
               referrerPolicy="no-referrer"

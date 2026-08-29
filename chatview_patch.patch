@@ -1,0 +1,14 @@
+--- src/components/ChatView.tsx
++++ src/components/ChatView.tsx
+@@ -28,2 +28,3 @@
+   handleUpdatePost: (id: string) => void;
++  handleBlockPost?: (id: string, currentStatus: boolean) => void;
+   handleDeletePost: (id: string) => void;
+@@ -52,2 +53,3 @@
+   handleUpdatePost,
++  handleBlockPost,
+   handleDeletePost,
+@@ -359,2 +361,3 @@
+                   onEdit={(id, content) => { setEditingPostId(id); setEditPostInput(content); }}
++                  onBlockPost={handleBlockPost}
+                   onDelete={handleDeletePost}

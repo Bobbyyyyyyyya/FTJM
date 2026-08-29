@@ -2,6 +2,8 @@ import React from 'react';
 import { User as UserIcon, ShieldCheck, LogOut } from 'lucide-react';
 import { UserProfile, CustomTheme, User } from '../types';
 import { t } from '../utils/translations';
+import { hexToRgba } from '../utils/helpers';
+import { Logo } from './Logo';
 
 interface HeaderProps {
   user: User;
@@ -27,18 +29,13 @@ export const Header: React.FC<HeaderProps> = React.memo(({
       className={`fixed top-0 left-0 right-0 z-40 border-b border-app-border backdrop-blur-md transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass' : ''}`}
       style={useCustomTheme ? { 
         backgroundColor: customTheme.glass_effect ? undefined : customTheme.header_bg_color,
-        borderColor: customTheme.card_bg_color ? `${customTheme.card_bg_color}20` : 'rgba(244, 244, 245, 1)'
+        borderColor: customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, 0.15) : undefined
       } : {}}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
         <div className="flex items-center gap-3 sm:gap-4">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-transparent rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden shadow-lg transition-all duration-300">
-            <img 
-              src="/logo.png" 
-              alt="FTJM Logo" 
-              className="w-full h-full object-cover scale-[1.35]" 
-              referrerPolicy="no-referrer" 
-            />
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-app-accent rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden shadow-lg transition-all duration-300 relative border border-app-border">
+            <Logo className="w-full h-full object-cover rounded-xl p-0.5" fallbackTextSize="text-xs font-black tracking-tighter" />
           </div>
           <div className="hidden sm:block">
             <h1 className="text-lg font-bold text-app-ink tracking-tight">FTJM Forum</h1>
@@ -53,8 +50,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 sm:py-2 bg-app-accent/50 rounded-xl sm:rounded-2xl border border-app-border">
             <div className="relative">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-app-bg flex items-center justify-center overflow-hidden border border-app-border shadow-sm">
-                {(profile?.photo_url || user.photoURL) ? (
-                  <img src={profile?.photo_url || user.photoURL || ''} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
+                  <img src={profile?.photo_url || user.photoURL || undefined} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                   <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-app-muted" />
                 )}

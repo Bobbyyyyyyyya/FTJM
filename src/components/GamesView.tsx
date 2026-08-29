@@ -104,14 +104,22 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
   useEffect(() => {
     if (selectedGame !== 'lobby') return;
     
+    // Check cached leaderboards first to avoid repeated heavy queries
+    try {
+      const cached = sessionStorage.getItem('cached_game_leaderboards');
+      if (cached) {
+        setLeaderboards(JSON.parse(cached));
+      }
+    } catch {}
+
     const fetchLeaderboards = async () => {
       setLoadingLeaderboard(true);
       try {
         const { data, error } = await supabase
           .from('profiles')
           .select('id, display_name, photo_url, custom_theme')
-          .order('id')
-          .limit(10000);
+          .not('custom_theme', 'is', null)
+          .limit(60);
           
         if (error) throw error;
         
@@ -146,6 +154,9 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
           });
           
           setLeaderboards(boards);
+          try {
+            sessionStorage.setItem('cached_game_leaderboards', JSON.stringify(boards));
+          } catch {}
         }
       } catch (err) {
         console.warn('Leaderboard fetch skipped: ', err);
@@ -2400,7 +2411,9 @@ function BreakoutGame({ onBack, isFullscreen, userProfile, onSaveHighScore, onSh
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('display_name, custom_theme');
+        .select('display_name, custom_theme')
+        .not('custom_theme', 'is', null)
+        .limit(40);
       if (data) {
         const list: { name: string; score: number }[] = [];
         data.forEach((p) => {

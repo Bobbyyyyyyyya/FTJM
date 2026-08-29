@@ -46,7 +46,7 @@ export const MentionOverlay: React.FC<MentionOverlayProps> = ({
                 className="w-full flex items-center gap-3 p-2 hover:bg-app-accent rounded-xl transition-all text-left group"
               >
                 <div className="w-8 h-8 rounded-lg bg-app-bg border border-app-border overflow-hidden flex-shrink-0">
-                  {user.photo_url ? (
+                  {user.photo_url?.trim() ? (
                     <img src={user.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">

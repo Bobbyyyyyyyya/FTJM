@@ -222,7 +222,7 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
                   <div key={p.uid} className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
-                        {p.photo_url ? (
+                        {p.photo_url?.trim() ? (
                           <img src={p.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
@@ -367,7 +367,7 @@ const ParticipantCard = ({
 
       {/* Profile Ring Overlay */}
       <div className="relative z-10 w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden mb-4 ring-4 ring-white/5 group-hover:ring-white/10 transition-all shadow-2xl shrink-0">
-        {photo_url ? (
+        {photo_url?.trim() ? (
           <img src={photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-white/5">

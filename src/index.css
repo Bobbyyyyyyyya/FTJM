@@ -21,6 +21,7 @@
   --card-bg: #ffffff;
   --card-border: #e4e4e7;
   --muted: #71717a;
+  --custom-font: "Inter", ui-sans-serif, system-ui, sans-serif;
   
   /* Custom Theme Overrides - only used when useCustomTheme is true */
   --custom-blur: 0px;
@@ -58,10 +59,10 @@
 [data-custom-theme='true'] {
   --bg: var(--custom-body-bg, #f4f4f5);
   --ink: var(--custom-text, #18181b);
-  --accent: var(--custom-accent, #18181b);
+  --accent: var(--custom-accent-bg, rgba(24, 24, 27, 0.08));
   --card-bg: var(--custom-card-bg, #ffffff);
-  --card-border: var(--custom-accent, #e4e4e7);
-  --muted: var(--custom-text, #71717a);
+  --card-border: var(--custom-card-border, #e4e4e7);
+  --muted: var(--custom-muted, #71717a);
   --font-sans: var(--custom-font, "Inter", sans-serif);
 }
 
@@ -110,8 +111,13 @@
 body {
   background-color: var(--custom-body-bg, var(--bg));
   color: var(--custom-text, var(--ink));
+  font-family: var(--custom-font, "Inter", ui-sans-serif, system-ui, sans-serif);
   transition: background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1), color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
 }
 
 .enhanced-glow {
@@ -245,3 +251,113 @@ body {
 }
 
 
+
+/* --- Modern UI Concept (Glass & Float) --- */
+
+/* --- Modern UI Concept (Glass & Float) --- */
+[data-modern-ui='true'] {
+  --app-radius: 2rem !important;
+}
+
+/* Floating Glass Cards */
+[data-modern-ui='true'] .bg-app-card {
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent) !important;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.1), inset 0 1px 0 color-mix(in srgb, var(--card-bg) 20%, transparent) !important;
+}
+
+/* Accent areas more subtle and blurry */
+[data-modern-ui='true'] .bg-app-accent {
+  background: color-mix(in srgb, var(--accent) 50%, transparent) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid color-mix(in srgb, var(--ink) 5%, transparent) !important;
+}
+
+/* Make body background more dynamic */
+[data-modern-ui='true'] body {
+  background-attachment: fixed !important;
+}
+[data-modern-ui='true'] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.4;
+  background-image: radial-gradient(circle at 15% 50%, color-mix(in srgb, var(--ink) 5%, transparent), transparent 40%),
+                    radial-gradient(circle at 85% 30%, color-mix(in srgb, var(--ink) 3%, transparent), transparent 40%);
+  pointer-events: none;
+}
+
+/* Soft bouncy animations for interactive elements */
+[data-modern-ui='true'] button {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s, border-color 0.2s, opacity 0.2s !important;
+}
+[data-modern-ui='true'] button:active {
+  transform: scale(0.92) !important;
+}
+
+/* Smooth out borders */
+[data-modern-ui='true'] .border-app-border {
+  border-color: color-mix(in srgb, var(--ink) 8%, transparent) !important;
+}
+
+/* Nav / Header styling for Modern Concept */
+[data-modern-ui='true'] nav {
+  background: transparent !important;
+  border: none !important;
+}
+[data-modern-ui='true'] nav > div.max-w-5xl {
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent) !important;
+  backdrop-filter: blur(30px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(30px) saturate(200%) !important;
+  border-radius: 2rem !important;
+  margin-top: 1rem !important;
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent) !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.1) !important;
+  padding: 0 1rem !important;
+}
+
+/* Additional Modern Styling for Chat & Input */
+[data-modern-ui='true'] input, 
+[data-modern-ui='true'] textarea {
+  border-radius: 1.5rem !important;
+  background-color: color-mix(in srgb, var(--ink) 5%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent) !important;
+}
+
+[data-modern-ui='true'] input:focus, 
+[data-modern-ui='true'] textarea:focus {
+  background-color: color-mix(in srgb, var(--ink) 8%, transparent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink) 20%, transparent) !important;
+}
+
+[data-modern-ui='true'] .messages-view-container {
+  padding: 1rem !important;
+}
+
+[data-modern-ui='true'] .messages-view-container > div {
+  border-radius: 2rem !important;
+  overflow: hidden !important;
+}
+
+[data-modern-ui='true'] .divide-y > * {
+  border-color: color-mix(in srgb, var(--ink) 8%, transparent) !important;
+}
+
+/* Chat view specific redesign */
+[data-modern-ui='true'] .chat-messages-container {
+  padding: 1rem !important;
+  gap: 0.5rem !important;
+}
+
+[data-modern-ui='true'] .message-bubble {
+  border-radius: 1.5rem !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-modern-ui='true'] .messages-view-container .bg-app-bg {
+  background: transparent !important;
+}

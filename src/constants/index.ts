@@ -1,10 +1,17 @@
 export const NEWS_ITEMS = [
   {
+    id: 14,
+    title: "FTJM Modern UI & Audio Update v2.5.5 🌟",
+    content: "Welkom bij de officiële FTJM v2.5.5 update! In deze versie introduceren we Modern UI v2.5.5 met verbeterde Glass & Float styling, ultrasnelle navigatie en flexibele profielenlijst positionering (links, rechts of in de sidebar). Daarnaast is 'Fears to Fathom' nu het nieuwe standaard notificatiegeluid voor alle chatberichten en posts! Ook zijn er automatische CDN-media-optimalisaties en prestatieverbeteringen doorgevoerd voor een vliegensvlugge ervaring.",
+    date: new Date().toISOString().split('T')[0],
+    category: "Grote Update"
+  },
+  {
     id: 13,
     title: "FTJM Web Update v2.5.0 🔥",
     content: "Welkom bij de grote FTJM Web v2.5.0 update! We hebben de uploadlimiet verhoogd naar 4 MB voor alle profielfoto's, achtergronden, audio en chatberichten. Daarnaast introduceren we een vernieuwde geluids- en beltonenverzameling, automatische desktop app detectie met directe GitHub download (v1.3.1) voor macOS, Windows en Linux, badges voor Geverifieerde Accounts en Beta Testers, en verbeterde beveiligings- en snelheidsoptimalisaties!",
-    date: new Date().toISOString().split('T')[0],
-    category: "Grote Update"
+    date: "2026-08-25",
+    category: "Update"
   },
   {
     id: 12,
@@ -86,8 +93,8 @@ export const NEWS_ITEMS = [
 ];
 
 export const SOUND_OPTIONS = [
-  { name: 'Melding (Standaard)', url: '/audio/sounds/notification_o14egLP.mp3' },
-  { name: 'Fears to Fathom', url: '/audio/sounds/fears-to-fathom-notification-sound.mp3' },
+  { name: 'Fears to Fathom (Standaard)', url: '/audio/sounds/fears-to-fathom-notification-sound.mp3' },
+  { name: 'Melding Chime', url: '/audio/sounds/notification_o14egLP.mp3' },
   { name: '007 Text Message', url: '/audio/sounds/007_Text_Message-3875438.mp3' },
   { name: 'Melding Tone', url: '/audio/sounds/yt1s_nijLeKo.mp3' },
 ];
@@ -108,8 +115,10 @@ export const PATTERNS = [
 ];
 
 import { EMOJI_CATEGORIES, EmojiItem } from './emojis';
+import { isValidEmail, isProtectedNameOrImpersonation } from '../utils/helpers';
+import { PROTECTED_NAMES_LIST } from './protectedNames';
 
-export { EMOJI_CATEGORIES };
+export { EMOJI_CATEGORIES, isValidEmail, isProtectedNameOrImpersonation, PROTECTED_NAMES_LIST };
 
 export const EMOJI_LIST: EmojiItem[] = EMOJI_CATEGORIES.flatMap(cat => cat.emojis);
 
@@ -143,13 +152,69 @@ export const isBetaTester = (
 ): boolean => {
   if (!userOrEmail) return false;
   if (typeof userOrEmail === 'object') {
-    if (userOrEmail.role === 'tester' || (userOrEmail as any).is_beta_tester === true) return true;
+    if ((userOrEmail as any).is_beta_tester === true) return true;
     if (userOrEmail.email) {
       return BETA_TESTER_EMAILS.includes(userOrEmail.email.toLowerCase().trim());
     }
     return false;
   }
   return BETA_TESTER_EMAILS.includes(userOrEmail.toLowerCase().trim());
+};
+
+export const isTestUser = (
+  userOrEmail?: string | { email?: string | null; display_name?: string | null; role?: string | null } | null
+): boolean => {
+  if (!userOrEmail) return false;
+  let email = '';
+  let name = '';
+  let role = '';
+
+  if (typeof userOrEmail === 'string') {
+    email = userOrEmail.toLowerCase().trim();
+    name = userOrEmail.toLowerCase().trim();
+  } else {
+    email = (userOrEmail.email || '').toLowerCase().trim();
+    name = (userOrEmail.display_name || '').toLowerCase().trim();
+    role = (userOrEmail.role || '').toLowerCase().trim();
+  }
+
+  // Check emails indicating test accounts
+  if (
+    email.includes('test@') ||
+    email.endsWith('@test.com') ||
+    email.endsWith('@example.com') ||
+    email.includes('testuser') ||
+    email.startsWith('test_') ||
+    email.startsWith('test.') ||
+    email.startsWith('dummy') ||
+    email.startsWith('mock') ||
+    email.startsWith('fake')
+  ) {
+    return true;
+  }
+
+  // Check display names indicating test users
+  if (
+    name === 'test' ||
+    name === 'tester' ||
+    name === 'test user' ||
+    name === 'test account' ||
+    name === 'testaccount' ||
+    name === 'testuser' ||
+    name.startsWith('test user') ||
+    name.startsWith('testuser') ||
+    name.startsWith('test account') ||
+    name.startsWith('dummy user') ||
+    name.startsWith('mock user')
+  ) {
+    return true;
+  }
+
+  if (role === 'test' || role === 'tester_dummy' || role === 'test_user') {
+    return true;
+  }
+
+  return false;
 };
 
 

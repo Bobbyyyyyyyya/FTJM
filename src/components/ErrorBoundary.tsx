@@ -1,6 +1,7 @@
 import React, { ErrorInfo, ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { Logo } from './Logo';
 
 interface Props {
   children: ReactNode;
@@ -55,13 +56,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </div>
             
             <div className="flex items-center justify-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
-                <img 
-                  src="/logo.png" 
-                  alt="FTJM Logo" 
-                  className="w-full h-full object-cover scale-[1.35]"
-                  referrerPolicy="no-referrer"
-                />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden relative">
+                <Logo className="w-full h-full object-contain p-0.5" fallbackTextSize="text-[9px] font-black tracking-tighter" />
               </div>
               <h2 className="text-3xl font-bold text-zinc-900 uppercase tracking-tight">Systeemfout</h2>
             </div>

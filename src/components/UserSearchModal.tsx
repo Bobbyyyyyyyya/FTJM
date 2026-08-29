@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, User as UserIcon, Users, Mail, Check, ShieldCheck, FlaskConical } from 'lucide-react';
 import { UserProfile } from '../types';
-import { isVerifiedEmail, isBetaTester } from '../constants';
+import { isVerifiedEmail, isBetaTester, isTestUser } from '../constants';
 
 interface UserSearchModalProps {
   show: boolean;
@@ -29,8 +29,10 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
   const [groupName, setGroupName] = useState('');
   const [mode, setMode] = useState<'single' | 'group'>('single');
 
+  const isExplicitlySearchingTest = searchQuery.toLowerCase().includes('test');
   const filteredUsers = users
     .filter(u => u.is_blocked !== true)
+    .filter(u => isExplicitlySearchingTest || !isTestUser(u))
     .filter(u => 
       u.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
       u.email?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -159,7 +161,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden transition-all ${
                             isSelected ? 'bg-app-ink ring-2 ring-app-ink/20' : 'bg-app-card border border-app-border'
                           }`}>
-                            {u.photo_url ? (
+                            {u.photo_url?.trim() ? (
                               <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                               <UserIcon className={`w-6 h-6 ${isSelected ? 'text-app-bg' : 'text-app-muted'}`} />

@@ -1,0 +1,1043 @@
+import React from 'react';
+import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'motion/react';
+import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, MessageSquare, ShieldCheck, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip, Video, EyeOff } from 'lucide-react';
+import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../../types';
+import { formatDate, formatTime, uploadImageToImgBB, compressImageToBlob, compressImage, hexToRgba } from '../../utils/helpers';
+import { RichContent } from '../RichContent';
+import { VideoTrimmerModal } from '../VideoTrimmerModal';
+import { ThemedSpinner } from '../ThemedLoadingScreen';
+import { AnimatedSendIcon } from '../AnimatedIcons';
+
+export interface NormalMessagesViewProps {
+  user: any;
+  profile?: UserProfile | null;
+  profiles?: UserProfile[];
+  conversations: Conversation[];
+  activeConversation: Conversation | null;
+  setActiveConversation: (conv: Conversation | null) => void;
+  messages: DirectMessage[];
+  messageInput: string;
+  setMessageInput: (input: string) => void;
+  handleSendMessage: (e?: React.FormEvent, customContent?: string) => void;
+  handleTyping: (e: React.ChangeEvent<HTMLInputElement>, channel: string) => void;
+  handleEmojiButtonClick: (e: React.MouseEvent, type: 'message') => void;
+  handleImageUrl: () => void;
+  typingStatuses: Record<string, string[]>;
+  mobileChatView: 'list' | 'chat';
+  setMobileChatView: (view: 'list' | 'chat') => void;
+  setShowUserSearch: (show: boolean) => void;
+  onlineUsers: Set<string>;
+  sending: boolean;
+  useCustomTheme: boolean;
+  customTheme: CustomTheme;
+  onStartCall?: (targetId: string, targetName: string, targetAvatar?: string) => void;
+  onStartVideoCall?: (targetId: string, targetName: string, targetAvatar?: string) => void;
+  onStartGroupCall?: (roomId: string, roomName: string, isVideo?: boolean) => void;
+  onEndCall?: () => void;
+  activeCallUserId?: string;
+  groupVoiceCallActiveRooms?: Set<string>;
+  playSound?: (url: string, enabled: boolean, uid: string, name: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, newText: string) => void;
+  onToggleHideConversation?: (conversationId: string) => void;
+}
+
+export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(({
+  user,
+  profile,
+  profiles = [],
+  conversations,
+  activeConversation: propActiveConversation,
+  setActiveConversation,
+  messages,
+  messageInput,
+  setMessageInput,
+  handleSendMessage,
+  handleTyping,
+  handleEmojiButtonClick,
+  handleImageUrl,
+  typingStatuses,
+  mobileChatView,
+  setMobileChatView,
+  setShowUserSearch,
+  onlineUsers,
+  sending,
+  useCustomTheme,
+  customTheme,
+  onStartCall,
+  onStartVideoCall,
+  onStartGroupCall,
+  onEndCall,
+  activeCallUserId,
+  groupVoiceCallActiveRooms,
+  playSound,
+  onDeleteMessage,
+  onEditMessage,
+  onToggleHideConversation,
+}) => {
+  const [editingMessageId, setEditingMessageId] = React.useState<string | null>(null);
+  const [editInput, setEditInput] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [showSearchBar, setShowSearchBar] = React.useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
+  const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | 'video' | null>(null);
+  const [videoToTrim, setVideoToTrim] = React.useState<File | null>(null);
+  const [isCompressing, setIsCompressing] = React.useState<boolean>(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) { // Increased limit but we optimize strongly
+      alert("Bestand is te groot. Selecteer een bestand kleiner dan 15MB.");
+      return;
+    }
+
+    setIsCompressing(true);
+    try {
+      const isVideoFile = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|ogv|3gp)$/i.test(file.name);
+      const isAudioFile = !isVideoFile && (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|opus|aac|flac)$/i.test(file.name));
+      const isImageFile = !isVideoFile && !isAudioFile && (file.type.startsWith('image/') || /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)$/i.test(file.name));
+
+      if (isVideoFile) {
+        setVideoToTrim(file);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      } else if (isAudioFile) {
+        const uploadRes = await uploadImageToImgBB(file, file.name);
+        if (uploadRes?.url) {
+          setSelectedFile(uploadRes.url);
+          setSelectedFileType('audio');
+          toast.success('Audiobestand geüpload!');
+        } else {
+          setSelectedFile(null);
+          setSelectedFileType(null);
+          toast.error('Kon audiobestand niet uploaden.');
+        }
+      } else if (isImageFile) {
+        // 1. Binary WebP compression
+        const webpBlob = await compressImageToBlob(file, 800, 600, 0.65, 'image/webp');
+        
+        // 2. Upload to CDN / Server storage
+        const imgbbRes = await uploadImageToImgBB(webpBlob, file.name);
+        if (imgbbRes?.url) {
+          setSelectedFile(imgbbRes.url);
+          setSelectedFileType('image');
+          toast.success('Afbeelding geüpload!');
+        } else {
+          setSelectedFile(null);
+          setSelectedFileType(null);
+          toast.error('Uploaden van afbeelding is mislukt. Probeer het opnieuw.');
+        }
+      } else {
+        alert("Selecteer een geldige video, afbeelding of audiobestand.");
+      }
+    } catch (err) {
+      console.error("Error reading file:", err);
+      toast.error('Kon bestand niet verwerken.');
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          setIsCompressing(true);
+          try {
+            const webpBlob = await compressImageToBlob(file, 800, 600, 0.65, 'image/webp');
+            const imgbbRes = await uploadImageToImgBB(webpBlob, 'pasted_image');
+            if (imgbbRes?.url) {
+              setSelectedFile(imgbbRes.url);
+              setSelectedFileType('image');
+              toast.success('Geplakte afbeelding geüpload!');
+            } else {
+              setSelectedFile(null);
+              setSelectedFileType(null);
+              toast.error('Uploaden van geplakte afbeelding is mislukt.');
+            }
+          } catch (err) {
+            console.error('Paste image error in DM:', err);
+            toast.error('Kon geplakte afbeelding niet uploaden.');
+          } finally {
+            setIsCompressing(false);
+          }
+          break;
+        }
+      }
+    }
+  };
+
+  const onFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageInput.trim() && !selectedFile) {
+      return;
+    }
+
+    if (selectedFile) {
+      const finalInput = messageInput.trim() ? `${messageInput.trim()} ${selectedFile}` : selectedFile;
+      handleSendMessage(e, finalInput);
+      setSelectedFile(null);
+      setSelectedFileType(null);
+    } else {
+      handleSendMessage(e);
+    }
+  };
+
+  // Clear search on active conversation changes
+  React.useEffect(() => {
+    setSearchQuery('');
+    setShowSearchBar(false);
+  }, [propActiveConversation?.id]);
+
+  // Handle focus when search bar is shown
+  React.useEffect(() => {
+    if (showSearchBar) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 80);
+    } else {
+      setSearchQuery('');
+    }
+  }, [showSearchBar]);
+
+  const filteredMessages = React.useMemo(() => {
+    if (!searchQuery.trim()) return messages;
+    const q = searchQuery.toLowerCase();
+    return messages.filter(m => m.text?.toLowerCase().includes(q));
+  }, [messages, searchQuery]);
+
+  // Filter out DM conversations where the other participant is blocked (is_blocked === true)
+  const displayConversations = React.useMemo(() => {
+    return (conversations || []).filter(conv => {
+      if (!conv.is_group) {
+        const otherParticipants = conv.participants?.filter(uid => uid !== user.uid) || [];
+        const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : conv.participants?.find(uid => uid !== user.uid);
+        if (otherParticipantUid) {
+          const otherProfile = profiles?.find(p => p.id === otherParticipantUid);
+          if (otherProfile?.is_blocked === true) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+  }, [conversations, profiles, user?.uid]);
+
+  // Resolve the newest conversation state from the live list to ensure real-time photo/name updates are visible instantly
+  const activeConversation = React.useMemo(() => {
+    if (!propActiveConversation) return null;
+    const found = displayConversations.find(c => c.id === propActiveConversation.id);
+    if (!found) {
+      if (!propActiveConversation.is_group) {
+        const otherParticipants = propActiveConversation.participants?.filter(uid => uid !== user.uid) || [];
+        const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : propActiveConversation.participants?.find(uid => uid !== user.uid);
+        if (otherParticipantUid) {
+          const otherProfile = profiles?.find(p => p.id === otherParticipantUid);
+          if (otherProfile?.is_blocked === true) {
+            return null;
+          }
+        }
+      }
+      return propActiveConversation;
+    }
+    return found;
+  }, [propActiveConversation, displayConversations, user?.uid, profiles]);
+
+  const getParticipantPhoto = (uid: string, fallbackPhotos: Record<string, string> = {}) => {
+    if (uid === user.uid) {
+      return profile?.photo_url || user.photoURL || fallbackPhotos[uid] || null;
+    }
+    const found = profiles?.find(p => p.id === uid);
+    return found?.photo_url || fallbackPhotos[uid] || null;
+  };
+
+  const getParticipantName = (uid: string, fallbackNames: Record<string, string> = {}) => {
+    if (uid === user.uid) {
+      return profile?.display_name || user.displayName || fallbackNames[uid] || 'Onbekend';
+    }
+    const found = profiles?.find(p => p.id === uid);
+    return found?.display_name || fallbackNames[uid] || 'Onbekend';
+  };
+
+  return (
+    <div 
+      className={`messages-view-container bg-app-card rounded-[2.5rem] border border-app-border shadow-2xl overflow-hidden h-[calc(100vh-14rem)] flex transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
+      style={useCustomTheme ? { 
+        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, (100 - (customTheme.chat_opacity ?? 0)) / 100) : undefined),
+        borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+        boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
+        color: customTheme.text_color
+      } : {}}
+    >
+      {/* Conversations List */}
+      <div className={`${mobileChatView === 'chat' ? 'hidden sm:flex' : 'flex'} w-full sm:w-96 border-r border-app-border flex-col bg-app-bg/30 backdrop-blur-sm`}
+        style={useCustomTheme ? { 
+          backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, (100 - (customTheme.chat_opacity ?? 0)) / 100) : undefined),
+          borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+        } : {}}
+      >
+        <div className="p-8 border-b border-app-border flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-xl text-app-ink tracking-tight">Inbox</h3>
+            <p className="text-xs font-medium text-app-muted mt-0.5">Directe Berichten</p>
+          </div>
+          <button 
+            onClick={() => setShowUserSearch(true)}
+            className="w-10 h-10 bg-app-ink text-app-bg rounded-2xl flex items-center justify-center hover:scale-105 transition-all active:scale-95 shadow-lg shadow-app-ink/20 group"
+          >
+            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+          </button>
+        </div>
+        
+        <div className="flex-grow overflow-y-auto custom-scrollbar">
+          {displayConversations.length > 0 ? (
+            <div className="divide-y divide-app-border/50">
+              {displayConversations.map(conv => {
+                const otherParticipants = conv.participants.filter(uid => uid !== user.uid);
+                const otherParticipantUid = otherParticipants.length === 1 ? otherParticipants[0] : null;
+                const displayName = conv.is_group ? (conv.name || 'Groepsgesprek') : (otherParticipantUid ? getParticipantName(otherParticipantUid, conv.participant_names) : 'Onbekend');
+                const isActive = activeConversation?.id === conv.id;
+                const isOnline = !conv.is_group && otherParticipantUid && onlineUsers.has(otherParticipantUid);
+                const isGroupCallActive = conv.is_group && groupVoiceCallActiveRooms?.has(conv.id);
+                
+                return (
+                  <div
+                    key={conv.id}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setActiveConversation(conv);
+                        setMobileChatView('chat');
+                      }
+                    }}
+                    onClick={() => {
+                      setActiveConversation(conv);
+                      setMobileChatView('chat');
+                    }}
+                    className={`w-full p-6 flex items-center gap-4 transition-all text-left relative group cursor-pointer select-none ${
+                      isActive 
+                        ? 'bg-app-ink text-app-bg' 
+                        : 'hover:bg-app-accent/50 text-app-muted hover:text-app-ink'
+                    }`}
+                  >
+                    {isActive && (
+                      <div 
+                        className="absolute left-0 top-3 bottom-3 w-1.5 bg-app-bg rounded-r-full"
+                      />
+                    )}
+                    
+                    <div className="relative">
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all duration-500 overflow-hidden ${
+                        isActive ? 'bg-app-bg/20 ring-2 ring-app-bg/30' : 'bg-app-accent ring-1 ring-app-border group-hover:ring-app-ink/30'
+                      }`}>
+                        {conv.is_group ? (
+                          <div className="grid grid-cols-2 gap-0.5 p-1 w-full h-full">
+                            {conv.participants.slice(0, 4).map((uid, idx) => {
+                              const photo = getParticipantPhoto(uid, conv.participant_photos);
+                              return (
+                                <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
+                                  {photo ? (
+                                    <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <UserIcon className="w-2 h-2 text-app-muted" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {conv.participants.length < 4 && Array.from({ length: 4 - conv.participants.length }).map((_, i) => (
+                              <div key={`empty-${i}`} className="w-full h-full bg-app-bg/20 rounded-md" />
+                            ))}
+                          </div>
+                        ) : getParticipantPhoto(otherParticipantUid || '', conv.participant_photos)?.trim() ? (
+                          <img 
+                            src={getParticipantPhoto(otherParticipantUid || '', conv.participant_photos)!} 
+                            alt="" 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer" 
+                          />
+                        ) : (
+                          <UserIcon className={`w-7 h-7 ${isActive ? 'text-app-bg' : 'text-app-muted'}`} />
+                        )}
+                      </div>
+                      {isOnline && (
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-4 border-app-card rounded-full shadow-lg" />
+                      )}
+                      {isGroupCallActive && (
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-4 border-app-card rounded-full shadow-lg flex items-center justify-center animate-pulse">
+                          <Phone className="w-2 h-2 text-white fill-white" />
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-0.5">
+                        <p className="font-bold text-sm tracking-tight truncate">{displayName}</p>
+                        <div className="flex items-center gap-1">
+                          <p className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'opacity-60 text-app-bg' : 'text-app-muted'}`}>
+                            {formatTime(conv.updated_at)}
+                          </p>
+                          {onToggleHideConversation && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleHideConversation(conv.id);
+                              }}
+                              className={`p-1 rounded-md transition-opacity sm:opacity-0 sm:group-hover:opacity-100 ${
+                                isActive 
+                                  ? 'text-app-bg/80 hover:text-app-bg hover:bg-app-bg/20' 
+                                  : 'text-app-muted hover:text-amber-500 hover:bg-app-accent'
+                              }`}
+                              title="Gesprek verbergen"
+                              aria-label="Gesprek verbergen"
+                            >
+                              <EyeOff className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {typingStatuses[conv.id]?.length > 0 ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex gap-0.5 items-center">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDelay: '200ms' }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDelay: '400ms' }} />
+                            </div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 truncate">
+                              {typingStatuses[conv.id].length > 1 
+                                ? `${typingStatuses[conv.id].length} mensen typen...` 
+                                : `${typingStatuses[conv.id][0]} typt...`}
+                            </span>
+                          </div>
+                        ) : (
+                          <p className={`text-xs truncate font-medium ${isActive ? 'opacity-70 text-app-bg' : 'text-app-muted'}`}>
+                            {conv.is_group && conv.last_message && conv.last_message_sender_id && (
+                              <span className="font-bold mr-1">
+                                {conv.last_message_sender_id === user.uid ? 'Jij' : (getParticipantName(conv.last_message_sender_id, conv.participant_names) || 'Iemand')}:
+                              </span>
+                            )}
+                            {conv.last_message || 'Start het gesprek...'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-12 text-center opacity-50">
+              <div className="w-20 h-20 bg-app-accent rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                <Mail className="w-10 h-10 text-app-muted" />
+              </div>
+              <h4 className="font-bold text-app-ink uppercase tracking-tight">Geen Berichten</h4>
+              <p className="text-[10px] font-bold text-app-muted uppercase tracking-[0.2em] mt-2">Nog geen gesprekken gestart</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Chat Area */}
+      <div 
+        className={`${mobileChatView === 'chat' ? 'flex' : 'hidden sm:flex'} flex-grow flex-col relative bg-app-bg/10`}
+        style={useCustomTheme ? { backgroundColor: customTheme.body_bg_color ? `${customTheme.body_bg_color}30` : undefined } : {}}
+      >
+        {activeConversation ? (
+          <>
+            {/* Chat Header */}
+            <header className="p-6 border-b border-app-border flex items-center justify-between bg-app-card/90 backdrop-blur-xl sticky top-0 z-20">
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <button 
+                  onClick={() => setMobileChatView('list')}
+                  className="sm:hidden w-10 h-10 flex items-center justify-center hover:bg-app-accent rounded-xl transition-colors text-app-ink shrink-0"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                
+                <div className="flex items-center gap-4 group flex-1 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl overflow-hidden ring-2 ring-app-border group-hover:ring-app-ink/20 transition-all duration-300 bg-app-accent flex items-center justify-center shrink-0">
+                    {activeConversation.is_group ? (
+                      <div className="grid grid-cols-2 gap-0.5 p-1 w-full h-full">
+                        {activeConversation.participants.slice(0, 4).map((uid, idx) => {
+                          const photo = getParticipantPhoto(uid, activeConversation.participant_photos);
+                          return (
+                            <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
+                              {photo ? (
+                                <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <UserIcon className="w-2 h-2 text-app-muted" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (() => {
+                      const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
+                      const otherUid = otherParticipants[0];
+                      const photo = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) : null;
+                      return photo ? (
+                        <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <UserIcon className="w-6 h-6 text-app-muted m-auto h-full" />
+                      );
+                    })()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-lg text-app-ink tracking-tight truncate">
+                      {activeConversation.is_group 
+                        ? (activeConversation.name || 'Groepsgesprek') 
+                        : (() => {
+                            const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
+                            const otherUid = otherParticipants[0];
+                            return otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
+                          })()
+                      }
+                    </h4>
+                    <div className="flex items-center gap-2 mt-1">
+                      {activeConversation.is_group ? (
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5 bg-app-accent px-2.5 py-1 rounded-full border border-app-border">
+                            <Users className="w-3 h-3 text-app-muted" />
+                            <span className="text-[10px] font-bold text-app-muted uppercase tracking-wide">
+                              {activeConversation.participants.length} deelnemers
+                            </span>
+                          </div>
+                          {groupVoiceCallActiveRooms?.has(activeConversation.id) && (
+                            <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 animate-pulse">
+                              <Volume2 className="w-3 h-3 text-emerald-600" />
+                              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
+                                Live Call Gaande
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (() => {
+                        const otherParticipants = activeConversation.participants.filter(uid => uid !== user.uid);
+                        const otherUid = otherParticipants[0];
+                        const isOnline = otherUid && onlineUsers.has(otherUid);
+                        return (
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5 bg-app-accent px-2.5 py-1 rounded-full border border-app-border">
+                              <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse' : 'bg-app-muted/30'}`} />
+                              <span className="text-[10px] font-bold text-app-muted uppercase tracking-wide">
+                                {isOnline ? 'Online' : 'Offline'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
+                                Beveiligd
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  {activeConversation && (
+                    <button
+                      onClick={() => {
+                        setShowSearchBar(prev => !prev);
+                      }}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 text-app-muted ${
+                        showSearchBar 
+                          ? 'bg-app-ink/10 dark:bg-app-ink/20 text-app-ink' 
+                          : 'bg-app-accent hover:bg-app-accent/80'
+                      }`}
+                      title="Zoek in gesprek..."
+                    >
+                      {showSearchBar ? <X size={20} /> : <Search size={18} />}
+                    </button>
+                  )}
+
+                  {activeConversation && activeConversation.is_group && onStartGroupCall && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          if (playSound) {
+                            playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
+                          }
+                          onStartGroupCall(activeConversation.id, activeConversation.name || 'Groepsgesprek', false);
+                        }}
+                        className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-all shadow-lg active:scale-95 shadow-emerald-500/20"
+                        title="Start groepsbellen"
+                      >
+                        <Phone size={18} />
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (playSound) {
+                            playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
+                          }
+                          onStartGroupCall(activeConversation.id, activeConversation.name || 'Groepsgesprek', true);
+                        }}
+                        className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-all shadow-lg active:scale-95 shadow-emerald-600/10"
+                        title="Start video-groepsbellen"
+                      >
+                        <Video size={18} />
+                      </button>
+                    </div>
+                  )}
+
+                   {activeConversation && !activeConversation.is_group && onStartCall && (() => {
+                    const otherUid = activeConversation.participants.find(uid => uid !== user.uid);
+                    const isActivePeer = activeCallUserId && otherUid === activeCallUserId;
+                    
+                    return (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const otherName = otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
+                            const otherAvatar = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) || undefined : undefined;
+                            
+                            if (playSound && !isActivePeer) {
+                              playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
+                            }
+                            
+                            if (otherUid) {
+                              if (isActivePeer && onEndCall) {
+                                onEndCall();
+                              } else {
+                                onStartCall(otherUid, otherName, otherAvatar);
+                              }
+                            }
+                          }}
+                          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
+                            isActivePeer 
+                              ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
+                              : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                          }`}
+                          title={isActivePeer ? "Ophangen" : "Start spraakoproep"}
+                        >
+                          {isActivePeer ? <PhoneOff size={18} /> : <Phone size={18} />}
+                        </button>
+
+                        {onStartVideoCall && (
+                          <button
+                            onClick={() => {
+                              const otherName = otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend';
+                              const otherAvatar = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) || undefined : undefined;
+                              
+                              if (playSound && !isActivePeer) {
+                                playSound('/audio/calls/start_call.mp3', true, user.uid, user.displayName || 'Anoniem');
+                              }
+                              
+                              if (otherUid) {
+                                if (isActivePeer && onEndCall) {
+                                  onEndCall();
+                                } else {
+                                  onStartVideoCall(otherUid, otherName, otherAvatar);
+                                }
+                              }
+                            }}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
+                              isActivePeer 
+                                ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10'
+                            }`}
+                            title={isActivePeer ? "Ophangen" : "Start video-bellen"}
+                          >
+                            {isActivePeer ? <PhoneOff size={18} /> : <Video size={18} />}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </header>
+
+            {/* Message Search Bar */}
+            <AnimatePresence>
+              {showSearchBar && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden bg-app-card border-b border-app-border"
+                >
+                  <div className="px-8 py-3 flex items-center gap-3">
+                    <div className="flex-1 flex items-center gap-3 bg bg-app-bg/55 border border-app-border rounded-xl px-4 py-2 hover:border-app-border/80 focus-within:border-app-ink/20 transition-all duration-300">
+                      <Search className="w-4 h-4 text-app-muted" />
+                      <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder="Zoek in dit gesprek..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="flex-1 bg-transparent border-none outline-none focus:ring-0 text-app-ink placeholder:text-app-muted/40 text-sm font-medium"
+                      />
+                      {searchQuery && (
+                        <button 
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="p-1 hover:bg-app-accent/80 rounded-lg transition-colors text-app-muted hover:text-app-ink"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {searchQuery && (
+                      <span className="text-[10px] font-bold text-app-muted uppercase font-mono bg-app-accent px-2.5 py-1.5 rounded-lg border border-app-border whitespace-nowrap animate-fadeIn">
+                        {filteredMessages.length} {filteredMessages.length === 1 ? 'resultaat' : 'resultaten'}
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Messages Pane */}
+            <div className="flex-grow overflow-y-auto p-8 space-y-6 custom-scrollbar flex flex-col-reverse">
+              {filteredMessages.length > 0 ? (
+                filteredMessages.map((msg, i) => {
+                  const isMe = msg.sender_id === user.uid;
+                  const prevMsg = filteredMessages[i+1]; // reversed
+                  const isSameday = prevMsg && new Date(msg.created_at).toDateString() === new Date(prevMsg.created_at).toDateString();
+                  const showDate = !isSameday;
+                  
+                  return (
+                    <div key={msg.id} className="space-y-4">
+                      {showDate && (
+                        <div className="flex items-center gap-4 py-4 opacity-30">
+                          <div className="flex-grow h-px bg-app-border" />
+                          <span className="text-[10px] font-medium text-app-muted uppercase tracking-widest whitespace-nowrap">
+                            {formatDate(msg.created_at)}
+                          </span>
+                          <div className="flex-grow h-px bg-app-border" />
+                        </div>
+                      )}
+                      
+                      <div className={`flex items-end gap-3 group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        {activeConversation.is_group && !isMe && (
+                          <div className="w-8 h-8 rounded-xl overflow-hidden ring-1 ring-app-border bg-app-card flex-shrink-0 mb-6">
+                            {getParticipantPhoto(msg.sender_id, activeConversation.participant_photos)?.trim() ? (
+                              <img 
+                                src={getParticipantPhoto(msg.sender_id, activeConversation.participant_photos)!} 
+                                alt="" 
+                                className="w-full h-full object-cover" 
+                                referrerPolicy="no-referrer" 
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-app-muted">
+                                {getParticipantName(msg.sender_id, activeConversation.participant_names).charAt(0) || '?'}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                          {activeConversation.is_group && !isMe && (
+                            <span className="text-[10px] font-black text-app-muted uppercase tracking-widest mb-1.5 ml-1 truncate block max-w-full">
+                              {getParticipantName(msg.sender_id, activeConversation.participant_names) || 'Onbekend'}
+                            </span>
+                          )}
+                          <div className={`flex items-center gap-2 group/msg ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                            <div className={`
+                                px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative font-medium
+                                ${isMe 
+                                  ? 'bg-app-ink text-app-bg rounded-br-none hover:shadow-xl' 
+                                  : 'bg-app-card text-app-ink border border-app-border rounded-bl-none hover:border-app-border'}
+                                ${!isMe && useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}
+                              `}
+                              style={!isMe && useCustomTheme ? { 
+                                backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, (100 - (customTheme.chat_opacity ?? 0)) / 100) : undefined),
+                                borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+                                boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
+                                color: customTheme.text_color
+                              } : {}}
+                            >
+                              {editingMessageId === msg.id ? (
+                                <div className="flex flex-col gap-3 min-w-[200px]">
+                                  <input 
+                                    value={editInput}
+                                    onChange={(e) => setEditInput(e.target.value)}
+                                    className="w-full bg-app-bg/10 border-none focus:ring-2 focus:ring-app-bg/30 text-app-bg text-sm p-2 rounded-xl"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        onEditMessage?.(msg.id, editInput);
+                                        setEditingMessageId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingMessageId(null);
+                                      }
+                                    }}
+                                  />
+                                  <div className="flex justify-end gap-3">
+                                    <button 
+                                      onClick={() => setEditingMessageId(null)} 
+                                      className="p-1.5 hover:bg-app-bg/20 rounded-lg transition-colors"
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        onEditMessage?.(msg.id, editInput);
+                                        setEditingMessageId(null);
+                                      }} 
+                                      className="p-1.5 bg-app-bg/20 hover:bg-app-bg/30 rounded-lg transition-colors"
+                                    >
+                                      <Check size={16} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <RichContent content={msg.text} searchQuery={searchQuery} hideMedia={false} />
+                                  {msg.is_edited && (
+                                    <span className={`text-[8px] font-black uppercase tracking-widest mt-1 block ${isMe ? 'opacity-50' : 'text-app-muted opacity-70'}`}>
+                                      (Bewerkt)
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </div>
+
+                             {/* Action Buttons beside bubble */}
+                             {isMe && !editingMessageId && (
+                               <div className="flex flex-row sm:flex-col gap-1.5 opacity-100 sm:opacity-0 group-hover/msg:opacity-100 transition-all duration-200 shrink-0 items-center">
+                                 <button 
+                                   onClick={() => { setEditingMessageId(msg.id); setEditInput(msg.text); }}
+                                   className="p-2 sm:p-1.5 bg-app-card border border-app-border rounded-xl sm:rounded-lg text-app-muted hover:text-app-ink hover:bg-app-accent transition-colors shadow-sm active:scale-95"
+                                   title="Bewerken"
+                                 >
+                                   <Edit3 size={14} className="sm:w-3 sm:h-3" />
+                                 </button>
+                                 <button 
+                                   onClick={() => {
+                                     onDeleteMessage?.(msg.id);
+                                   }}
+                                   className="p-2 sm:p-1.5 bg-app-card border border-app-border rounded-xl sm:rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm active:scale-95"
+                                   title="Verwijderen"
+                                 >
+                                   <Trash2 size={14} className="sm:w-3 sm:h-3" />
+                                 </button>
+                               </div>
+                             )}
+                          </div>
+                          <div className={`flex items-center gap-1.5 mt-1.5 text-[10px] font-medium text-app-muted ${isMe ? 'justify-end text-right' : 'justify-start text-left'}`}>
+                            <span>{formatDate(msg.created_at)} om {formatTime(msg.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center p-12 space-y-6">
+                  <div className="w-24 h-24 bg-app-accent rounded-[3rem] flex items-center justify-center shadow-inner">
+                    <MessageSquare className="w-12 h-12 text-app-muted/50" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-bold text-app-ink uppercase tracking-tight">
+                      {searchQuery ? 'Geen resultaten' : 'Status'}
+                    </h3>
+                    <p className="text-[10px] font-bold text-app-muted uppercase tracking-[0.2em] mt-2">
+                      {searchQuery 
+                        ? `Geen berichten gevonden die voldoen aan "${searchQuery}"`
+                        : 'Geen berichten gedetecteerd in dit cluster'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input Bar */}
+            <div className="p-8 bg-app-card/90 backdrop-blur-xl border-t border-app-border">
+              {/* POLISHED FILE PREVIEW CARD */}
+              <AnimatePresence>
+                {isCompressing && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center gap-4 backdrop-blur-md"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-app-card border border-app-border flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-inner">
+                      <ThemedSpinner size="md" color="var(--custom-primary, #06b6d4)" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-app-ink uppercase tracking-wider flex items-center gap-1.5">
+                        Bestand Verwerken
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                      </p>
+                      <p className="text-[10px] text-app-muted font-mono mt-0.5">
+                        Bestand optimaliseren voor snelle verzending...
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {selectedFile && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center justify-between gap-4 backdrop-blur-md"
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      {selectedFileType === 'video' ? (
+                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border bg-black flex-shrink-0 relative flex items-center justify-center">
+                          <video src={selectedFile} className="w-full h-full object-cover" muted playsInline />
+                          <Video className="w-4 h-4 text-cyan-400 absolute inset-0 m-auto drop-shadow" />
+                        </div>
+                      ) : selectedFileType === 'image' ? (
+                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border bg-black flex-shrink-0">
+                          <img src={selectedFile} alt="Preview" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-500 flex-shrink-0">
+                          <Volume2 className="w-6 h-6 animate-pulse" />
+                        </div>
+                      )}
+                      <div className="overflow-hidden">
+                        <p className="text-xs font-black text-app-ink uppercase tracking-wider truncate">
+                          {selectedFileType === 'video' ? 'Geselecteerde Video' : selectedFileType === 'image' ? 'Geselecteerde Foto' : 'Geselecteerd Audiobestand'}
+                        </p>
+                        <p className="text-[10px] text-app-muted font-mono truncate mt-0.5">
+                          Klaar om te versturen ({Math.round(selectedFile.length / 1024)} KB)
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setSelectedFileType(null);
+                      }}
+                      className="w-8 h-8 rounded-full bg-app-card border border-app-border text-app-muted hover:text-app-ink hover:scale-105 active:scale-95 flex items-center justify-center transition-all shadow-sm"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <form onSubmit={onFormSubmit} className="relative group">
+                <input 
+                  type="text"
+                  value={messageInput}
+                  onChange={(e) => {
+                    setMessageInput(e.target.value);
+                    handleTyping(e, activeConversation.id);
+                  }}
+                  onPaste={handlePaste}
+                  placeholder="Type je bericht..."
+                  className="w-full pl-3 sm:pl-8 pr-[145px] sm:pr-56 py-3.5 sm:py-5 bg-app-bg/50 border-2 border-app-border rounded-xl sm:rounded-3xl focus:border-app-ink focus:ring-0 transition-all font-bold text-app-ink placeholder:text-app-muted/50 text-xs sm:text-base"
+                  style={useCustomTheme ? { 
+                    backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, (100 - (customTheme.chat_opacity ?? 0)) / 100) : undefined),
+                    borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
+                    color: customTheme.text_color
+                  } : {}}
+                />
+                <div className="absolute right-1 sm:right-2 top-1 sm:top-2 bottom-1 sm:bottom-2 flex items-center gap-0.5 sm:gap-1.5">
+                  <input 
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="image/*,audio/*"
+                    className="hidden"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isCompressing}
+                    className="p-1.5 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent active:scale-95 transition-all cursor-pointer"
+                    title="Foto of audio uploaden (via ImgBB CDN)"
+                  >
+                    {isCompressing ? <ThemedSpinner size="xs" /> : <Paperclip className="w-3.5 h-3.5 sm:w-5 sm:h-5" />}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleImageUrl}
+                    className="p-1.5 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent active:scale-95 transition-all cursor-pointer"
+                    title="Afbeelding via URL"
+                  >
+                    <Link className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => handleEmojiButtonClick(e, 'message')}
+                    className="p-1.5 sm:p-2.5 text-app-muted hover:text-app-ink rounded-lg sm:rounded-xl hover:bg-app-accent active:scale-95 transition-all cursor-pointer"
+                    title="Emoji kiezen"
+                  >
+                    <Smile className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={sending || (!messageInput.trim() && !selectedFile)}
+                    className="px-2.5 sm:px-6 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-2xl hover:opacity-90 disabled:opacity-30 active:scale-95 transition-all shadow-lg flex items-center justify-center min-w-[36px] sm:min-w-[80px] cursor-pointer"
+                  >
+                    {sending ? <ThemedSpinner size="xs" color="currentColor" /> : <AnimatedSendIcon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </>
+        ) : (
+          <div className="flex-grow flex flex-col items-center justify-center p-12 text-center">
+            <div className="opacity-10 mb-8">
+              <MessageSquare className="w-24 h-24 text-app-ink" />
+            </div>
+            <p className="text-app-muted max-w-xs mb-8 text-sm font-medium leading-relaxed">
+              Kies een gesprek uit de lijst of start een nieuwe chat met een andere gebruiker.
+            </p>
+            <button 
+              onClick={() => setShowUserSearch(true)}
+              className="px-8 py-3 bg-app-ink text-app-bg rounded-xl font-bold text-xs hover:opacity-90 active:scale-95 transition-all shadow-lg"
+            >
+              Nieuw gesprek starten
+            </button>
+          </div>
+        )}
+      </div>
+
+      {videoToTrim && (
+        <VideoTrimmerModal
+          file={videoToTrim}
+          onTrimmed={async (dataUrl) => {
+            setVideoToTrim(null);
+            setIsCompressing(true);
+            try {
+              const uploadRes = await uploadImageToImgBB(dataUrl, 'video_clip.webm');
+              if (uploadRes?.url) {
+                setSelectedFile(uploadRes.url);
+                setSelectedFileType('video');
+                toast.success('Videofragment geüpload!');
+              } else {
+                toast.error('Kon videofragment niet uploaden.');
+              }
+            } catch (err) {
+              console.error('Video upload error:', err);
+              toast.error('Fout bij uploaden videofragment.');
+            } finally {
+              setIsCompressing(false);
+            }
+          }}
+          onCancel={() => {
+            setVideoToTrim(null);
+          }}
+        />
+      )}
+    </div>
+  );
+});

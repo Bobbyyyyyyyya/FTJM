@@ -273,6 +273,18 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     // Notifications toast & popups
     "Herlaad de pagina": "Reload the page",
     "Verversen": "Refresh",
+
+    // Icon Animations Setting
+    "Icoon Micro-Animaties": "Icon Micro-Animations",
+    "Kies hoe knoppen en navigatie-iconen reageren: continu geanimeerd, alleen bij cursor hover of volledig statisch.": "Choose how buttons and navigation icons react: continuously animated, only on cursor hover, or fully static.",
+    "Alles Geanimeerd": "All Animated",
+    "Standaard — continue subtiele animaties op actieve tab en bij hover.": "Default — continuous subtle animations on active tab and on hover.",
+    "Alleen bij Hover": "Only on Hover",
+    "Rustige interface — animaties triggeren alleen als je erover beweegt.": "Calm interface — animations trigger only when hovering over them.",
+    "Animaties Uit": "Animations Off",
+    "Volledig statische iconen zonder beweging of spring-effecten.": "Fully static icons without motion or spring effects.",
+    "Live Voorbeeld & Testbalk": "Live Preview & Test Bar",
+    "Beweeg met je muis over de iconen hieronder om je geselecteerde modus direct te testen:": "Hover your mouse over the icons below to test your selected mode immediately:",
   }
 };
 

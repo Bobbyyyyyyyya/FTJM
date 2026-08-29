@@ -23,9 +23,11 @@ if (import.meta.env.PROD) {
 
 if ('serviceWorker' in navigator) {
   const isDevPreview = typeof window !== 'undefined' && (
+    import.meta.env.DEV ||
     window.location.hostname.endsWith('.run.app') ||
     window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1'
+    window.location.hostname === '127.0.0.1' ||
+    window.self !== window.top
   );
 
   if (isDevPreview) {

@@ -1,6 +1,10 @@
 import { toast } from 'sonner';
 import { AudioLog, SupabaseErrorInfo, AdminNotesData } from '../types';
 import { supabase } from './supabase';
+import { compressVideo } from './videoCompressor';
+import { PROTECTED_NAMES_LIST } from '../constants/protectedNames';
+
+export { compressVideo };
 
 export const audioCache = new Map<string, HTMLAudioElement>();
 
@@ -572,6 +576,30 @@ export const parseAdminNotes = (notesStr: string | null | undefined, customTheme
   return fromNotes || fromTheme || fallback;
 };
 
+export const isValidEmail = (email: string | null | undefined): boolean => {
+  if (!email || typeof email !== 'string') return false;
+  const trimmed = email.trim().toLowerCase();
+  if (trimmed.length < 5 || trimmed.length > 254) return false;
+
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  if (!emailRegex.test(trimmed)) return false;
+
+  const parts = trimmed.split('@');
+  if (parts.length !== 2) return false;
+
+  const [local, domain] = parts;
+  if (!local || !domain) return false;
+  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
+
+  const domainParts = domain.split('.');
+  if (domainParts.length < 2) return false;
+
+  const tld = domainParts[domainParts.length - 1];
+  if (!tld || tld.length < 2 || !/^[a-z]{2,}$/i.test(tld)) return false;
+
+  return true;
+};
+
 export const VERIFIED_EMAILS = [
   'markohoksen@gmail.com',
   'zwedenguy@gmail.com'
@@ -602,13 +630,195 @@ export const isBetaTester = (
 ): boolean => {
   if (!userOrEmail) return false;
   if (typeof userOrEmail === 'object') {
-    if (userOrEmail.role === 'tester' || (userOrEmail as any).is_beta_tester === true) return true;
+    if ((userOrEmail as any).is_beta_tester === true) return true;
     if (userOrEmail.email) {
       return BETA_TESTER_EMAILS.includes(userOrEmail.email.toLowerCase().trim());
     }
     return false;
   }
   return BETA_TESTER_EMAILS.includes(userOrEmail.toLowerCase().trim());
+};
+
+/**
+ * Anti-Name Piracy & Impersonation Shield
+ * Detects unauthorized use or impersonation variations of protected identities:
+ * - Jonatech / Jonatek / Jonathech
+ * - Marko / Marko Hoksen / Marco Hoksen / Hoksen
+ */
+export const isProtectedNameOrImpersonation = (
+  nameOrEmail: string | null | undefined,
+  currentAuthenticatedEmail?: string | null
+): { isPirated: boolean; matchedPattern?: string; reason?: string } => {
+  if (!nameOrEmail || typeof nameOrEmail !== 'string') {
+    return { isPirated: false };
+  }
+
+  const authenticatedEmail = (currentAuthenticatedEmail || '').toLowerCase().trim();
+  // The verified genuine administrator / owner account is authorized
+  if (authenticatedEmail === 'markohoksen@gmail.com') {
+    return { isPirated: false };
+  }
+
+  const raw = nameOrEmail.trim().toLowerCase();
+
+  // If email passed, also test the local username part (e.g. markohoksen@other.com)
+  const parts = raw.split('@');
+  const textToTest = parts.length > 1 ? parts[0] : raw;
+
+  // 1. Normalize diacritics / accents (e.g., márkò -> marko)
+  const normalized = textToTest
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  // 2. Leetspeak & symbol substitution mapping
+  const deLeeted = normalized
+    .replace(/[@4]/g, 'a')
+    .replace(/[3]/g, 'e')
+    .replace(/[1!|]/g, 'i')
+    .replace(/[0]/g, 'o')
+    .replace(/[5$]/g, 's')
+    .replace(/[7+]/g, 't')
+    .replace(/8/g, 'b')
+    .replace(/v/g, 'u')
+    .replace(/c/g, 'k')
+    .replace(/x/g, 'ks')
+    .replace(/ph/g, 'f');
+
+  // 3. Stripped alphanumeric version
+  const strippedAlpha = deLeeted.replace(/[^a-z0-9]/g, '');
+  const originalStripped = normalized.replace(/[^a-z0-9]/g, '');
+
+  // Protected core roots and exhaustive list of 170+ variations
+  const protectedRoots = [
+    'jonatech',
+    'jonatek',
+    'jonathech',
+    'jonatec',
+    'jonathck',
+    'markohoksen',
+    'markohoxen',
+    'marcohoksen',
+    'marcohoxen',
+    'hoksenmarko',
+    'hoxenmarko',
+    'marko',
+    'marco',
+    'hoksen',
+    'hoxen',
+    ...PROTECTED_NAMES_LIST
+  ];
+
+  // Specific strict root tokens and comprehensive list check
+  const wordTokens = normalized.split(/[\s_.-]+/);
+  for (const root of protectedRoots) {
+    const rootClean = root.replace(/[^a-z0-9]/g, '').toLowerCase();
+    if (!rootClean) continue;
+
+    // For full names/longer variations (4+ chars), check substring and token containment
+    if (rootClean.length >= 4) {
+      if (
+        strippedAlpha.includes(rootClean) ||
+        originalStripped.includes(rootClean) ||
+        raw.includes(root.toLowerCase()) ||
+        normalized.includes(root.toLowerCase())
+      ) {
+        return {
+          isPirated: true,
+          matchedPattern: root,
+          reason: 'Gereserveerde merknaam of beheerder-identiteit (Jonatech / Marko Hoksen)'
+        };
+      }
+    } else {
+      // For very short roots (< 4 chars, e.g. "hox"), require exact matching on word token or stripped input
+      if (
+        strippedAlpha === rootClean ||
+        originalStripped === rootClean ||
+        wordTokens.some(tok => tok.replace(/[^a-z0-9]/g, '').toLowerCase() === rootClean) ||
+        raw === root.toLowerCase()
+      ) {
+        return {
+          isPirated: true,
+          matchedPattern: root,
+          reason: 'Gereserveerde merknaam of beheerder-identiteit (Jonatech / Marko Hoksen)'
+        };
+      }
+    }
+  }
+
+  // Check spaced words (e.g. "jona tech", "marko h", "m hoksen", "real marko")
+  for (const token of wordTokens) {
+    const cleanToken = token.replace(/[^a-z0-9]/g, '');
+    if (cleanToken && (
+      ['jonatech', 'jonatek', 'marko', 'marco', 'hoksen', 'hoxen', 'maarko', 'maarco', 'marcko', 'markko', 'marcco', 'markos', 'marcos', 'marcus', 'markus', 'marqo'].includes(cleanToken) ||
+      PROTECTED_NAMES_LIST.includes(cleanToken)
+    )) {
+      return {
+        isPirated: true,
+        matchedPattern: cleanToken,
+        reason: 'Gereserveerde merknaam of beheerder-identiteit (Jonatech / Marko Hoksen)'
+      };
+    }
+  }
+
+  return { isPirated: false };
+};
+
+export const isTestUser = (
+  userOrEmail?: string | { email?: string | null; display_name?: string | null; role?: string | null } | null
+): boolean => {
+  if (!userOrEmail) return false;
+  let email = '';
+  let name = '';
+  let role = '';
+
+  if (typeof userOrEmail === 'string') {
+    email = userOrEmail.toLowerCase().trim();
+    name = userOrEmail.toLowerCase().trim();
+  } else {
+    email = (userOrEmail.email || '').toLowerCase().trim();
+    name = (userOrEmail.display_name || '').toLowerCase().trim();
+    role = (userOrEmail.role || '').toLowerCase().trim();
+  }
+
+  // Check emails indicating test accounts
+  if (
+    email.includes('test@') ||
+    email.endsWith('@test.com') ||
+    email.endsWith('@example.com') ||
+    email.includes('testuser') ||
+    email.startsWith('test_') ||
+    email.startsWith('test.') ||
+    email.startsWith('dummy') ||
+    email.startsWith('mock') ||
+    email.startsWith('fake')
+  ) {
+    return true;
+  }
+
+  // Check display names indicating test users
+  if (
+    name === 'test' ||
+    name === 'tester' ||
+    name === 'test user' ||
+    name === 'test user 1' ||
+    name === 'test user 2' ||
+    name === 'test account' ||
+    name === 'testaccount' ||
+    name === 'testuser' ||
+    name.startsWith('test user') ||
+    name.startsWith('testuser') ||
+    name.startsWith('test account') ||
+    name.startsWith('dummy user') ||
+    name.startsWith('mock user')
+  ) {
+    return true;
+  }
+
+  if (role === 'test' || role === 'tester_dummy' || role === 'test_user') {
+    return true;
+  }
+
+  return false;
 };
 
 /**
@@ -733,5 +943,374 @@ export const getDeviceOSInfo = (userAgentStr?: string, platformStr?: string): De
     formattedLabel: 'Onbekend Apparaat'
   };
 };
+
+/**
+ * Binary Image Compressor: Converts any File, Blob, or Data URL to an ultra-lightweight WebP/JPEG Blob.
+ * Eliminates the 33% Base64 inflation and produces clean binary data.
+ */
+export const compressImageToBlob = (
+  fileOrDataUrl: File | Blob | string,
+  maxWidth: number = 800,
+  maxHeight: number = 600,
+  quality: number = 0.60,
+  preferredMimeType: string = 'image/webp'
+): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const processImg = (src: string, cleanup?: () => void) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          if (cleanup) cleanup();
+          if (fileOrDataUrl instanceof Blob) resolve(fileOrDataUrl);
+          else reject(new Error('Canvas context unavailable'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        if (cleanup) cleanup();
+
+        // Try WebP first for ultra-light compression, fallback to JPEG
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              // Fallback to jpeg
+              canvas.toBlob(
+                (fallbackBlob) => {
+                  if (fallbackBlob) resolve(fallbackBlob);
+                  else if (fileOrDataUrl instanceof Blob) resolve(fileOrDataUrl);
+                  else reject(new Error('Blob conversion failed'));
+                },
+                'image/jpeg',
+                quality
+              );
+            }
+          },
+          preferredMimeType,
+          quality
+        );
+      };
+      img.onerror = (e) => {
+        if (cleanup) cleanup();
+        if (fileOrDataUrl instanceof Blob) resolve(fileOrDataUrl);
+        else reject(e);
+      };
+      img.src = src;
+    };
+
+    if (typeof fileOrDataUrl === 'string') {
+      processImg(fileOrDataUrl);
+    } else {
+      const objectUrl = URL.createObjectURL(fileOrDataUrl);
+      processImg(objectUrl, () => URL.revokeObjectURL(objectUrl));
+    }
+  });
+};
+
+/**
+ * Uploads an image to ImgBB via the backend /api/upload-image route.
+ * Returns public direct URL (e.g. https://i.ibb.co/...) with 0% database storage cost.
+ */
+export const uploadImageToImgBB = async (
+  fileOrBlobOrDataUrl: File | Blob | string,
+  fileName?: string
+): Promise<{ url: string; thumb?: string; display_url?: string } | null> => {
+  try {
+    let base64String = '';
+    let mimeType = 'image/jpeg';
+    if (typeof fileOrBlobOrDataUrl === 'string') {
+      base64String = fileOrBlobOrDataUrl;
+      const match = fileOrBlobOrDataUrl.match(/^data:([^;]+);base64,/);
+      if (match) mimeType = match[1];
+    } else {
+      mimeType = fileOrBlobOrDataUrl.type || 'image/jpeg';
+      base64String = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(fileOrBlobOrDataUrl);
+      });
+    }
+
+    const res = await fetch('/api/upload-image', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image: base64String,
+        name: fileName || `img_${Date.now()}`,
+        mimeType,
+      }),
+    });
+
+    const json = await res.json();
+    if (res.ok && json.success && json.url) {
+      return {
+        url: json.url,
+        thumb: json.thumb || json.display_url || json.url,
+        display_url: json.display_url || json.url,
+      };
+    } else {
+      if (json.error) {
+        toast.error(`Uploadfout: ${json.error}`);
+      }
+      return null;
+    }
+  } catch (err: any) {
+    console.error('[uploadImageToImgBB] Error:', err);
+    toast.error('Kon afbeelding niet uploaden naar server/CDN.');
+    return null;
+  }
+};
+
+/**
+ * Uploads a binary Blob or File directly to Supabase Storage and returns the public CDN URL.
+ */
+export const uploadBinaryToStorage = async (
+  blob: Blob | File,
+  pathPrefix: string = 'media',
+  userId?: string
+): Promise<string | null> => {
+  try {
+    const ext = blob.type.includes('webp') ? 'webp' : blob.type.includes('png') ? 'png' : blob.type.includes('video') ? 'webm' : 'jpg';
+    const randomId = Math.random().toString(36).substring(2, 9);
+    const fileName = `${userId ? `${userId}/` : ''}${Date.now()}_${randomId}.${ext}`;
+    const possibleBuckets = ['media', 'profile_media', 'uploads', 'public', 'avatars', 'wallpapers', 'files'];
+
+    for (const bucket of possibleBuckets) {
+      try {
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .upload(fileName, blob, {
+            cacheControl: '86400',
+            upsert: true,
+            contentType: blob.type
+          });
+
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(fileName);
+
+          if (publicUrlData?.publicUrl) {
+            return publicUrlData.publicUrl;
+          }
+        }
+      } catch (err) {
+        // Try next bucket
+      }
+    }
+  } catch (err) {
+    console.warn('[uploadBinaryToStorage] Storage upload note:', err);
+  }
+  return null;
+};
+
+/**
+ * Client-side image compressor using HTML5 Canvas to keep base64 payloads minimal.
+ */
+export const compressImage = (
+  fileOrDataUrl: File | string,
+  maxWidth: number = 1024,
+  maxHeight: number = 576,
+  quality: number = 0.65
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const processImg = (src: string) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(src);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          let dataUrl = canvas.toDataURL('image/webp', quality);
+          if (!dataUrl.startsWith('data:image/webp')) {
+            dataUrl = canvas.toDataURL('image/jpeg', quality);
+          }
+          resolve(dataUrl);
+        } catch {
+          resolve(src);
+        }
+      };
+      img.onerror = () => resolve(src);
+      img.src = src;
+    };
+
+    if (typeof fileOrDataUrl === 'string') {
+      if (fileOrDataUrl.startsWith('data:image')) {
+        processImg(fileOrDataUrl);
+      } else {
+        resolve(fileOrDataUrl);
+      }
+    } else {
+      const reader = new FileReader();
+      reader.readAsDataURL(fileOrDataUrl);
+      reader.onload = (e) => {
+        processImg(e.target?.result as string);
+      };
+      reader.onerror = (err) => reject(err);
+    }
+  });
+};
+
+/**
+ * Automatically detects and uploads all data:image/audio/video URLs embedded inside a text payload to CDN/server.
+ */
+export const autoCompressAllDataUrlsInText = async (text: string): Promise<string> => {
+  if (!text || (!text.includes('data:image/') && !text.includes('data:audio/') && !text.includes('data:video/'))) return text;
+  const dataUrlRegex = /data:(image|audio|video)\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g;
+  const matches = text.match(dataUrlRegex);
+  if (!matches || matches.length === 0) return text;
+
+  let newText = text;
+  for (const match of matches) {
+    try {
+      const uploadRes = await uploadImageToImgBB(match, 'attachment');
+      if (uploadRes?.url) {
+        newText = newText.replace(match, uploadRes.url);
+      }
+    } catch (err) {
+      console.warn('Auto-upload of data URL to CDN/server failed:', err);
+    }
+  }
+  return newText;
+};
+
+export const hexToRgb = (hex?: string, defaultRgb = { r: 24, g: 24, b: 27 }): { r: number; g: number; b: number } => {
+  if (!hex || typeof hex !== 'string') return defaultRgb;
+  let clean = hex.replace('#', '').trim();
+  if (clean.length === 3) {
+    clean = clean.split('').map(c => c + c).join('');
+  } else if (clean.length === 4) {
+    clean = clean.slice(0, 3).split('').map(c => c + c).join('');
+  } else if (clean.length === 8) {
+    clean = clean.slice(0, 6);
+  }
+  if (clean.length !== 6) return defaultRgb;
+  const num = parseInt(clean, 16);
+  if (isNaN(num)) return defaultRgb;
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255
+  };
+};
+
+export const hexToRgba = (hex?: string, alpha: number = 1, fallback = 'transparent'): string => {
+  if (!hex || typeof hex !== 'string') return fallback;
+  const { r, g, b } = hexToRgb(hex);
+  const clampedAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+  return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
+};
+
+/**
+ * Strips obsolete, empty, or heavy bloat from custom_theme payloads before DB sync.
+ */
+export const sanitizeCustomTheme = (theme: any): any => {
+  if (!theme || typeof theme !== 'object') return {};
+
+  const clean: Record<string, any> = {};
+
+  const allowedKeys = [
+    'modern_ui',
+    'modern_ui_custom',
+    'profile_list_position',
+    'wallpaper',
+    'pattern',
+    'primary_color',
+    'secondary_color',
+    'accent_color',
+    'text_color',
+    'card_bg_color',
+    'sidebar_bg_color',
+    'header_bg_color',
+    'body_bg_color',
+    'glass_effect',
+    'blur_amount',
+    'opacity',
+    'chat_opacity',
+    'profile_card_opacity',
+    'wallpaper_x',
+    'wallpaper_y',
+    'border_radius',
+    'font_family',
+    'custom_font_name',
+    'custom_font_url',
+    'custom_font_data',
+    'custom_fonts',
+    'agreed_terms_v2',
+    'game_high_scores',
+    'following',
+    'icon_animation_mode',
+    'banner_url',
+    'user_telemetry',
+    'discord_id',
+    'discord_username',
+    'discord_link_code',
+    'media'
+  ];
+
+  for (const key of allowedKeys) {
+    if (theme[key] !== undefined && theme[key] !== null && theme[key] !== '') {
+      clean[key] = theme[key];
+    }
+  }
+
+  // Ensure game_high_scores is clean
+  if (clean.game_high_scores && typeof clean.game_high_scores === 'object') {
+    const scores: Record<string, number> = {};
+    for (const [k, v] of Object.entries(clean.game_high_scores)) {
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        scores[k] = Math.round(v);
+      }
+    }
+    clean.game_high_scores = scores;
+  }
+
+  // Ensure following array is clean and bounded
+  if (Array.isArray(clean.following)) {
+    clean.following = Array.from(new Set(clean.following.filter((id: any) => typeof id === 'string' && id.length > 0))).slice(0, 100);
+  }
+
+  return clean;
+};
+
 
 

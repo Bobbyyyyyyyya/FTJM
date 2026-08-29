@@ -1,10 +1,11 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { User as UserIcon, MessageSquare, Flag, Pencil, Trash2, Mail, Loader2, Check, X, ShieldCheck, FlaskConical } from 'lucide-react';
+import { User as UserIcon, MessageSquare, Flag, Pencil, Trash2, Mail, Check, X, ShieldCheck, FlaskConical } from 'lucide-react';
 import { Post, UserProfile } from '../types';
-import { formatDate, formatTime } from '../utils/helpers';
+import { formatDate, formatTime, hexToRgba } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
 import { RichContent } from './RichContent';
+import { ThemedSpinner } from './ThemedLoadingScreen';
 
 interface PostItemProps {
   post: Post;
@@ -13,6 +14,7 @@ interface PostItemProps {
   onReply: (post: Post) => void;
   onReport: (type: 'post', id: string, userId: string, name: string) => void;
   onEdit: (id: string, content: string) => void;
+  onBlockPost?: (id: string, currentStatus: boolean) => void;
   onDelete: (id: string) => void;
   onStartDM: (user: { id: string, display_name: string }) => void;
   onOpenProfile: (userId: string) => void;
@@ -28,6 +30,7 @@ interface PostItemProps {
   customTheme?: any;
   profiles?: UserProfile[];
   userProfile?: UserProfile | null;
+  isMediaExpired?: boolean;
 }
 
 export const PostItem: React.FC<PostItemProps> = React.memo(({
@@ -37,6 +40,7 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
   onReply,
   onReport,
   onEdit,
+  onBlockPost,
   onDelete,
   onStartDM,
   onOpenProfile,
@@ -51,11 +55,13 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
   useCustomTheme,
   customTheme,
   profiles,
-  userProfile
+  userProfile,
+  isMediaExpired = false
 }) => {
   const authorProfile = (userProfile && post.author_id === userProfile.id)
     ? userProfile
     : profiles?.find(p => p.id === post.author_id);
+  if (post.is_blocked && !isAdmin) return null;
   const displayName = authorProfile?.display_name || post.author_name || 'Anoniem';
   const photoUrl = authorProfile?.photo_url || post.author_photo;
 
@@ -66,16 +72,16 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
       animate={{ opacity: 1, y: 0 }}
       key={post.id}
       id={`post-${post.id}`}
-      className={`flex gap-3 sm:gap-4 group bg-app-card p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-app-border shadow-sm hover:shadow-md transition-all relative ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
+      className={`flex gap-3 sm:gap-4 group bg-app-card p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-app-border shadow-sm hover:shadow-md transition-all relative ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''} ${post.is_blocked ? 'opacity-50 ring-2 ring-red-500 rounded-2xl' : ''}`}
       style={useCustomTheme ? { 
-        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, (100 - (customTheme.chat_opacity ?? 0)) / 100) : undefined),
         borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
         boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
         color: customTheme.text_color
       } : {}}
     >
       <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0">
-        {photoUrl ? (
+        {photoUrl?.trim() ? (
           <button 
             onClick={() => onOpenProfile(post.author_id)}
             className="w-full h-full rounded-full overflow-hidden border border-app-border object-cover hover:ring-2 hover:ring-app-ink transition-all"
@@ -188,6 +194,15 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
                 </button>
               </>
             )}
+            {isAdmin && onBlockPost && (
+              <button
+                onClick={() => onBlockPost(post.id, post.is_blocked || false)}
+                className={`p-1.5 sm:p-2 rounded-xl transition-all ${post.is_blocked ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-app-muted hover:text-orange-500 hover:bg-orange-500/10'}`}
+                title={post.is_blocked ? "Deblokkeer post" : "Blokkeer post"}
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </button>
+            )}
             {user.uid !== post.author_id && (
               <button 
                 onClick={() => onStartDM({ id: post.author_id, display_name: displayName })}
@@ -209,26 +224,58 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
               className="flex-1 px-3 py-2 sm:px-4 sm:py-3 bg-app-bg border border-app-border rounded-lg sm:rounded-xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all text-sm text-app-ink"
               autoFocus
             />
-            <button 
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => onUpdatePost(post.id)}
               disabled={saving || !editPostInput.trim()}
-              className="p-2 sm:p-3 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all"
+              className="p-2 sm:p-3 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
             >
-              {saving ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Check className="w-4 h-4 sm:w-5 sm:h-5" />}
-            </button>
-            <button 
+              {saving ? <ThemedSpinner size="xs" color="currentColor" /> : <Check className="w-4 h-4 sm:w-5 sm:h-5" />}
+            </motion.button>
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={onCancelEdit}
-              className="p-2 sm:p-3 bg-app-accent text-app-muted rounded-lg sm:rounded-xl hover:opacity-90 transition-all"
+              className="p-2 sm:p-3 bg-app-accent text-app-muted rounded-lg sm:rounded-xl hover:opacity-90 transition-all cursor-pointer"
             >
               <X className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
+            </motion.button>
           </div>
         ) : (
           <div className="text-app-ink text-sm sm:text-base leading-relaxed break-words">
-            <RichContent content={post.content} />
+            <RichContent content={post.content} hideMedia={isMediaExpired} />
           </div>
         )}
       </div>
     </motion.div>
   );
+}, (prev, next) => {
+  if (prev.post !== next.post) return false;
+  if (prev.isAdmin !== next.isAdmin) return false;
+  if (prev.saving !== next.saving) return false;
+  if (prev.useCustomTheme !== next.useCustomTheme) return false;
+  if (prev.customTheme !== next.customTheme) return false;
+  if (prev.isMediaExpired !== next.isMediaExpired) return false;
+  
+  // Nickname check
+  if (prev.nicknames?.[prev.post.author_id] !== next.nicknames?.[next.post.author_id]) return false;
+
+  // Editing state check
+  const prevIsEditing = prev.editingPostId === prev.post.id;
+  const nextIsEditing = next.editingPostId === next.post.id;
+  if (prevIsEditing !== nextIsEditing) return false;
+  if (nextIsEditing && prev.editPostInput !== next.editPostInput) return false;
+
+  // Author profile check
+  const prevProfile = (prev.userProfile && prev.post.author_id === prev.userProfile.id)
+    ? prev.userProfile
+    : prev.profiles?.find(p => p.id === prev.post.author_id);
+  const nextProfile = (next.userProfile && next.post.author_id === next.userProfile.id)
+    ? next.userProfile
+    : next.profiles?.find(p => p.id === next.post.author_id);
+  
+  if (prevProfile !== nextProfile) return false;
+
+  return true;
 });

@@ -410,6 +410,32 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     activeCallRef.current = activeCall;
   }, [activeCall]);
 
+  // Cleanly disconnect when window is closed
+  useEffect(() => {
+    const handleUnload = () => {
+      const active = activeCallRef.current;
+      if (active && callStateRef.current !== 'idle') {
+        const targetId = active.callerId === user?.uid ? active.targetId : active.callerId;
+        if (targetId && outboundChannelRef.current) {
+          // Fire-and-forget signaling messages so the other participant knows we dropped
+          // using synchronous send instead of async sendSignalingMessage
+          const channel = outboundChannelRef.current;
+          channel.send({ type: 'broadcast', event: 'call_ended', payload: { senderId: user?.uid } });
+          channel.send({ type: 'broadcast', event: 'ended', payload: { senderId: user?.uid } });
+          channel.send({ type: 'broadcast', event: 'hangup', payload: { senderId: user?.uid } });
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('unload', handleUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('unload', handleUnload);
+    };
+  }, [user?.uid]);
+
   // Subscribe to incoming calls and signaling
   useEffect(() => {
     if (!user) return;
@@ -840,8 +866,9 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
           autoGainControl: true
         },
         video: isVideo ? {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 15, max: 20 },
           facingMode: "user"
         } : false
       });
@@ -927,8 +954,9 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
           autoGainControl: true
         },
         video: isVideo ? {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 15, max: 20 },
           facingMode: "user"
         } : false
       });

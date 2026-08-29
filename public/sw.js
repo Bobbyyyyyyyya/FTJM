@@ -1,45 +1,8 @@
-const CACHE_NAME = 'ftjm-v3.4';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/favicon.png',
-  '/favicon.ico',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/assets/app-secure.js',
-  '/assets/index.css'
-];
+const CACHE_NAME = 'ftjm-v3.5';
 
+// Self unregister in development/preview environments
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      // Use Promise.all with custom request to bypass browser disk cache using cache: 'reload'
-      return Promise.all(
-        ASSETS_TO_CACHE.map((asset) => {
-          // Bypassing browser disk/HTTP cache ensures we fetch the absolute freshest files from network during updates
-          const request = new Request(asset, { cache: 'reload' });
-          return fetch(request)
-            .then((response) => {
-              if (response.ok) {
-                return cache.put(asset, response).catch((putErr) => {
-                  console.warn(`[SW] Cache.put failed during installation for "${asset}":`, putErr);
-                });
-              }
-              throw new Error(`Response status ${response.status}`);
-            })
-            .catch((err) => {
-              console.warn(`[SW] Failed to fetch and cache asset with reload bypass: ${asset}`, err);
-              // Fallback to regular cache add in case browser is incompatible with Request/cache settings
-              return cache.add(asset).catch((fallbackErr) => {
-                console.error(`[SW] Regular cache fallback also failed for: ${asset}`, fallbackErr);
-              });
-            });
-        })
-      );
-    })
-  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -60,86 +23,113 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only handle HTTP/HTTPS schemes (skip chrome-extension, etc)
-  if (!event.request.url.startsWith('http') && !event.request.url.startsWith('https')) {
+  // Only handle HTTP/HTTPS GET schemes
+  if (!event.request.url.startsWith('http') || event.request.method !== 'GET') {
     return;
   }
 
-  // Strictly avoid intercepting non-GET requests (Cache API only allows GET method)
-  if (event.request.method !== 'GET') {
-    return;
-  }
-
-  // Only intercept same-origin requests (exclude Supabase, external APIs, etc. to prevent fetch blocking)
   const url = new URL(event.request.url);
+
+  // Strictly skip dev, vite internals, ts/tsx modules, and backend APIs
+  if (
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.endsWith('.ts') ||
+    url.pathname.endsWith('.tsx') ||
+    url.pathname.endsWith('.jsx') ||
+    url.searchParams.has('t') || // Vite timestamp queries
+    url.searchParams.has('import')
+  ) {
+    return;
+  }
+
+  // Only intercept same-origin requests
   if (url.origin !== self.location.origin) {
     return;
   }
 
-  // Do NOT intercept audio/video media files as Service Workers require complex range headers for media player compatibility
-  if (url.pathname.includes('/audio/') || 
-      url.pathname.endsWith('.mp3') || 
-      url.pathname.endsWith('.wav') || 
-      url.pathname.endsWith('.ogg') || 
-      url.pathname.endsWith('.m4a') ||
-      url.pathname.endsWith('.webm') ||
-      event.request.destination === 'audio' ||
-      event.request.destination === 'video') {
+  // Do NOT intercept audio/video media files
+  if (
+    url.pathname.includes('/audio/') || 
+    url.pathname.endsWith('.mp3') || 
+    url.pathname.endsWith('.wav') || 
+    url.pathname.endsWith('.ogg') || 
+    url.pathname.endsWith('.m4a') ||
+    url.pathname.endsWith('.webm') ||
+    event.request.destination === 'audio' ||
+    event.request.destination === 'video'
+  ) {
     return;
   }
 
-  // Network first for HTML/navigate requests to ensure updates are detected
+  // Network first for HTML/navigate requests
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
         try {
           if (typeof caches !== 'undefined' && caches && typeof caches.match === 'function') {
-            return caches.match(event.request);
+            return caches.match('/index.html');
           }
-        } catch (e) {
-          console.error('[SW] caches.match failed during navigation checkout:', e);
-        }
+        } catch (e) {}
         return new Response('Offline availability not cached.', { status: 503, statusText: 'Service Unavailable' });
       })
     );
     return;
   }
 
-  // Failsafe in case 'caches' is blocked or undefined in iframe sandboxes
+  // Failsafe if caches is blocked or undefined
   if (typeof caches === 'undefined' || !caches || typeof caches.open !== 'function') {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // Safe and clean implementation of stale-while-revalidate without calling event.waitUntil asynchronously
+  // Handle static assets with strict MIME type validation
+  const isScriptOrStyle = event.request.destination === 'script' || 
+                          event.request.destination === 'style' || 
+                          url.pathname.endsWith('.js') || 
+                          url.pathname.endsWith('.mjs') || 
+                          url.pathname.endsWith('.css');
+
   event.respondWith(
     caches.open(CACHE_NAME).then((cache) => {
       if (!cache || typeof cache.match !== 'function') {
         return fetch(event.request);
       }
+
       return cache.match(event.request).then((cachedResponse) => {
+        // Guard against corrupted HTML cached as JavaScript / CSS
+        if (cachedResponse && isScriptOrStyle) {
+          const contentType = cachedResponse.headers.get('content-type') || '';
+          if (contentType.includes('text/html')) {
+            // Delete invalid cache entry immediately
+            cache.delete(event.request).catch(() => {});
+            cachedResponse = undefined;
+          }
+        }
+
         const fetchPromise = fetch(event.request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
-              try {
-                cache.put(event.request, networkResponse.clone()).catch((putErr) => {
-                  console.warn(`[SW] Async cache.put rejected for "${event.request.url}":`, putErr);
-                });
-              } catch (e) {
-                console.warn(`[SW] Error during async cache.put for "${event.request.url}":`, e);
+              const contentType = networkResponse.headers.get('content-type') || '';
+              // NEVER cache an HTML response when requesting a script or stylesheet
+              if (isScriptOrStyle && contentType.includes('text/html')) {
+                return networkResponse;
               }
+              try {
+                cache.put(event.request, networkResponse.clone()).catch(() => {});
+              } catch (e) {}
             }
             return networkResponse;
           })
           .catch((err) => {
-            // If network fails and we have a cached version, fallback to it
             if (cachedResponse) {
               return cachedResponse;
             }
             throw err;
           });
 
-        // Immediately return cached page asset, letting network fetch update the cache in the background
         return cachedResponse || fetchPromise;
       });
     })

@@ -16,12 +16,14 @@ import {
   ShieldCheck,
   User as UserIcon,
   Layers,
-  ArrowRight
+  ArrowRight,
+  ShieldAlert
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
 import { t } from '../utils/translations';
 import { createSupabaseClient } from '../utils/supabase';
+import { ThemedLoadingScreen } from './ThemedLoadingScreen';
 
 interface PublicSharedMediaModalProps {
   mediaId: string;
@@ -55,7 +57,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
         // 1. Try to fetch from profile_media by ID
         const { data, error: fetchErr } = await supabase
           .from('profile_media')
-          .select('*')
+          .select('id, user_id, media_url, media_type, caption, likes, comments, created_at')
           .eq('id', mediaId)
           .maybeSingle();
 
@@ -63,14 +65,14 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
           console.warn('Could not fetch from profile_media table:', fetchErr);
         }
 
-        let foundMedia = data;
+        let foundMedia: any = data;
 
         // 2. If not found by ID directly in profile_media, check all profile_media by media_url or list
         if (!foundMedia) {
           const { data: allMedia } = await supabase
             .from('profile_media')
-            .select('*')
-            .limit(100);
+            .select('id, user_id, media_url, media_type, caption, likes, comments, created_at')
+            .limit(30);
           foundMedia = allMedia?.find((m: any) => m.id === mediaId || m.media_url?.includes(mediaId));
         }
 
@@ -137,6 +139,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
   }, [mediaItem, isPlaying, isMuted]);
 
   const handleMediaClick = () => {
+    if (mediaItem?.is_blocked) return;
     if (mediaItem?.media_type === 'video') {
       setIsPlaying(prev => {
         const next = !prev;
@@ -215,10 +218,11 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
 
         {/* Loading State */}
         {loading && (
-          <div className="flex flex-col items-center justify-center py-28 text-center">
-            <div className="w-12 h-12 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin mb-4" />
-            <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Media ophalen...</p>
-          </div>
+          <ThemedLoadingScreen 
+            message="Media ophalen..." 
+            submessage="Het gedeelde mediabestand wordt voorbereid" 
+            size="md" 
+          />
         )}
 
         {/* Error State */}
@@ -238,12 +242,24 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
         {/* Media Content */}
         {!loading && mediaItem && (
           <div className="relative flex-1 overflow-y-auto flex flex-col justify-between custom-scrollbar bg-black">
-            {/* Visual Media Container */}
+             {/* Visual Media Container */}
             <div 
               className="relative w-full h-[48dvh] sm:h-[64vh] md:h-[70vh] min-h-[340px] sm:min-h-[460px] max-h-[780px] bg-black flex items-center justify-center cursor-pointer select-none overflow-hidden"
               onClick={handleMediaClick}
             >
-              {mediaItem.media_type === 'video' ? (
+              {mediaItem.is_blocked ? (
+                <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center p-6 text-center text-zinc-300 gap-3 border border-red-500/20">
+                  <div className="w-16 h-16 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <p className="font-black text-sm text-red-400 tracking-wider uppercase">Media Geblokkeerd</p>
+                    <p className="text-xs text-zinc-400 mt-2 max-w-xs leading-relaxed">
+                      Deze media is door een administrator geblokkeerd en kan niet meer worden weergegeven.
+                    </p>
+                  </div>
+                </div>
+              ) : mediaItem.media_type === 'video' ? (
                 <div className="relative w-full h-full flex items-center justify-center">
                   <video
                     ref={videoRef}
@@ -268,6 +284,12 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
                   alt=""
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (mediaItem.media_url?.startsWith('http') && !target.src.includes('/api/image-proxy')) {
+                      target.src = `/api/image-proxy?url=${encodeURIComponent(mediaItem.media_url)}`;
+                    }
+                  }}
                 />
               )}
 
@@ -346,7 +368,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
             <div className="p-4 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-400 to-blue-500 p-0.5 border border-white/20 overflow-hidden shrink-0">
-                  {mediaItem.author_photo ? (
+                  {mediaItem.author_photo?.trim() ? (
                     <img src={mediaItem.author_photo} alt="" className="w-full h-full rounded-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-white">

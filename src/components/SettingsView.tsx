@@ -1,15 +1,45 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Users, Camera, Save, Loader2, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical, Download, ExternalLink, ChevronDown, ChevronUp, RefreshCw, HardDrive, Smartphone, Globe, MessageSquare } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Users, Camera, Save, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical, Download, ExternalLink, ChevronDown, ChevronUp, RefreshCw, HardDrive, Smartphone, Globe, MessageSquare, PanelLeft, PanelRight, LayoutList, LogOut, Sliders, Compass } from 'lucide-react';
 import { toast } from 'sonner';
 import { rateLimiter } from '../utils/rateLimiter';
 import CryptoJS from 'crypto-js';
-import { UserProfile, CustomTheme, NotificationSettings, User, Report, Conversation } from '../types';
+import { UserProfile, CustomTheme, NotificationSettings, User, Report, Conversation, ModernUICustomization } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, isVerifiedEmail, isBetaTester } from '../constants';
 import { formatDate, convertEmoticons, maskEmail, parseAdminNotes, getDeviceOSInfo } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
+import { getLocalArchiveStats, clearLocalArchive } from '../utils/localMessageArchive';
+import { runAutoBase64Migration } from '../utils/base64Migration';
 import { supabase } from '../utils/supabase';
 import { Language, t } from '../utils/translations';
+import { CustomFontManagerModal } from './CustomFontManagerModal';
+import { DatabaseSecurityShield } from './DatabaseSecurityShield';
+import { useLocalModernUI, getAccentHex } from '../utils/modernUICustom';
+import { ModernUICustomizerModal } from './ModernUICustomizerModal';
+import { 
+  AnimatedMailIcon, 
+  AnimatedChatIcon, 
+  AnimatedMenuIcon, 
+  AnimatedMediaIcon, 
+  AnimatedBellIcon, 
+  AnimatedThemeIcon, 
+  AnimatedArcadeIcon, 
+  AnimatedKeyboardIcon, 
+  AnimatedForumIcon, 
+  AnimatedNewsIcon, 
+  useIconAnimationMode, 
+  setIconAnimationMode, 
+  IconAnimationMode 
+} from './AnimatedIcons';
+import { 
+  PRESET_FONTS, 
+  getLocalCustomFonts, 
+  processUploadedFontFile, 
+  createGoogleFontItem, 
+  resolveFontFamilyString,
+  injectGoogleFont
+} from '../utils/fontManager';
+import { ThemedSpinner } from './ThemedLoadingScreen';
 
 interface SettingsViewProps {
   user: User;
@@ -79,6 +109,7 @@ interface SettingsViewProps {
   hiddenConversationIds?: string[];
   onToggleHideConversation?: (conversationId: string) => void;
   onUnhideAllConversations?: () => void;
+  handleLogout?: () => void;
 }
 
 const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: any }> = {
@@ -99,7 +130,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 20,
       chat_opacity: 30,
       profile_card_opacity: 40,
-      pattern: 'grid',
+      pattern: 'none',
       border_radius: 12,
       font_family: 'mono',
       wallpaper: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=2070&auto=format&fit=crop'
@@ -122,6 +153,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 10,
       chat_opacity: 15,
       profile_card_opacity: 20,
+      pattern: 'none',
       border_radius: 20,
       font_family: 'sans'
     }
@@ -143,6 +175,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 10,
       chat_opacity: 20,
       profile_card_opacity: 15,
+      pattern: 'none',
       border_radius: 16,
       font_family: 'sans'
     }
@@ -160,6 +193,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       header_bg_color: '#fef3c7',
       body_bg_color: '#fef3c7',
       glass_effect: false,
+      pattern: 'none',
       border_radius: 0,
       font_family: 'serif'
     }
@@ -181,6 +215,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 10,
       chat_opacity: 20,
       profile_card_opacity: 15,
+      pattern: 'none',
       border_radius: 20,
       font_family: 'display'
     }
@@ -198,6 +233,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       header_bg_color: '#000000',
       body_bg_color: '#000000',
       glass_effect: false,
+      pattern: 'none',
       border_radius: 8,
       font_family: 'sans'
     }
@@ -219,9 +255,9 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 20,
       chat_opacity: 30,
       profile_card_opacity: 40,
+      pattern: 'none',
       border_radius: 16,
-      font_family: 'display',
-      pattern: 'dots'
+      font_family: 'display'
     }
   },
   'matrix': {
@@ -237,6 +273,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       header_bg_color: '#000000',
       body_bg_color: '#000000',
       glass_effect: false,
+      pattern: 'none',
       border_radius: 0,
       font_family: 'mono'
     }
@@ -258,6 +295,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 15,
       chat_opacity: 25,
       profile_card_opacity: 30,
+      pattern: 'none',
       border_radius: 24,
       font_family: 'display'
     }
@@ -279,6 +317,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 10,
       chat_opacity: 20,
       profile_card_opacity: 15,
+      pattern: 'none',
       border_radius: 12,
       font_family: 'sans'
     }
@@ -296,6 +335,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       header_bg_color: '#fffbeb',
       body_bg_color: '#f3f4f6',
       glass_effect: false,
+      pattern: 'none',
       border_radius: 12,
       font_family: 'serif'
     }
@@ -317,6 +357,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 15,
       chat_opacity: 25,
       profile_card_opacity: 20,
+      pattern: 'none',
       border_radius: 40,
       font_family: 'display'
     }
@@ -338,6 +379,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 10,
       chat_opacity: 20,
       profile_card_opacity: 15,
+      pattern: 'none',
       border_radius: 12,
       font_family: 'sans'
     }
@@ -359,6 +401,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       opacity: 20,
       chat_opacity: 30,
       profile_card_opacity: 25,
+      pattern: 'none',
       border_radius: 16,
       font_family: 'sans'
     }
@@ -378,6 +421,7 @@ const THEME_PRESETS: Record<string, { name: string, theme: CustomTheme, icon: an
       glass_effect: true,
       blur_amount: 10,
       opacity: 70,
+      pattern: 'none',
       border_radius: 0,
       font_family: 'mono'
     }
@@ -490,6 +534,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   hiddenConversationIds = [],
   onToggleHideConversation,
   onUnhideAllConversations,
+  handleLogout,
 }) => {
   const [clearingNotifications, setClearingNotifications] = React.useState(false);
   const [adminSubTab, setAdminSubTab] = React.useState<'overview' | 'users' | 'reports' | 'security'>('overview');
@@ -498,6 +543,160 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [reportFilter, setReportFilter] = React.useState<'all' | 'open' | 'reviewed' | 'resolved'>('all');
   const [showInstallGuide, setShowInstallGuide] = React.useState(false);
   const [installGuideOS, setInstallGuideOS] = React.useState<'chromebook' | 'ios' | 'android'>('chromebook');
+  const [migratingBase64, setMigratingBase64] = React.useState(false);
+  const iconAnimationMode = useIconAnimationMode();
+  const [modernCustom, setModernCustom] = useLocalModernUI();
+  const [showModernCustomizer, setShowModernCustomizer] = useState(false);
+
+  const handleApplyThemePreset = (presetKey: string, preset: { name: string, theme: CustomTheme, icon: any }) => {
+    // Merge theme preset while preserving active user customization & modern UI settings
+    const updatedTheme: CustomTheme = {
+      ...customTheme,
+      ...preset.theme,
+      pattern: preset.theme.pattern || 'none',
+      // Maintain modern UI flag and custom modern UI settings
+      modern_ui: customTheme.modern_ui ?? true,
+      modern_ui_custom: customTheme.modern_ui_custom,
+      profile_list_position: customTheme.profile_list_position || preset.theme.profile_list_position || 'right',
+      custom_fonts: customTheme.custom_fonts || [],
+      font_family: customTheme.font_family || preset.theme.font_family,
+      icon_animation_mode: customTheme.icon_animation_mode || 'all',
+      wallpaper: preset.theme.wallpaper || customTheme.wallpaper,
+    };
+
+    setCustomTheme(updatedTheme);
+    if (!useCustomTheme) {
+      setUseCustomTheme(true);
+    }
+
+    // Automatically synchronize Modern UI styling from the normal preset:
+    const primary = preset.theme.primary_color || '#06b6d4';
+    const radiusSetting: ModernUICustomization['card_radius'] = 
+      (preset.theme.border_radius ?? 12) <= 6 ? 'crisp' :
+      (preset.theme.border_radius ?? 12) <= 16 ? 'modern' :
+      (preset.theme.border_radius ?? 12) <= 24 ? 'squircle' : 'pill';
+
+    const glassSetting: ModernUICustomization['glass_intensity'] =
+      preset.theme.glass_effect === false ? 'none' :
+      presetKey === 'cyberpunk' || presetKey === 'matrix' || presetKey === 'vaporwave' ? 'cyber' :
+      (preset.theme.blur_amount ?? 10) >= 14 ? 'deep' : 'frosted';
+
+    setModernCustom({
+      ...modernCustom,
+      accent_style: 'theme',
+      custom_accent_color: primary,
+      glass_intensity: glassSetting,
+      card_radius: radiusSetting,
+      ambient_aura: true,
+      ambient_aura_color: `${primary}33`,
+      glow_active_items: true,
+    });
+
+    if (user) {
+      try {
+        supabase.from('profiles').update({
+          custom_theme: updatedTheme,
+          use_custom_theme: true
+        }).eq('id', user.uid);
+      } catch (e) {
+        console.warn('Auto-save preset failed:', e);
+      }
+    }
+
+    toast.success(`Preset '${preset.name}' geactiveerd voor thema & Modern UI!`);
+  };
+
+  const handleSetIconAnimationMode = (mode: IconAnimationMode) => {
+    setIconAnimationMode(mode);
+    setCustomTheme({ ...customTheme, icon_animation_mode: mode });
+    toast.success(
+      mode === 'all' 
+        ? t("Micro-animaties volledig ingeschakeld") 
+        : mode === 'hover_only'
+          ? t("Micro-animaties alleen actief bij muis-hover")
+          : t("Micro-animaties uitgeschakeld"),
+      {
+        description: t("Je voorkeur is lokaal opgeslagen en direct toegepast op alle knoppen en menu's.")
+      }
+    );
+  };
+
+  const handleManualBase64Migration = async () => {
+    if (migratingBase64) return;
+    setMigratingBase64(true);
+    try {
+      try {
+        sessionStorage.removeItem(`ftjm_b64_migrated_${user.uid}_v2`);
+        sessionStorage.removeItem(`ftjm_b64_migrated_${user.uid}_v2_admin`);
+      } catch {}
+      toast.info(t(isAdmin ? "Beheerder media-optimalisatie gestart (alle gebruikers & feed)..." : "Media-optimalisatie gestart..."), {
+        description: t("Oude Base64 afbeeldingen en media worden omgezet naar snelle CDN URLs.")
+      });
+      const count = await runAutoBase64Migration(supabase, user, profile, {
+        setProfile
+      }, isAdmin);
+      if (count > 0) {
+        toast.success(t(`${count} media-item(s) succesvol omgezet naar CDN!`), {
+          description: t(isAdmin ? "Alle feed-, profiel- en forumposts zijn succesvol geoptimaliseerd naar snelle CDN links." : "Je profiel en mediagegevens laden nu veel sneller zonder Base64 data.")
+        });
+      } else {
+        toast.success(t("Alle media is al up-to-date en geoptimaliseerd!"), {
+          description: t("Er zijn geen resterende Base64 data URLs gevonden.")
+        });
+      }
+    } catch (err) {
+      console.error("Manual migration error:", err);
+      toast.error(t("Fout bij optimaliseren van media"));
+    } finally {
+      setMigratingBase64(false);
+    }
+  };
+
+  // Custom Font Management States
+  const [isFontModalOpen, setIsFontModalOpen] = React.useState(false);
+  const [localCustomFonts, setLocalCustomFonts] = React.useState<any[]>(() => getLocalCustomFonts());
+  const [quickGoogleFontInput, setQuickGoogleFontInput] = React.useState('');
+  const [showQuickGoogleInput, setShowQuickGoogleInput] = React.useState(false);
+  const quickFontFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleQuickFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const newFont = await processUploadedFontFile(file);
+      const updated = getLocalCustomFonts();
+      setLocalCustomFonts(updated);
+      setCustomTheme({
+        ...customTheme,
+        font_family: newFont.id,
+        custom_fonts: updated
+      });
+      toast.success(`Lettertype "${newFont.name}" succesvol lokaal geïmporteerd en ingesteld!`);
+      if (quickFontFileInputRef.current) quickFontFileInputRef.current.value = '';
+    } catch (err: any) {
+      toast.error(err.message || 'Fout bij het uploaden van het fontbestand.');
+    }
+  };
+
+  const handleQuickGoogleFontSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickGoogleFontInput.trim()) return;
+    try {
+      const newFont = createGoogleFontItem(quickGoogleFontInput.trim());
+      const updated = getLocalCustomFonts();
+      setLocalCustomFonts(updated);
+      setCustomTheme({
+        ...customTheme,
+        font_family: newFont.id,
+        custom_fonts: updated
+      });
+      toast.success(`Google Font "${newFont.name}" succesvol toegevoegd en ingesteld!`);
+      setQuickGoogleFontInput('');
+      setShowQuickGoogleInput(false);
+    } catch (err: any) {
+      toast.error('Kon Google Font niet toevoegen. Controleer de naam.');
+    }
+  };
 
 
 
@@ -568,6 +767,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [passwordConfirm, setPasswordConfirm] = React.useState('');
   const [showPasswordPrompt, setShowPasswordPrompt] = React.useState(false);
   const [registeringPasskey, setRegisteringPasskey] = React.useState(false);
+
+  const [archiveStats, setArchiveStats] = React.useState({ dmsCount: 0, postsCount: 0, bookmarksCount: 0 });
+  const [loadingArchiveStats, setLoadingArchiveStats] = React.useState(false);
+
+  const refreshArchiveStats = React.useCallback(async () => {
+    setLoadingArchiveStats(true);
+    try {
+      const stats = await getLocalArchiveStats();
+      setArchiveStats(stats);
+    } catch (e) {
+      console.warn('Error loading archive stats:', e);
+    } finally {
+      setLoadingArchiveStats(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (settingsTab === 'app') {
+      refreshArchiveStats();
+    }
+  }, [settingsTab, refreshArchiveStats]);
 
   const handleAddPasskey = async () => {
     if (!passwordConfirm.trim()) {
@@ -799,56 +1019,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const [testingWebhook, setTestingWebhook] = React.useState(false);
-  const handleTestDiscordWebhook = async () => {
-    const url = notificationSettings.discord_webhook_url;
-    if (!url || !url.startsWith('https://discord.com/api/webhooks/')) {
-      toast.error("Voer eerst een geldige Discord Webhook URL in.");
-      return;
-    }
-
-    setTestingWebhook(true);
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          embeds: [
-            {
-              title: "✅ Discord Webhook Test",
-              description: "Gefeliciteerd! De Discord notificatie-integratie is correct geconfigureerd. 🎉\nJe ontvangt nu meldingen van de app direct op Discord!",
-              color: 3066993,
-              fields: [
-                {
-                  name: "Gebruiker",
-                  value: profile?.display_name || user.email || "Onbekend",
-                  inline: true
-                },
-                {
-                  name: "Status",
-                  value: "Verbonden & Werkend 🚀",
-                  inline: true
-                }
-              ],
-              timestamp: new Date().toISOString()
-            }
-          ]
-        })
-      });
-
-      if (response.ok) {
-        toast.success("Testbericht succesvol verzonden naar Discord! Check je Discord kanaal. 🎉");
-      } else {
-        toast.error(`Discord API reageerde met status: ${response.status}`);
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Fout bij het verbinden met de Discord Webhook. Controleer je internetverbinding en de URL.");
-    } finally {
-      setTestingWebhook(false);
-    }
-  };
 
   const filteredReports = reports.filter(report => {
     if (reportFilter === 'all') return true;
@@ -884,6 +1054,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {t(tab.label)}
           </button>
         ))}
+
+        {handleLogout && (
+          <button
+            id="settings-logout-btn"
+            type="button"
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-4 py-3 lg:px-6 lg:py-4 rounded-xl lg:rounded-2xl font-bold whitespace-nowrap transition-all shrink-0 text-red-500 hover:bg-red-500/10 hover:text-red-600 border border-red-500/20 lg:mt-4 active:scale-95"
+            title={t("Uitloggen")}
+          >
+            <LogOut className="w-5 h-5" />
+            <span>{t("Uitloggen")}</span>
+          </button>
+        )}
       </div>
 
       {/* Settings Content */}
@@ -910,9 +1093,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row gap-8 items-start sm:items-center">
                   <div className="relative group">
-                    {(photoURLInput || profile?.photo_url || user.photoURL) ? (
+                    {(photoURLInput?.trim() || profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                       <img 
-                        src={photoURLInput || profile?.photo_url || user.photoURL || ''} 
+                        src={photoURLInput || profile?.photo_url || user.photoURL || undefined} 
                         alt="" 
                         className="w-24 h-24 rounded-3xl object-cover border-4 border-app-bg shadow-xl group-hover:opacity-75 transition-all"
                         referrerPolicy="no-referrer"
@@ -990,7 +1173,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               const file = e.target.files?.[0];
                               if (!file) return;
                               toast.promise(
-                                compressImage(file, 250, 250, 0.75).then((dataUrl) => {
+                                compressImage(file, 200, 200, 0.70).then((dataUrl) => {
                                   setPhotoURLInput(dataUrl);
                                   return "Profielfoto succesvol geladen!";
                                 }),
@@ -1129,7 +1312,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           const file = e.target.files?.[0];
                           if (!file) return;
                           toast.promise(
-                            compressImage(file, 800, 320, 0.70).then((dataUrl) => {
+                            compressImage(file, 640, 240, 0.60).then((dataUrl) => {
                               setBannerURLInput(dataUrl);
                               return "Profielbanner succesvol geladen!";
                             }),
@@ -1148,7 +1331,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="border border-app-border rounded-2xl overflow-hidden bg-app-bg p-2 space-y-2">
                     <span className="block text-[9px] font-bold text-app-muted uppercase tracking-wider px-1">Voorvertoning van je banner</span>
                     <div className="relative h-24 rounded-xl overflow-hidden bg-app-ink flex items-end">
-                      {bannerURLInput ? (
+                      {bannerURLInput?.trim() ? (
                         <img 
                           src={bannerURLInput} 
                           alt="Banner Voorvertoning" 
@@ -1165,9 +1348,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       {/* Avatar preview overlap */}
                       <div className="relative ml-4 -mb-3 z-10 p-1 bg-app-card rounded-[1.2rem] shadow-md">
                         <div className="w-12 h-12 rounded-[1rem] bg-app-accent flex items-center justify-center overflow-hidden">
-                          {(photoURLInput || profile?.photo_url || user.photoURL) ? (
+                          {(photoURLInput?.trim() || profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                             <img 
-                              src={photoURLInput || profile?.photo_url || user.photoURL || ''} 
+                              src={photoURLInput || profile?.photo_url || user.photoURL || undefined} 
                               alt="" 
                               className="w-full h-full object-cover" 
                               referrerPolicy="no-referrer" 
@@ -1183,14 +1366,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="pt-6 border-t border-app-border flex justify-end">
-                  <button 
+                  <motion.button 
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.96 }}
                     onClick={handleUpdateProfile}
                     disabled={saving}
-                    className="flex items-center gap-2 px-8 py-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg active:scale-95"
+                    className="flex items-center gap-2 px-8 py-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg cursor-pointer"
                   >
-                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                    {saving ? <ThemedSpinner size="xs" color="currentColor" /> : <Save className="w-5 h-5" />}
                     Profiel Opslaan
-                  </button>
+                  </motion.button>
                 </div>
               </div>
             </motion.div>
@@ -1439,14 +1624,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         </div>
                       </div>
                     </div>
-                    <button 
+                    <motion.button 
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.97 }}
                       onClick={handleAddCustomSound}
                       disabled={uploadingSound || !newSoundName || !newSoundUrl}
-                      className="w-full py-3 bg-app-ink text-app-bg rounded-xl font-bold text-sm hover:opacity-90 disabled:opacity-50 transition-all shadow-md flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-app-ink text-app-bg rounded-xl font-bold text-sm hover:opacity-90 disabled:opacity-50 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
                     >
-                      {uploadingSound ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      {uploadingSound ? <ThemedSpinner size="xs" color="currentColor" /> : <Plus className="w-4 h-4" />}
                       Geluid Toevoegen
-                    </button>
+                    </motion.button>
                   </div>
 
                   {customSounds.length > 0 && (
@@ -1471,91 +1658,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   )}
                 </div>
 
-                <div className="space-y-6 pt-6 border-t border-app-border animate-fadeIn">
-                  <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
-                    <span className="text-lg">🤖</span>
-                    Discord Webhook Integratie
-                  </h4>
-                  
-                  <div className="bg-app-accent/30 p-6 rounded-2xl border border-app-border space-y-4">
-                    <p className="text-xs text-app-muted font-medium leading-relaxed">
-                      Koppel een Discord kanaal via een webhook om direct meldingen te ontvangen op Discord wanneer er nieuwe berichten zijn! Handig om pings te ontvangen op je pc of mobiel.
-                    </p>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-[10px] font-bold text-app-muted uppercase tracking-wide mb-1.5 ml-1">Discord Webhook URL</label>
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <input 
-                            type="password"
-                            value={notificationSettings.discord_webhook_url || ''}
-                            onChange={(e) => setNotificationSettings({
-                              ...notificationSettings,
-                              discord_webhook_url: e.target.value
-                            })}
-                            placeholder="https://discord.com/api/webhooks/..."
-                            className="flex-1 px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm focus:ring-2 focus:ring-app-ink transition-all text-app-ink font-mono"
-                          />
-                          <button 
-                            type="button"
-                            onClick={handleTestDiscordWebhook}
-                            disabled={testingWebhook || !notificationSettings.discord_webhook_url}
-                            className="px-4 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all shadow-md shrink-0 flex items-center justify-center gap-1.5"
-                          >
-                            {testingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🔌'}
-                            Test Verbinding
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                        <div 
-                          className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 cursor-pointer select-none ${
-                            notificationSettings.discord_notify_general 
-                              ? 'bg-app-accent border-app-ink/30' 
-                              : 'bg-app-card/65 border-app-border hover:bg-app-accent/20'
-                          }`}
-                          onClick={() => setNotificationSettings({
-                            ...notificationSettings,
-                            discord_notify_general: !notificationSettings.discord_notify_general
-                          })}
-                        >
-                          <div className="space-y-0.5">
-                            <span className="text-xs font-bold text-app-ink">General Chat</span>
-                            <p className="text-[10px] text-app-muted font-medium">Berichten in de openbare chat doorsturen</p>
-                          </div>
-                          <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
-                            notificationSettings.discord_notify_general ? 'bg-app-ink border-app-ink text-app-bg' : 'border-app-muted'
-                          }`}>
-                            {notificationSettings.discord_notify_general && <Check className="w-3 h-3 stroke-[3]" />}
-                          </div>
-                        </div>
-
-                        <div 
-                          className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 cursor-pointer select-none ${
-                            notificationSettings.discord_notify_dm 
-                              ? 'bg-app-accent border-app-ink/30' 
-                              : 'bg-app-card/65 border-app-border hover:bg-app-accent/20'
-                          }`}
-                          onClick={() => setNotificationSettings({
-                            ...notificationSettings,
-                            discord_notify_dm: !notificationSettings.discord_notify_dm
-                          })}
-                        >
-                          <div className="space-y-0.5">
-                            <span className="text-xs font-bold text-app-ink">Privéberichten (DM)</span>
-                            <p className="text-[10px] text-app-muted font-medium">Directe berichten en groepschats doorsturen</p>
-                          </div>
-                          <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
-                            notificationSettings.discord_notify_dm ? 'bg-app-ink border-app-ink text-app-bg' : 'border-app-muted'
-                          }`}>
-                            {notificationSettings.discord_notify_dm && <Check className="w-3 h-3 stroke-[3]" />}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
                 <div className="space-y-4 pt-6 border-t border-app-border">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-red-500/5 border border-red-500/20 rounded-2xl">
@@ -1573,8 +1675,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         </p>
                       )}
                     </div>
-                    <button
+                    <motion.button
                       type="button"
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.96 }}
                       disabled={clearingNotifications || !onClearAllNotifications}
                       onClick={async () => {
                         if (!onClearAllNotifications) return;
@@ -1585,23 +1689,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           setClearingNotifications(false);
                         }
                       }}
-                      className="px-5 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer shrink-0"
+                      className="px-5 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer shrink-0"
                     >
-                      {clearingNotifications ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      {clearingNotifications ? <ThemedSpinner size="xs" color="#ffffff" /> : <Trash2 className="w-4 h-4" />}
                       <span>Alle Meldingen Wissen</span>
-                    </button>
+                    </motion.button>
                   </div>
                 </div>
 
                 <div className="pt-6 border-t border-app-border flex justify-end">
-                  <button 
+                  <motion.button 
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.96 }}
                     onClick={handleUpdateNotifications}
                     disabled={saving}
-                    className="flex items-center gap-2 px-8 py-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg active:scale-95"
+                    className="flex items-center gap-2 px-8 py-3 bg-app-ink text-app-bg rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg cursor-pointer"
                   >
-                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                    {saving ? <ThemedSpinner size="xs" color="currentColor" /> : <Save className="w-5 h-5" />}
                     Instellingen Opslaan
-                  </button>
+                  </motion.button>
                 </div>
               </div>
             </motion.div>
@@ -1623,7 +1729,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <p className="text-app-muted text-sm font-medium">Design your own digital workspace.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-app-muted uppercase tracking-wide">Custom Theme</span>
+                  <span className="text-[10px] font-bold text-app-muted uppercase tracking-wide">Custom Colors Theme</span>
                   <button
                     onClick={() => setUseCustomTheme(!useCustomTheme)}
                     className={`w-14 h-7 rounded-full relative transition-all duration-500 shadow-inner p-1 ${
@@ -1639,77 +1745,409 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
 
+              {/* Modern UI Layout & Concept Section - ALWAYS VISIBLE */}
+              <div className="p-6 bg-app-bg rounded-2xl border border-app-border space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-app-accent flex items-center justify-center">
+                      <Layout className="w-5 h-5 text-app-ink" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide">Modern UI Concept</h4>
+                        <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono text-[10px] font-bold border border-cyan-500/25">
+                          v2.5.5
+                        </span>
+                      </div>
+                      <p className="text-xs text-app-muted">Transformeer de layout naar een futuristisch 'Glass & Float' design met een supersmalle navigatiebar en flexibele profielenlijst.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const next = !customTheme.modern_ui;
+                      const updatedTheme = { ...customTheme, modern_ui: next };
+                      setCustomTheme(updatedTheme);
+                      if (next && !useCustomTheme) {
+                        setUseCustomTheme(true);
+                      }
+                      if (user) {
+                        try {
+                          await supabase.from('profiles').update({
+                            custom_theme: updatedTheme,
+                            use_custom_theme: next ? true : useCustomTheme
+                          }).eq('id', user.uid);
+                        } catch (e) {
+                          console.warn('Auto-saving modern_ui state failed:', e);
+                        }
+                      }
+                      toast.success(next ? 'Modern UI ingeschakeld!' : 'Modern UI uitgeschakeld');
+                    }}
+                    className={`w-12 h-6 rounded-full relative transition-all duration-300 shadow-inner p-1 ${
+                      customTheme.modern_ui ? 'bg-app-ink' : 'bg-app-muted/30'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 flex items-center justify-center ${
+                      customTheme.modern_ui ? 'translate-x-6' : 'translate-x-0'
+                    }`}>
+                      {customTheme.modern_ui && <Check className="w-2.5 h-2.5 text-app-ink" />}
+                    </div>
+                  </button>
+                </div>
+
+                {customTheme.modern_ui && (
+                  <div className="pt-4 border-t border-app-border space-y-4">
+                    {/* Direct Local Customizer CTA */}
+                    <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Sliders className="w-4 h-4 text-cyan-500" />
+                          <h5 className="text-xs font-bold text-app-ink uppercase tracking-wider">Lokale Modern UI Customizer</h5>
+                        </div>
+                        <p className="text-[11px] text-app-muted mt-0.5">
+                          Personaliseer accentkleuren, glasmorfisme-sterkte, zwevende dock & borders lokaal op dit apparaat.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowModernCustomizer(true)}
+                        className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 shrink-0"
+                      >
+                        <Sliders className="w-3.5 h-3.5" />
+                        <span>Aanpassen Openen</span>
+                      </button>
+                    </div>
+
+                    {/* Unified Preset Info */}
+                    <div className="p-3.5 rounded-2xl bg-app-accent/40 border border-app-border flex items-start gap-3">
+                      <Sparkles className="w-4 h-4 text-cyan-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-app-muted leading-relaxed">
+                        <strong className="text-app-ink font-bold">Geünificeerd Thema Systeem:</strong> Alle standaard thema presets (zoals Cyberpunk, Midnight, OLED, etc.) in het gedeelte "Thema Presets" hieronder passen automatisch ook direct de Modern UI stijl, kleuren, afronding en glaseffecten aan.
+                      </p>
+                    </div>
+
+                    {/* Sidebar / Dock Position */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-app-muted uppercase tracking-wider">
+                        Navigatiebalk & Dock Positie (Lokaal)
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: 'left', label: 'Links (Standaard)' },
+                          { id: 'right', label: 'Rechts' },
+                          { id: 'bottom_dock', label: 'Zwevend Dock' },
+                          { id: 'compact', label: 'Compact' },
+                        ].map((pos) => {
+                          const isSelected = (modernCustom?.sidebar_position || 'left') === pos.id;
+                          return (
+                            <button
+                              key={pos.id}
+                              type="button"
+                              onClick={() => setModernCustom({ ...modernCustom, sidebar_position: pos.id as any })}
+                              className={`p-2.5 rounded-xl border text-xs font-bold transition-all text-center ${
+                                isSelected
+                                  ? 'bg-app-ink text-app-bg border-app-ink shadow-sm'
+                                  : 'bg-app-card text-app-ink border-app-border hover:bg-app-accent/60'
+                              }`}
+                            >
+                              {pos.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Profile List Position */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-app-muted uppercase tracking-wider">
+                        Modern UI Profielenlijst Positie
+                      </label>
+                      <div className="grid grid-cols-3 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCustomTheme({...customTheme, profile_list_position: 'left'})}
+                          className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${
+                            (customTheme.profile_list_position === 'left')
+                              ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.02]'
+                              : 'bg-app-card text-app-ink border-app-border hover:bg-app-accent/60'
+                          }`}
+                        >
+                          <PanelLeft className="w-5 h-5" />
+                          <span className="text-xs font-bold">Links</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCustomTheme({...customTheme, profile_list_position: 'sidebar'})}
+                          className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${
+                            customTheme.profile_list_position === 'sidebar'
+                              ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.02]'
+                              : 'bg-app-card text-app-ink border-app-border hover:bg-app-accent/60'
+                          }`}
+                        >
+                          <LayoutList className="w-5 h-5" />
+                          <span className="text-xs font-bold">In Sidebar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCustomTheme({...customTheme, profile_list_position: 'right'})}
+                          className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${
+                            (!customTheme.profile_list_position || customTheme.profile_list_position === 'right')
+                              ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.02]'
+                              : 'bg-app-card text-app-ink border-app-border hover:bg-app-accent/60'
+                          }`}
+                        >
+                          <PanelRight className="w-5 h-5" />
+                          <span className="text-xs font-bold">Rechts</span>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-app-muted">
+                        Kies of de lijst met online leden links, rechts op het scherm of direct geïntegreerd in de linkersidebar staat.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-app-border pt-6">
+                <h4 className="text-xs font-bold text-app-muted uppercase tracking-wide mb-2">Aangepaste Kleuren & Stijlen</h4>
+              </div>
+
               {!useCustomTheme ? (
                 <div className="py-12 text-center space-y-4">
                   <div className="w-20 h-20 bg-app-accent/50 rounded-full flex items-center justify-center mx-auto">
                     <Monitor className="w-10 h-10 text-app-muted" />
                   </div>
                   <div>
-                    <h4 className="text-lg font-bold text-app-ink uppercase tracking-tight">Standaard Thema Actief</h4>
-                    <p className="text-sm text-app-muted max-w-xs mx-auto">Activeer 'Custom Theme' bovenaan om je eigen kleuren en achtergronden in te stellen.</p>
+                    <h4 className="text-lg font-bold text-app-ink uppercase tracking-tight">Standaard Kleurenpalet Actief</h4>
+                    <p className="text-sm text-app-muted max-w-xs mx-auto">Activeer 'Custom Colors Theme' bovenaan om je eigen kleuren en achtergronden in te stellen.</p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-10 animate-in fade-in duration-500">
-                  {/* Theme Presets */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-bold text-app-muted uppercase tracking-wide flex items-center gap-2">
-                      <Sparkles className="w-3.5 h-3.5" /> Quick Presets
-                    </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                      {Object.entries(THEME_PRESETS).map(([id, preset]) => (
-                        <button
-                          key={id}
-                          onClick={() => setCustomTheme(preset.theme)}
-                          className="group relative overflow-hidden p-6 rounded-2xl border border-app-border bg-app-bg hover:border-app-ink transition-all text-left"
-                        >
-                          <div className="relative z-10 flex flex-col gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-app-ink text-app-bg flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                              <preset.icon className="w-5 h-5" />
+                    {/* Theme Presets */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-app-muted uppercase tracking-wide flex items-center gap-2">
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-500" /> Quick Presets (Modern UI Compatibel)
+                        </h4>
+                        <span className="text-[11px] font-bold text-app-muted">Behoudt Modern UI & persoonlijke instellingen</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                        {Object.entries(THEME_PRESETS).map(([id, preset]) => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => handleApplyThemePreset(id, preset)}
+                            className="group relative overflow-hidden p-6 rounded-2xl border border-app-border bg-app-bg hover:border-app-ink transition-all text-left"
+                          >
+                            <div className="relative z-10 flex flex-col gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-app-ink text-app-bg flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                <preset.icon className="w-5 h-5" />
+                              </div>
+                              <span className="font-bold text-app-ink uppercase tracking-tight italic font-serif leading-tight">{preset.name}</span>
                             </div>
-                            <span className="font-bold text-app-ink uppercase tracking-tight italic font-serif leading-tight">{preset.name}</span>
-                          </div>
-                          <div 
-                            className="absolute right-0 bottom-0 w-24 h-24 opacity-10 blur-xl group-hover:opacity-30 transition-opacity"
-                            style={{ backgroundColor: preset.theme.primary_color }}
-                          />
-                        </button>
-                      ))}
+                            <div 
+                              className="absolute right-0 bottom-0 w-24 h-24 opacity-10 blur-xl group-hover:opacity-30 transition-opacity"
+                              style={{ backgroundColor: preset.theme.primary_color }}
+                            />
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
 
                   <div className="grid grid-cols-1 xl:grid-cols-5 gap-8">
                     {/* Controls */}
                     <div className="xl:col-span-3 space-y-8">
                       {/* Font & Style */}
                       <div className="p-6 bg-app-bg rounded-2xl border border-app-border space-y-6">
-                        <h4 className="text-xs font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
-                          <Type className="w-4 h-4" /> Typography & Shapes
-                        </h4>
-                        <div className="grid grid-cols-2 gap-6">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-app-ink uppercase tracking-wide flex items-center gap-2">
+                            <Type className="w-4 h-4 text-cyan-500" /> Typography & Shapes
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => setIsFontModalOpen(true)}
+                            className="px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-500 rounded-xl text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all border border-cyan-500/20 cursor-pointer shadow-xs"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" /> Font Bibliotheek ({PRESET_FONTS.length + localCustomFonts.length})
+                          </button>
+                        </div>
+
+                        {/* Hidden Quick Font Upload Input */}
+                        <input
+                          type="file"
+                          ref={quickFontFileInputRef}
+                          onChange={handleQuickFontUpload}
+                          accept=".ttf,.otf,.woff,.woff2"
+                          className="hidden"
+                        />
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                           <div className="space-y-2">
-                            <label className="block text-[8px] font-bold text-app-muted uppercase tracking-wide ml-1">Font Family</label>
+                            <div className="flex items-center justify-between">
+                              <label className="block text-[8px] font-bold text-app-muted uppercase tracking-wide ml-1">
+                                Actief Lettertype
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => quickFontFileInputRef.current?.click()}
+                                  className="text-[9px] font-bold text-cyan-500 hover:text-cyan-400 flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Upload lokaal .ttf/.otf/.woff2 bestand"
+                                >
+                                  <Upload className="w-3 h-3" /> Upload Font
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowQuickGoogleInput(!showQuickGoogleInput)}
+                                  className="text-[9px] font-bold text-blue-500 hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Importeer Google Font"
+                                >
+                                  <Globe className="w-3 h-3" /> Google Font
+                                </button>
+                              </div>
+                            </div>
+
                             <select 
                               value={customTheme.font_family || 'sans'}
-                              onChange={(e) => setCustomTheme({...customTheme, font_family: e.target.value as any})}
-                              className="w-full px-3 py-2 bg-app-card border border-app-border rounded-xl text-xs font-bold text-app-ink"
+                              onChange={(e) => setCustomTheme({...customTheme, font_family: e.target.value})}
+                              className="w-full px-3 py-2.5 bg-app-card border border-app-border rounded-xl text-xs font-bold text-app-ink focus:outline-none focus:border-cyan-500"
                             >
-                              <option value="sans">Modern Sans</option>
-                              <option value="serif">Classic Serif</option>
-                              <option value="mono">Technical Mono</option>
-                              <option value="display">Display Grotesk</option>
+                              {localCustomFonts.length > 0 && (
+                                <optgroup label="📂 Mijn Geïmporteerde Fonts">
+                                  {localCustomFonts.map(f => (
+                                    <option key={f.id} value={f.id}>
+                                      ★ {f.name} ({f.source === 'upload' ? 'Lokaal' : 'Google'})
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              <optgroup label="✨ Modern Sans-Serif">
+                                <option value="sans">Standaard Normaal (Inter / Systeem)</option>
+                                <option value="plus_jakarta">Plus Jakarta Sans (Ultra Sharp)</option>
+                                <option value="poppins">Poppins (Friendly Geometric)</option>
+                                <option value="outfit">Outfit (Neo-Grotesk)</option>
+                                <option value="montserrat">Montserrat (Urban Modern)</option>
+                                <option value="roboto">Roboto (Crisp Neutral)</option>
+                                <option value="nunito">Nunito (Soft Rounded)</option>
+                              </optgroup>
+                              <optgroup label="🏛️ Klassiek & Editorial Serif">
+                                <option value="serif">Playfair Display (Editorial Serif)</option>
+                                <option value="cinzel">Cinzel (Regal / Luxury)</option>
+                                <option value="merriweather">Merriweather (Literary Warm)</option>
+                                <option value="lora">Lora (Book Serif)</option>
+                                <option value="eb_garamond">EB Garamond (Classical)</option>
+                              </optgroup>
+                              <optgroup label="💻 Code & Developer Monospace">
+                                <option value="mono">JetBrains Mono (Technical Mono)</option>
+                                <option value="fira_code">Fira Code (Clean Programming)</option>
+                                <option value="space_mono">Space Mono (Sci-Fi Mono)</option>
+                                <option value="courier_prime">Courier Prime (Typewriter)</option>
+                              </optgroup>
+                              <optgroup label="🚀 Display & Futurisme">
+                                <option value="display">Space Grotesk (Tech Display)</option>
+                                <option value="orbitron">Orbitron (Cyberpunk HUD)</option>
+                                <option value="syne">Syne (Avant-Garde Art)</option>
+                                <option value="bebas_neue">Bebas Neue (Bold Poster)</option>
+                                <option value="comfortaa">Comfortaa (Aesthetic Rounded)</option>
+                                <option value="audiowide">Audiowide (Synthwave)</option>
+                                <option value="rajdhani">Rajdhani (Mecha Sci-Fi)</option>
+                              </optgroup>
+                              <optgroup label="🕹️ Retro & Gaming Pixels">
+                                <option value="press_start">Press Start 2P (8-Bit Arcade)</option>
+                                <option value="silkscreen">Silkscreen (Pixel Gaming)</option>
+                                <option value="pixelify">Pixelify Sans (Pixel Sans)</option>
+                                <option value="vt323">VT323 (Terminal CRT)</option>
+                              </optgroup>
+                              <optgroup label="✍️ Handgeschreven & Script">
+                                <option value="caveat">Caveat (Handwritten)</option>
+                                <option value="dancing_script">Dancing Script (Calligraphy)</option>
+                                <option value="pacifico">Pacifico (Retro Surf Script)</option>
+                              </optgroup>
                             </select>
+
+                            {/* Quick Google Font Input Popover Form */}
+                            {showQuickGoogleInput && (
+                              <form onSubmit={handleQuickGoogleFontSubmit} className="pt-2 flex gap-1.5">
+                                <input
+                                  type="text"
+                                  placeholder="Bijv. Rubik Wet Paint..."
+                                  value={quickGoogleFontInput}
+                                  onChange={(e) => setQuickGoogleFontInput(e.target.value)}
+                                  className="flex-1 px-3 py-1.5 bg-app-card border border-app-border rounded-xl text-xs text-app-ink placeholder-app-muted focus:outline-none focus:border-cyan-500"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={!quickGoogleFontInput.trim()}
+                                  className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                                >
+                                  Toevoegen
+                                </button>
+                              </form>
+                            )}
                           </div>
+
                           <div className="space-y-2">
-                            <label className="block text-[8px] font-bold text-app-muted uppercase tracking-wide ml-1">Corner Rounding ({customTheme.border_radius || 12}px)</label>
+                            <label className="block text-[8px] font-bold text-app-muted uppercase tracking-wide ml-1">
+                              Corner Rounding ({customTheme.border_radius || 12}px)
+                            </label>
                             <input 
                               type="range" 
                               min="0" 
                               max="40" 
                               value={customTheme.border_radius || 12} 
                               onChange={(e) => setCustomTheme({...customTheme, border_radius: parseInt(e.target.value)})} 
-                              className="w-full accent-app-ink h-2 bg-app-accent rounded-full appearance-none cursor-pointer"
+                              className="w-full accent-app-ink h-2 bg-app-accent rounded-full appearance-none cursor-pointer mt-3"
                             />
+                            <div className="flex justify-between text-[8px] text-app-muted font-mono px-1">
+                              <span>0px (Strak)</span>
+                              <span>16px (Standaard)</span>
+                              <span>40px (Pill)</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Live Font Rendering Preview Card */}
+                        <div className="p-4 bg-app-card rounded-xl border border-app-border/80 flex flex-col gap-2">
+                          <div className="flex items-center justify-between text-[10px] text-app-muted">
+                            <span className="font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                              <Eye className="w-3.5 h-3.5 text-cyan-500" /> Typografisch Voorbeeld
+                            </span>
+                            <span className="font-mono text-[9px] bg-app-accent px-2 py-0.5 rounded-md">
+                              {resolveFontFamilyString(customTheme.font_family, localCustomFonts).split(',')[0].replace(/"/g, '')}
+                            </span>
+                          </div>
+                          <div className="pt-1">
+                            <p 
+                              style={{ 
+                                fontFamily: resolveFontFamilyString(customTheme.font_family, localCustomFonts),
+                                fontSize: '18px',
+                                fontWeight: 700
+                              }}
+                              className="text-app-ink tracking-tight"
+                            >
+                              FTJM Forum — Snel, Veilig & Krachtig
+                            </p>
+                            <p 
+                              style={{ 
+                                fontFamily: resolveFontFamilyString(customTheme.font_family, localCustomFonts),
+                                fontSize: '12px'
+                              }}
+                              className="text-app-muted mt-1 leading-relaxed"
+                            >
+                              Dit is een voorbeeld van hoe artikelen, forumdiscussies en directe berichten eruitzien in jouw geselecteerde lettertype.
+                            </p>
+                            <p 
+                              style={{ 
+                                fontFamily: resolveFontFamilyString(customTheme.font_family, localCustomFonts),
+                                fontSize: '10px'
+                              }}
+                              className="text-cyan-500 font-mono mt-1 tracking-wider uppercase opacity-90"
+                            >
+                              0123456789 • ABCDEFGHIJKLMNOPQRSTUVWXYZ • #!&%$@
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -1790,6 +2228,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <input type="range" min="0" max="100" value={customTheme.profile_card_opacity ?? 0} onChange={(e) => setCustomTheme({...customTheme, profile_card_opacity: parseInt(e.target.value)})} className="w-full accent-app-ink" />
                           </div>
                         </div>
+
+                        {/* Icon Micro-Animations quick toggle */}
+                        <div className="pt-4 border-t border-app-border/60">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <p className="text-[10px] font-bold text-app-muted uppercase tracking-wide">Icoon Micro-Animaties</p>
+                              <p className="text-xs text-app-muted mt-0.5">Kies hoe iconen in knoppen en navigatie bewegen</p>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-app-accent text-app-ink border border-app-border">
+                              {iconAnimationMode === 'all' ? '✨ Alles' : iconAnimationMode === 'hover_only' ? '👆 Hover' : '🚫 Uit'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSetIconAnimationMode('all')}
+                              className={`p-2.5 rounded-xl border text-center transition-all ${
+                                iconAnimationMode === 'all'
+                                  ? 'bg-app-ink text-app-bg border-app-ink shadow-sm'
+                                  : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent hover:text-app-ink'
+                              }`}
+                            >
+                              <p className="text-xs font-bold">✨ Alles</p>
+                              <p className="text-[9px] opacity-80 mt-0.5">Actief + Hover</p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSetIconAnimationMode('hover_only')}
+                              className={`p-2.5 rounded-xl border text-center transition-all ${
+                                iconAnimationMode === 'hover_only'
+                                  ? 'bg-app-ink text-app-bg border-app-ink shadow-sm'
+                                  : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent hover:text-app-ink'
+                              }`}
+                            >
+                              <p className="text-xs font-bold">👆 Alleen Hover</p>
+                              <p className="text-[9px] opacity-80 mt-0.5">Rustige layout</p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSetIconAnimationMode('disabled')}
+                              className={`p-2.5 rounded-xl border text-center transition-all ${
+                                iconAnimationMode === 'disabled'
+                                  ? 'bg-app-ink text-app-bg border-app-ink shadow-sm'
+                                  : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent hover:text-app-ink'
+                              }`}
+                            >
+                              <p className="text-xs font-bold">🚫 Uit</p>
+                              <p className="text-[9px] opacity-80 mt-0.5">Volledig statisch</p>
+                            </button>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Wallpaper & Pattern */}
@@ -1851,7 +2340,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   const file = e.target.files?.[0];
                                   if (!file) return;
                                   toast.promise(
-                                    compressImage(file, 1920, 1080, 0.75).then((dataUrl) => {
+                                    compressImage(file, 1024, 576, 0.60).then((dataUrl) => {
                                       setCustomTheme({ ...customTheme, wallpaper: dataUrl });
                                       return "Achtergrond succesvol geladen!";
                                     }),
@@ -2019,14 +2508,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               )}
 
               <div className="pt-6 border-t border-app-border flex justify-end">
-                <button 
+                <motion.button 
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.96 }}
                   onClick={handleUpdateTheme}
                   disabled={saving}
-                  className="flex items-center gap-2 px-8 py-4 bg-app-ink text-app-bg rounded-2xl font-bold uppercase tracking-wide hover:opacity-90 disabled:opacity-50 transition-all shadow-xl active:scale-95 group"
+                  className="flex items-center gap-2 px-8 py-4 bg-app-ink text-app-bg rounded-2xl font-bold uppercase tracking-wide hover:opacity-90 disabled:opacity-50 transition-all shadow-xl group cursor-pointer"
                 >
-                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5 group-hover:scale-110 transition-transform" />}
+                  {saving ? <ThemedSpinner size="xs" color="currentColor" /> : <Save className="w-5 h-5 group-hover:scale-110 transition-transform" />}
                   Confirm Customization
-                </button>
+                </motion.button>
               </div>
             </motion.div>
           )}
@@ -2221,7 +2712,132 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   })()}
                 </div>
 
-                {/* 3. Downloads & Standalone App */}
+                {/* 3. Icoon Micro-Animaties & Rustige Weergave */}
+                <div className="p-6 bg-app-accent/20 rounded-2xl border border-app-border space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-app-accent flex items-center justify-center text-app-ink">
+                        <Sparkles className="w-4 h-4 text-cyan-500" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-app-ink text-base">{t("Icoon Micro-Animaties")}</h4>
+                        <p className="text-xs text-app-muted">
+                          {t("Kies hoe knoppen en navigatie-iconen reageren: continu geanimeerd, alleen bij cursor hover of volledig statisch.")}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-app-accent text-[11px] font-bold text-app-ink border border-app-border">
+                      {iconAnimationMode === 'all' ? '✨ ' + t('Alles Geanimeerd') : iconAnimationMode === 'hover_only' ? '👆 ' + t('Alleen bij Hover') : '🚫 ' + t('Animaties Uit')}
+                    </span>
+                  </div>
+
+                  {/* 3 Interactive Selection Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSetIconAnimationMode('all')}
+                      className={`p-4 rounded-xl font-bold border text-left transition-all flex flex-col justify-between gap-3 ${
+                        iconAnimationMode === 'all'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.01]'
+                          : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent/50 hover:text-app-ink'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="w-8 h-8 rounded-lg bg-app-accent/30 flex items-center justify-center">
+                          <Sparkles className="w-4 h-4 text-cyan-400" />
+                        </div>
+                        {iconAnimationMode === 'all' && <Check className="w-4 h-4 text-app-bg" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold">{t("Alles Geanimeerd")}</p>
+                        <p className={`text-[11px] font-medium mt-0.5 ${iconAnimationMode === 'all' ? 'text-app-bg/80' : 'text-app-muted'}`}>
+                          {t("Standaard — continue subtiele animaties op actieve tab en bij hover.")}
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSetIconAnimationMode('hover_only')}
+                      className={`p-4 rounded-xl font-bold border text-left transition-all flex flex-col justify-between gap-3 ${
+                        iconAnimationMode === 'hover_only'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.01]'
+                          : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent/50 hover:text-app-ink'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="w-8 h-8 rounded-lg bg-app-accent/30 flex items-center justify-center">
+                          <Activity className="w-4 h-4 text-amber-400" />
+                        </div>
+                        {iconAnimationMode === 'hover_only' && <Check className="w-4 h-4 text-app-bg" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold">{t("Alleen bij Hover")}</p>
+                        <p className={`text-[11px] font-medium mt-0.5 ${iconAnimationMode === 'hover_only' ? 'text-app-bg/80' : 'text-app-muted'}`}>
+                          {t("Rustige interface — animaties triggeren alleen als je erover beweegt.")}
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSetIconAnimationMode('disabled')}
+                      className={`p-4 rounded-xl font-bold border text-left transition-all flex flex-col justify-between gap-3 ${
+                        iconAnimationMode === 'disabled'
+                          ? 'bg-app-ink text-app-bg border-app-ink shadow-md scale-[1.01]'
+                          : 'bg-app-card text-app-muted border-app-border hover:bg-app-accent/50 hover:text-app-ink'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="w-8 h-8 rounded-lg bg-app-accent/30 flex items-center justify-center">
+                          <EyeOff className="w-4 h-4 text-rose-400" />
+                        </div>
+                        {iconAnimationMode === 'disabled' && <Check className="w-4 h-4 text-app-bg" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold">{t("Animaties Uit")}</p>
+                        <p className={`text-[11px] font-medium mt-0.5 ${iconAnimationMode === 'disabled' ? 'text-app-bg/80' : 'text-app-muted'}`}>
+                          {t("Volledig statische iconen zonder beweging of spring-effecten.")}
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Live Interactive Test Workbench */}
+                  <div className="p-4 bg-app-card rounded-xl border border-app-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-app-ink flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-cyan-500" />
+                        {t("Live Voorbeeld & Testbalk")}
+                      </p>
+                      <p className="text-[11px] text-app-muted mt-0.5">
+                        {t("Beweeg met je muis over de iconen hieronder om je geselecteerde modus direct te testen:")}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 p-1.5 bg-app-bg rounded-xl border border-app-border self-start sm:self-auto">
+                      <div className="p-2 rounded-lg bg-app-accent/40 text-app-ink hover:bg-app-accent transition-colors cursor-pointer" title="Chat Icon">
+                        <AnimatedChatIcon isActive={false} className="w-5 h-5" />
+                      </div>
+                      <div className="p-2 rounded-lg bg-app-accent/40 text-app-ink hover:bg-app-accent transition-colors cursor-pointer" title="Berichten Icon">
+                        <AnimatedMailIcon isActive={false} className="w-5 h-5" />
+                      </div>
+                      <div className="p-2 rounded-lg bg-app-accent/40 text-app-ink hover:bg-app-accent transition-colors cursor-pointer" title="Media Icon">
+                        <AnimatedMediaIcon isActive={false} className="w-5 h-5" />
+                      </div>
+                      <div className="p-2 rounded-lg bg-app-accent/40 text-app-ink hover:bg-app-accent transition-colors cursor-pointer" title="Notificaties Icon">
+                        <AnimatedBellIcon isActive={false} className="w-5 h-5" />
+                      </div>
+                      <div className="p-2 rounded-lg bg-app-accent/40 text-app-ink hover:bg-app-accent transition-colors cursor-pointer" title="Arcade Icon">
+                        <AnimatedArcadeIcon isActive={false} className="w-5 h-5 text-cyan-500" />
+                      </div>
+                      <div className="p-2 rounded-lg bg-app-accent/40 text-app-ink hover:bg-app-accent transition-colors cursor-pointer" title="Instellingen Icon">
+                        <AnimatedMenuIcon isActive={false} className="w-5 h-5" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Downloads & Standalone App */}
                 <div className="p-6 bg-app-accent/20 rounded-2xl border border-app-border">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2.5">
@@ -2433,6 +3049,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                     <button 
                       type="button"
+                      onClick={handleManualBase64Migration}
+                      disabled={migratingBase64}
+                      className="flex-1 py-2.5 px-4 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-cyan-500/20 shadow-sm"
+                    >
+                      <Zap className={`w-3.5 h-3.5 ${migratingBase64 ? 'animate-spin text-cyan-500' : ''}`} />
+                      <span>{migratingBase64 ? t("Optimaliseren...") : t("Media Optimaliseren (CDN)")}</span>
+                    </button>
+
+                    <button 
+                      type="button"
                       onClick={() => {
                         try {
                           sessionStorage.clear();
@@ -2447,6 +3073,86 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>{t("Lokale cache opschonen")}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Lokale Berichtgeschiedenis & Archief (IndexedDB) */}
+                <div className="p-6 bg-app-accent/20 rounded-2xl border border-app-border space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-app-accent flex items-center justify-center text-app-ink">
+                        <HardDrive className="w-4 h-4 text-emerald-500" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-app-ink text-base">{t("Lokale Berichtgeschiedenis & Archief")}</h4>
+                        <p className="text-xs text-app-muted">
+                          {t("Berichten en DM's worden lokaal op je apparaat opgeslagen (IndexedDB) zodat je geschiedenis bewaard blijft, terwijl de server licht en snel blijft.")}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={refreshArchiveStats}
+                      disabled={loadingArchiveStats}
+                      className="px-3 py-1.5 bg-app-card hover:bg-app-accent text-app-ink rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-app-border"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingArchiveStats ? 'animate-spin' : ''}`} />
+                      <span>{t("Status Vernieuwen")}</span>
+                    </button>
+                  </div>
+
+                  {/* Stats Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-4 bg-app-card rounded-xl border border-app-border flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                          <MessageSquare className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-app-ink">{archiveStats.dmsCount} {t("Lokale DM's")}</p>
+                          <p className="text-[10px] text-app-muted">{t("Opgeslagen in privé-archief")}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        {t("Actief")}
+                      </span>
+                    </div>
+
+                    <div className="p-4 bg-app-card rounded-xl border border-app-border flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
+                          <Globe className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-app-ink">{archiveStats.postsCount} {t("Chatberichten")}</p>
+                          <p className="text-[10px] text-app-muted">{t("Algemene chat geschiedenis")}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                        {t("Actief")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Clear Button */}
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (window.confirm(t("Weet je zeker dat je je lokale berichtgeschiedenis wilt wissen? Je serverberichten blijven intact."))) {
+                          await clearLocalArchive('all');
+                          await refreshArchiveStats();
+                          toast.success(t("Lokaal archief gewist"), {
+                            description: t("Je lokale berichtenarchief op dit apparaat is leeggemaakt.")
+                          });
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-red-500/20 shadow-sm"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t("Lokaal Berichtenarchief Wissen")}</span>
                     </button>
                   </div>
                 </div>
@@ -2582,7 +3288,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       >
                         {changingPassword ? (
                           <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <ThemedSpinner size="xs" color="currentColor" />
                             <span>Wachtwoord verifiëren & bijwerken...</span>
                           </>
                         ) : (
@@ -2713,7 +3419,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   >
                                     {registeringPasskey ? (
                                       <>
-                                        <Loader2 className="w-4 h-4 animate-spin animate-infinite" />
+                                        <ThemedSpinner size="xs" color="#ffffff" />
                                         Registreren...
                                       </>
                                     ) : (
@@ -2733,6 +3439,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* PostgreSQL & Database Exploit Security Shield */}
+              <DatabaseSecurityShield />
             </motion.div>
           )}
 
@@ -3035,9 +3744,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           )}
                         </div>
                       ) : (
-                        <div className="p-4 bg-app-bg border border-dashed border-app-border rounded-2xl text-center">
-                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-app-muted mb-2" />
-                          <p className="text-[10px] font-bold text-app-muted uppercase">Bezig met verzamelen van beheerder telemetrie...</p>
+                        <div className="p-6 bg-app-bg border border-dashed border-app-border rounded-2xl text-center space-y-2">
+                          <ThemedSpinner size="md" color="var(--custom-primary, #06b6d4)" />
+                          <p className="text-[11px] font-black text-app-ink uppercase tracking-wider">Bezig met verzamelen van beheerder telemetrie...</p>
+                          <p className="text-[10px] text-app-muted">Systeemlogs en audit-data worden gesynchroniseerd</p>
                         </div>
                       );
                     })()}
@@ -3226,7 +3936,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     }`}
                                   >
                                     {saving ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                      <ThemedSpinner size="xs" color="currentColor" />
                                     ) : u.is_blocked ? (
                                       <>
                                         <Check className="w-3 h-3" /> Deblokkeren
@@ -3362,7 +4072,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                                   {tel.timestamp && (
                                     <div className="text-[7.5px] opacity-70 mt-1 border-t border-app-border/40 pt-1 flex items-center gap-1">
-                                      <span>⏱️ Laatst ingelogd:</span>
+                                      <span>Laatst ingelogd:</span>
                                       <span>{new Date(tel.timestamp).toLocaleString('nl-NL')}</span>
                                     </div>
                                   )}
@@ -3778,9 +4488,9 @@ CREATE TRIGGER tr_secure_profile_updates
                     <button 
                       onClick={submitWarning}
                       disabled={warningSending || !warnReason.trim() || !warnDetails.trim()}
-                      className="flex-[2] py-3 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 disabled:opacity-50 transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                      className="flex-[2] py-3 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 disabled:opacity-50 transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
                     >
-                      {warningSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+                      {warningSending ? <ThemedSpinner size="xs" color="#ffffff" /> : <Bell className="w-4 h-4" />}
                       Stuur Waarschuwing
                     </button>
                   </div>
@@ -3866,9 +4576,9 @@ CREATE TRIGGER tr_secure_profile_updates
                     <button 
                       onClick={submitTempBan}
                       disabled={banSending || !banReasonText.trim()}
-                      className="flex-[2] py-3 bg-orange-500 text-white rounded-xl text-xs font-black hover:bg-orange-600 disabled:opacity-50 transition-all shadow-md shadow-orange-500/20 flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                      className="flex-[2] py-3 bg-orange-500 text-white rounded-xl text-xs font-black hover:bg-orange-600 disabled:opacity-50 transition-all shadow-md shadow-orange-500/20 flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
                     >
-                      {banSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
+                      {banSending ? <ThemedSpinner size="xs" color="#ffffff" /> : <Clock className="w-4 h-4" />}
                       Leg Schorsing Op
                     </button>
                   </div>
@@ -3877,6 +4587,22 @@ CREATE TRIGGER tr_secure_profile_updates
             </div>
           )}
         </AnimatePresence>
+
+        <CustomFontManagerModal
+          isOpen={isFontModalOpen}
+          onClose={() => setIsFontModalOpen(false)}
+          currentFont={customTheme.font_family}
+          onSelectFont={(fontIdOrFamily) => setCustomTheme({ ...customTheme, font_family: fontIdOrFamily })}
+          customTheme={customTheme}
+          setCustomTheme={setCustomTheme}
+        />
+
+        <ModernUICustomizerModal
+          isOpen={showModernCustomizer}
+          onClose={() => setShowModernCustomizer(false)}
+          customTheme={customTheme}
+          setCustomTheme={setCustomTheme}
+        />
       </div>
     </div>
   );

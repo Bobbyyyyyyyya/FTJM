@@ -1,0 +1,28 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -5577,2 +5577,22 @@
+ 
++  const handleBlockPost = async (postId: string, currentBlockStatus: boolean) => {
++    if (!isAdmin || !checkRateLimit()) return;
++    
++    try {
++      const { error } = await supabaseClient
++        .from('posts')
++        .update({ is_blocked: !currentBlockStatus })
++        .eq('id', postId);
++        
++      if (error) throw error;
++      
++      setPosts(prev => {
++        const updated = prev.map(p => p.id === postId ? { ...p, is_blocked: !currentBlockStatus } : p);
++        localStorage.setItem('cached_posts', JSON.stringify(updated));
++        return updated;
++      });
++      toast.success(!currentBlockStatus ? 'Post geblokkeerd' : 'Post gedeblokkeerd');
++    } catch (err) {
++      console.error('Error blocking post:', err);
++      toast.error('Kon post niet blokkeren');
++    }
++  };
++
+   const handleUpdatePost = async (postId: string) => {

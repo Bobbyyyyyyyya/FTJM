@@ -1,12 +1,17 @@
 /// <reference types="vite/client" />
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { secureSupabaseStorage } from './encryption';
 import { rateLimiter } from './rateLimiter';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+// Backup Supabase database & auth configuration
+const BACKUP_SUPABASE_URL = 'https://ccdoffhlhnbqcdptyxbu.supabase.co';
+const BACKUP_SUPABASE_KEY = 'sb_publishable_qraWFsV3GgtQhS8YKuId5w__BclUMpt';
 
-if (!supabaseUrl || !supabaseKey) {
+// Use the backup Supabase instance by default (or explicit backup env variables if supplied)
+const activeUrl = import.meta.env.VITE_SUPABASE_URL_BACKUP || BACKUP_SUPABASE_URL;
+const activeKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY_BACKUP || BACKUP_SUPABASE_KEY;
+
+if (!activeUrl || !activeKey) {
   console.warn('Supabase URL or Publishable Key is missing. Please check your environment variables.');
 }
 
@@ -16,7 +21,7 @@ export const setSupabaseFirebaseUid = (uid: string | null) => {
   firebaseUid = uid;
 };
 
-const clientCache: Record<string, any> = {};
+const clientCache: Record<string, SupabaseClient> = {};
 
 // Cache structure to prevent excessive Supabase reads and egress
 interface CacheItem {
@@ -28,30 +33,37 @@ interface CacheItem {
 }
 
 const getCache: Record<string, CacheItem> = {};
-const CACHE_TTL = 45000; // 45 seconden cache voor profielen/whitelist/nicknames om egress drastisch te verminderen
+const CACHE_TTL = 60000; // 60s memory cache for profiles/whitelist/nicknames to minimize egress
 
-export const createSupabaseClient = (uid: string | null = null) => {
-  const cacheKey = uid || 'default';
-  if (clientCache[cacheKey]) {
-    return clientCache[cacheKey];
+export const createSupabaseClient = (uid: string | null = null): SupabaseClient => {
+  if (uid) {
+    setSupabaseFirebaseUid(uid);
+  }
+  
+  if (clientCache['default']) {
+    return clientCache['default'];
   }
 
-  const isPrimary = cacheKey === 'default';
-
-  const client = createClient(supabaseUrl || '', supabaseKey || '', {
+  const client = createClient(activeUrl, activeKey, {
     auth: {
-      persistSession: isPrimary,
-      autoRefreshToken: isPrimary,
-      detectSessionInUrl: isPrimary,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
       storage: secureSupabaseStorage,
+      // @ts-ignore - ignore typing in case it complains
       lockSessionType: 'none',
-    } as any,
+    },
     global: {
-      fetch: (url, options) => {
+      fetch: async (url, options) => {
         const urlStr = String(url);
         const method = options?.method || 'GET';
+        const headers = new Headers(options?.headers);
 
-        // Check cache invalidatie bij schrijf-acties
+        if (firebaseUid) {
+          headers.set('x-firebase-uid', firebaseUid);
+        }
+
+        // Cache invalidation on mutation requests
         if (method !== 'GET') {
           if (urlStr.includes('/rest/v1/profiles')) {
             Object.keys(getCache).forEach(k => {
@@ -70,7 +82,7 @@ export const createSupabaseClient = (uid: string | null = null) => {
           }
         }
 
-        // Alleen in aanmerking komende GET requests cachen
+        // Only cache eligible read-heavy GET requests
         const isEligibleForCache = method === 'GET' && (
           urlStr.includes('/rest/v1/profiles') ||
           urlStr.includes('/rest/v1/whitelist') ||
@@ -103,19 +115,14 @@ export const createSupabaseClient = (uid: string | null = null) => {
           }));
         }
 
-        const headers = new Headers(options?.headers);
-        if (uid) {
-          headers.set('x-firebase-uid', uid);
-        }
-
         return fetch(url, { ...options, headers }).then(async (response) => {
-          // Clone response to parse length for egress logging
+          // Clone response to parse byte size for egress tracking
           const clonedResponse = response.clone();
           let responseText = '';
           try {
             responseText = await clonedResponse.text();
           } catch (e) {
-            // Unreadable response body
+            // Body not text
           }
 
           const byteSize = responseText.length || 0;
@@ -149,7 +156,7 @@ export const createSupabaseClient = (uid: string | null = null) => {
                 timestamp: Date.now()
               };
             } catch (e) {
-              // Geen crash veroorzaken als caching mislukt
+              // Ignore cache write error
             }
           }
           return response;
@@ -157,15 +164,15 @@ export const createSupabaseClient = (uid: string | null = null) => {
       }
     },
     realtime: {
-      params: uid ? { 'x-firebase-uid': uid } : {}
+      params: firebaseUid ? { 'x-firebase-uid': firebaseUid } : {}
     }
   });
 
-  clientCache[cacheKey] = client;
+  clientCache['default'] = client;
   return client;
 };
 
-let defaultSupabase: any = null;
+let defaultSupabase: SupabaseClient | null = null;
 
 export const invalidateSupabaseCache = (pattern?: string) => {
   if (!pattern) {
@@ -177,9 +184,29 @@ export const invalidateSupabaseCache = (pattern?: string) => {
   }
 };
 
-export const supabase = (() => {
+export const resetSupabaseClients = async () => {
+  try {
+    if (defaultSupabase) {
+      await defaultSupabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    }
+  } catch (e) {}
+
+  for (const key of Object.keys(clientCache)) {
+    try {
+      await clientCache[key].auth.signOut({ scope: 'local' }).catch(() => {});
+    } catch (e) {}
+    delete clientCache[key];
+  }
+
+  firebaseUid = null;
+  invalidateSupabaseCache();
+};
+
+export const supabase: SupabaseClient = (() => {
   if (!defaultSupabase) {
     defaultSupabase = createSupabaseClient(null);
   }
   return defaultSupabase;
 })();
+
+

@@ -45,7 +45,42 @@ export interface Report {
   status: string;
 }
 
+export interface CustomFontItem {
+  id: string;
+  name: string;
+  family: string;
+  source: 'preset' | 'google' | 'upload' | 'system';
+  url?: string;
+  fontData?: string; // base64 / data URL for uploaded .ttf / .woff / .otf
+  format?: 'truetype' | 'opentype' | 'woff' | 'woff2';
+  category?: 'sans' | 'serif' | 'mono' | 'display' | 'retro' | 'script' | 'custom';
+  createdAt?: string;
+  fileSize?: number;
+}
+
+export interface ModernUICustomization {
+  enabled?: boolean;
+  sidebar_position?: 'left' | 'right' | 'bottom_dock' | 'compact';
+  accent_style?: 'theme' | 'cyan' | 'emerald' | 'violet' | 'amber' | 'rose' | 'monochrome' | 'custom';
+  custom_accent_color?: string;
+  glass_intensity?: 'none' | 'subtle' | 'frosted' | 'deep' | 'cyber';
+  card_radius?: 'crisp' | 'modern' | 'squircle' | 'pill';
+  density?: 'compact' | 'balanced' | 'spacious';
+  ambient_aura?: boolean;
+  aura_background?: boolean;
+  ambient_aura_color?: string;
+  glow_active_items?: boolean;
+  show_offline_users?: boolean;
+  dock_position?: 'bottom' | 'floating';
+  sidebar_blur?: number;
+  sidebar_opacity?: number;
+  auto_hide_top_bar?: boolean;
+}
+
 export interface CustomTheme {
+  modern_ui?: boolean;
+  modern_ui_custom?: ModernUICustomization;
+  profile_list_position?: 'left' | 'right' | 'sidebar' | 'hidden';
   wallpaper?: string;
   pattern?: string;
   primary_color?: string;
@@ -64,7 +99,11 @@ export interface CustomTheme {
   wallpaper_x?: number;
   wallpaper_y?: number;
   border_radius?: number;
-  font_family?: 'sans' | 'mono' | 'serif' | 'display';
+  font_family?: string;
+  custom_font_name?: string;
+  custom_font_url?: string;
+  custom_font_data?: string;
+  custom_fonts?: CustomFontItem[];
   agreed_terms_v2?: boolean;
   user_telemetry?: any;
   game_high_scores?: Record<string, number>;
@@ -74,6 +113,7 @@ export interface CustomTheme {
   discord_link_code?: string;
   following?: string[];
   media?: any[];
+  icon_animation_mode?: 'all' | 'hover_only' | 'disabled';
 }
 
 export interface UserProfile {
@@ -125,6 +165,7 @@ export interface Post {
   content: string;
   created_at: string;
   parent_id?: string;
+  is_blocked?: boolean;
 }
 
 export interface ForumThread {
@@ -137,6 +178,7 @@ export interface ForumThread {
   created_at: string;
   updated_at: string;
   comment_count?: number;
+  is_blocked?: boolean;
 }
 
 export interface ForumComment {
@@ -148,6 +190,7 @@ export interface ForumComment {
   content: string;
   created_at: string;
   parent_id?: string;
+  is_blocked?: boolean;
 }
 
 export interface Conversation {

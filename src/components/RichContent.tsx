@@ -5,7 +5,71 @@ import { decryptGeneralChat } from '../utils/encryption';
 interface RichContentProps {
   content: string;
   searchQuery?: string;
+  hideMedia?: boolean;
 }
+
+const RichImage: React.FC<{ url: string }> = ({ url }) => {
+  const getCleanSrc = (u: string) => {
+    if (!u) return '';
+    const clean = u.trim();
+    if (clean.includes('ibb.co/') && !clean.includes('i.ibb.co/')) {
+      return `/api/image-proxy?url=${encodeURIComponent(clean)}`;
+    }
+    if (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('/') && !clean.startsWith('data:')) {
+      return `/uploads/${clean}`;
+    }
+    return clean;
+  };
+
+  const initialSrc = getCleanSrc(url);
+  const [currentSrc, setCurrentSrc] = React.useState<string>(initialSrc);
+  const [hasError, setHasError] = React.useState(false);
+  const [triedProxy, setTriedProxy] = React.useState(url.includes('ibb.co/') && !url.includes('i.ibb.co/'));
+
+  const handleError = () => {
+    if (!triedProxy && (url.startsWith('http://') || url.startsWith('https://'))) {
+      setTriedProxy(true);
+      setCurrentSrc(`/api/image-proxy?url=${encodeURIComponent(url)}`);
+    } else {
+      setHasError(true);
+    }
+  };
+
+  if (hasError) {
+    return (
+      <div className="max-w-md rounded-xl p-2.5 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-between gap-3 text-xs text-app-muted shadow-sm">
+        <div className="flex items-center gap-2">
+          <span>🖼️</span>
+          <span>Afbeelding niet meer beschikbaar ({url.includes('ibb.co') ? 'ImgBB' : 'CDN'})</span>
+        </div>
+        {url.startsWith('http') && (
+          <a 
+            href={url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="px-2 py-0.5 bg-app-accent hover:bg-app-accent/80 text-app-ink font-semibold rounded-md text-[11px] transition-all"
+          >
+            Bekijken ↗
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-md rounded-xl overflow-hidden shadow-md border border-zinc-200 dark:border-zinc-800 bg-black/5">
+      <img 
+        src={currentSrc} 
+        alt="Embedded content" 
+        className="w-full h-auto object-contain max-h-[500px]"
+        referrerPolicy="no-referrer"
+        loading="lazy"
+        decoding="async"
+        onError={handleError}
+      />
+    </div>
+  );
+};
 
 const highlightMatch = (text: string, query?: string) => {
   if (!query || !query.trim()) return text;
@@ -38,8 +102,9 @@ const highlightMatch = (text: string, query?: string) => {
   }
 };
 
-export const RichContent: React.FC<RichContentProps> = React.memo(({ content, searchQuery }) => {
+export const RichContent: React.FC<RichContentProps> = React.memo(({ content, searchQuery, hideMedia = false }) => {
   const [isExpanded, setIsExpanded] = React.useState(false);
+  const [showCollapsedMedia, setShowCollapsedMedia] = React.useState(false);
 
   // Attempt to decrypt if it looks like an encrypted general chat message
   const safeContent = (content && typeof content === 'string') ? content : '';
@@ -140,10 +205,10 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
     );
   }
   
-  const urlRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:video\/[a-zA-Z0-9+.-]+;base64,[^\s]+)/g;
+  const urlRegex = /(https?:\/\/[^\s]+|\/uploads\/[^\s]+|\/api\/uploads\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:video\/[a-zA-Z0-9+.-]+;base64,[^\s]+)/g;
   const mentionRegex = /(@[a-zA-Z0-9_]+)/g;
   
-  const combinedRegex = /(https?:\/\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:video\/[a-zA-Z0-9+.-]+;base64,[^\s]+|@[a-zA-Z0-9_]+)/g;
+  const combinedRegex = /(https?:\/\/[^\s]+|\/uploads\/[^\s]+|\/api\/uploads\/[^\s]+|data:image\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:audio\/[a-zA-Z0-9+.-]+;base64,[^\s]+|data:video\/[a-zA-Z0-9+.-]+;base64,[^\s]+|@[a-zA-Z0-9_]+)/g;
   const parts = safeDecryptedContent.split(combinedRegex);
 
   // Calculate actual text length excluding base64 media attachments to avoid counting image/audio/video data
@@ -168,6 +233,11 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
   const isImage = (url: string) => {
     if (!url || typeof url !== 'string') return false;
     if (isVideo(url)) return false;
+    if (url.startsWith('/uploads/') || url.startsWith('/api/uploads/')) {
+      if (/\.(mp4|webm|mov|mkv|avi)$/i.test(url)) return false;
+      if (/\.(mp3|wav|ogg|m4a|aac)$/i.test(url)) return false;
+      return true;
+    }
     if (url.startsWith('data:image/')) return true;
     const imageExtensions = /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)(\?.*)?$/i;
     const imageHosts = [
@@ -207,6 +277,10 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
     if (part.match(urlRegex)) {
       if (part.startsWith('data:')) {
         return null; // Don't render raw base64 data strings as text
+      }
+      // If the link is an image, don't show the ugly raw text URL in the message bubble because it renders as an embedded image below
+      if (isImage(part)) {
+        return null;
       }
       return (
         <a 
@@ -288,7 +362,17 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
       )}
       
       <div className="flex flex-col gap-4 mt-2">
-        {safeDecryptedContent.match(urlRegex)?.map((url, i) => {
+        {hideMedia && !showCollapsedMedia && safeDecryptedContent.match(urlRegex) ? (
+          <button
+            type="button"
+            onClick={() => setShowCollapsedMedia(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 text-[11px] text-app-muted hover:text-app-ink font-medium w-fit transition-colors cursor-pointer"
+          >
+            <span>🖼️</span>
+            <span>Media weergeven</span>
+          </button>
+        ) : (
+          safeDecryptedContent.match(urlRegex)?.map((url, i) => {
           if (!url || typeof url !== 'string') return null;
           const youtubeId = getYoutubeId(url);
           if (youtubeId) {
@@ -322,16 +406,7 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
 
           if (isImage(url)) {
             return (
-              <div key={i} className="max-w-md rounded-xl overflow-hidden shadow-md border border-zinc-200">
-                <img 
-                  src={url} 
-                  alt="Embedded content" 
-                  className="w-full h-auto"
-                  referrerPolicy="no-referrer"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </div>
+              <RichImage key={i} url={url} />
             );
           }
 
@@ -348,7 +423,7 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
           }
           
           return null;
-        })}
+        }))}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { LogIn, ArrowRight, MessageSquare, Zap, Lock, Users, Globe, ChevronRight, FileText, Scale, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Logo } from './Logo';
 
 interface LandingPageProps {
   onLogin: () => void;
@@ -98,13 +99,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
         className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between relative z-50"
       >
         <div className="flex items-center gap-3 group cursor-pointer">
-          <div className="relative w-10 h-10 bg-transparent rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.1)] group-hover:scale-105 transition-transform overflow-hidden">
-            <img 
-              src="/logo.png" 
-              alt="FTJM Logo" 
-              className="w-full h-full object-cover scale-[1.35]"
-              referrerPolicy="no-referrer"
-            />
+          <div className="relative w-10 h-10 bg-[#001E36] rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.1)] group-hover:scale-105 transition-transform overflow-hidden border border-white/10">
+            <Logo className="w-full h-full object-contain p-0.5" fallbackTextSize="text-xs font-black tracking-tighter" />
           </div>
           <div className="flex flex-col">
             <span className="text-xl font-black tracking-tight text-white leading-none">FTJM</span>
@@ -137,13 +133,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             initial={{ opacity: 0, scale: 0.9, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.1 }}
-            className="mb-10 inline-flex items-center gap-2.5 px-4 py-2 bg-white/5 backdrop-blur-md rounded-full text-[10px] font-bold text-white/90 border border-white/10 shadow-lg uppercase tracking-widest"
+            className="mb-6 inline-flex items-center gap-2.5 px-4 py-2 bg-white/5 backdrop-blur-md rounded-full text-[10px] font-bold text-white/90 border border-white/10 shadow-lg uppercase tracking-widest"
           >
             <span className="relative flex h-2 w-2">
               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${websiteStatus.toLowerCase() === 'online' ? 'bg-cyan-400' : 'bg-amber-400'}`}></span>
               <span className={`relative inline-flex rounded-full h-2 w-2 ${websiteStatus.toLowerCase() === 'online' ? 'bg-cyan-500' : 'bg-amber-500'}`}></span>
             </span>
             Systeem Status: <span className="text-white font-black">{websiteStatus}</span>
+          </motion.div>
+
+          {/* Backup Server Active Notice Banner */}
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="mb-8 w-full max-w-xl mx-auto px-5 py-4 bg-amber-500/15 border border-amber-500/35 rounded-2xl backdrop-blur-md text-amber-200 text-xs text-left flex items-start gap-3.5 shadow-xl shadow-amber-950/30"
+          >
+            <div className="w-9 h-9 rounded-xl bg-amber-500/25 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-300 font-black text-lg shadow-inner">
+              ⚠️
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="font-black text-amber-300 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Nood / Back-up Server Actief</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/25 text-[9px] font-black text-amber-200 border border-amber-400/40">Back-up Modus</span>
+              </div>
+              <p className="text-[11.5px] text-amber-100/90 leading-relaxed font-medium">
+                Het netwerk draait momenteel op de <strong>back-upserver</strong>. Let op: accounts uit de primaire database zijn hier <strong>niet op overgezet</strong>. Indien inloggen niet lukt, dien je voor deze back-upserver een nieuw account aan te maken.
+              </p>
+            </div>
           </motion.div>
           
           <motion.h1 
@@ -517,13 +534,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
       {/* Footer */}
       <footer className="py-12 bg-[#001526] relative z-10 overflow-hidden border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 relative z-10 flex flex-col items-center">
-          <div className="w-12 h-12 bg-transparent rounded-xl flex items-center justify-center border border-white/10 mb-6 opacity-50">
-            <img 
-              src="/logo.png" 
-              alt="FTJM Logo" 
-              className="w-full h-full object-cover scale-[1.35]"
-              referrerPolicy="no-referrer"
-            />
+          <div className="w-12 h-12 bg-transparent rounded-xl flex items-center justify-center border border-white/10 mb-6 opacity-50 relative overflow-hidden">
+            <Logo className="w-full h-full object-contain p-0.5" fallbackTextSize="text-[10px] font-black tracking-tighter" />
           </div>
           <div className="flex items-center gap-6 text-white/40 text-[10px] font-bold uppercase tracking-[0.2em] mb-8">
             <a href="#doel" className="hover:text-white transition-colors">Doel</a>

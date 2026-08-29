@@ -179,7 +179,7 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
                 <div className="w-full h-full bg-[#050508] flex items-center justify-center pointer-events-auto">
                   <VideoStream stream={localStream} muted className="w-full h-full object-cover opacity-60 filter blur-sm" />
                 </div>
-              ) : peerAvatar ? (
+              ) : peerAvatar?.trim() ? (
                 <div className="relative w-full h-full overflow-hidden bg-[#07070d]">
                   <img 
                     src={peerAvatar} 
@@ -275,7 +275,7 @@ export const VoiceCallUI: React.FC<VoiceCallUIProps> = ({
                     className={`w-32 h-32 md:w-40 md:h-40 rounded-full p-[3px] bg-gradient-to-br from-white/15 to-white/5 border border-white/10 shadow-2xl relative z-10`}
                   >
                     <div className="w-full h-full rounded-full overflow-hidden bg-gradient-to-b from-neutral-800 to-neutral-900 flex items-center justify-center">
-                      {peerAvatar ? (
+                      {peerAvatar?.trim() ? (
                         <img 
                           src={peerAvatar} 
                           alt={peerName} 

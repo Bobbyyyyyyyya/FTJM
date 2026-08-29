@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical, Share2, Volume2, VolumeX } from 'lucide-react';
+import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical, Share2, Volume2, VolumeX, ShieldAlert, Ban } from 'lucide-react';
 import { formatDate, getMediaShareUrl } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
 import { t } from '../utils/translations';
@@ -25,6 +25,7 @@ interface MediaFeedCardProps {
     author_photo: string | null;
     likes: string[];
     comments: Comment[];
+    is_blocked?: boolean;
   };
   currentUserId: string | undefined;
   onLike: (mediaId: string, authorId: string) => void;
@@ -33,6 +34,7 @@ interface MediaFeedCardProps {
   onOpenProfile: (userId: string) => void;
   onViewFullscreen: (url: string) => void;
   onDeleteMedia?: (mediaId: string, authorId: string) => void;
+  onToggleBlockMedia?: (mediaId: string, authorId: string) => void;
   nicknames: Record<string, string>;
   isAdmin?: boolean;
   profiles?: any[];
@@ -47,6 +49,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
   onOpenProfile,
   onViewFullscreen,
   onDeleteMedia,
+  onToggleBlockMedia,
   nicknames,
   isAdmin,
   profiles,
@@ -56,7 +59,14 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
   const [isLikePulsing, setIsLikePulsing] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [imgSrc, setImgSrc] = useState(media.media_url);
+  const [imgProxyTried, setImgProxyTried] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    setImgSrc(media.media_url);
+    setImgProxyTried(false);
+  }, [media.media_url]);
 
   const isVideo = media.media_type === 'video' || (Boolean(media.media_url) && (
     media.media_url.startsWith('data:video/') || 
@@ -123,7 +133,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
           className="flex items-center gap-3 text-left group/author min-w-0 flex-1"
         >
           <div className="w-9 h-9 rounded-xl overflow-hidden bg-app-accent border border-app-border shrink-0">
-            {media.author_photo ? (
+            {media.author_photo?.trim() ? (
               <img
                 src={media.author_photo}
                 alt=""
@@ -164,15 +174,33 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
             </p>
           </div>
         </button>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <span className="px-2 py-0.5 bg-app-accent text-[8px] font-black uppercase text-app-ink border border-app-border rounded-full tracking-wider shrink-0">
             {isVideo ? '📽️ Video' : '🖼️ Foto'}
           </span>
-          {currentUserId && currentUserId === media.user_id && onDeleteMedia && (
+
+          {/* Admin Block / Unblock Toggle Button */}
+          {isAdmin && onToggleBlockMedia && (
+            <button
+              onClick={() => onToggleBlockMedia(media.id, media.user_id)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
+                media.is_blocked 
+                  ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/25' 
+                  : 'bg-amber-500/15 border border-amber-500/30 text-amber-500 hover:bg-amber-500/25'
+              }`}
+              title={media.is_blocked ? "Deblokkeer deze post voor alle gebruikers" : "Blokkeer deze post tijdelijk voor gewone gebruikers"}
+            >
+              <Ban className="w-3 h-3" />
+              <span className="hidden sm:inline">{media.is_blocked ? 'Deblokkeren' : 'Blokkeren'}</span>
+            </button>
+          )}
+
+          {/* Delete Button (Allowed for post author OR system admin) */}
+          {(currentUserId === media.user_id || isAdmin) && onDeleteMedia && (
             <button
               onClick={() => onDeleteMedia(media.id, media.user_id)}
               className="p-1.5 text-app-muted hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
-              title={t("Mijn media verwijderen")}
+              title={isAdmin && currentUserId !== media.user_id ? "Beheerder: Media verwijderen" : t("Mijn media verwijderen")}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -181,43 +209,73 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
       </div>
 
       {/* Media Wrapper */}
-      <div className="relative w-full pb-[100%] bg-black overflow-hidden flex items-center justify-center cursor-pointer group/media shrink-0">
-        {isVideo ? (
-          <>
-            <video
-              ref={videoRef}
-              src={media.media_url}
-              className="absolute inset-0 w-full h-full object-cover"
-              onClick={() => onViewFullscreen(media.media_url)}
-              muted={isMuted}
-              loop
-              playsInline
-              autoPlay
-              preload="auto"
-            />
-            {/* Quick Audio Mute / Unmute Button */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsMuted(!isMuted);
-              }}
-              className="absolute bottom-2.5 right-2.5 z-10 p-1.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md text-white border border-white/20 active:scale-90 transition-all shadow-lg cursor-pointer flex items-center justify-center"
-              title={isMuted ? "Geluid aanzetten" : "Geluid dempen"}
-            >
-              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-zinc-300" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
-            </button>
-          </>
+      <div className="relative w-full pb-[100%] bg-black overflow-hidden flex items-center justify-center group/media shrink-0">
+        {media.is_blocked && !isAdmin ? (
+          /* Blocked Placeholder for regular users */
+          <div className="absolute inset-0 bg-zinc-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center text-zinc-300 gap-3 border border-red-500/20">
+            <div className="w-12 h-12 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="font-black text-xs text-red-400 tracking-wider uppercase">Content Tijdelijk Geblokkeerd</p>
+              <p className="text-[11px] text-zinc-400 mt-1 max-w-xs leading-relaxed">
+                Deze media is door een moderator tijdelijk verborgen voor de community in afwachting van beoordeling.
+              </p>
+            </div>
+          </div>
         ) : (
-          <img
-            src={media.media_url}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover group-hover/media:scale-[1.03] transition-all duration-500"
-            onClick={() => onViewFullscreen(media.media_url)}
-            referrerPolicy="no-referrer"
-            loading="lazy"
-            decoding="async"
-          />
+          <>
+            {/* Floating Badge for Admin viewing blocked media */}
+            {media.is_blocked && isAdmin && (
+              <div className="absolute top-2.5 left-2.5 z-20 bg-red-600/90 text-white backdrop-blur-md px-2.5 py-1 rounded-full border border-red-400 shadow-lg flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider">
+                <ShieldAlert className="w-3 h-3" />
+                <span>Geblokkeerd (Zichtbaar voor Admin)</span>
+              </div>
+            )}
+
+            {isVideo ? (
+              <>
+                <video
+                  ref={videoRef}
+                  src={media.media_url}
+                  className="absolute inset-0 w-full h-full object-cover cursor-pointer"
+                  onClick={() => onViewFullscreen(media.media_url)}
+                  muted={isMuted}
+                  loop
+                  playsInline
+                  autoPlay
+                  preload="auto"
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsMuted(!isMuted);
+                  }}
+                  className="absolute bottom-2.5 right-2.5 z-10 p-1.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md text-white border border-white/20 active:scale-90 transition-all shadow-lg cursor-pointer flex items-center justify-center"
+                  title={isMuted ? "Geluid aanzetten" : "Geluid dempen"}
+                >
+                  {isMuted ? <VolumeX className="w-3.5 h-3.5 text-zinc-300" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
+                </button>
+              </>
+            ) : (
+              <img
+                src={imgSrc}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover group-hover/media:scale-[1.03] transition-all duration-500 cursor-pointer"
+                onClick={() => onViewFullscreen(media.media_url)}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
+                onError={() => {
+                  if (!imgProxyTried && (media.media_url.startsWith('http://') || media.media_url.startsWith('https://'))) {
+                    setImgProxyTried(true);
+                    setImgSrc(`/api/image-proxy?url=${encodeURIComponent(media.media_url)}`);
+                  }
+                }}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -290,11 +348,19 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
                   const isCommentBeta = isBetaTester(commentAuthorProfile || commentAuthorProfile?.email);
                   const isCommentAdmin = commentAuthorProfile?.role === 'admin' || commentAuthorProfile?.email?.toLowerCase() === 'markohoksen@gmail.com';
 
+                  const commentDisplayName = 
+                    nicknames[comment.user_id] || 
+                    (commentAuthorProfile?.display_name && commentAuthorProfile.display_name !== 'Anoniem' ? commentAuthorProfile.display_name : null) ||
+                    (comment.author_name && comment.author_name !== 'Anoniem' ? comment.author_name : null) ||
+                    commentAuthorProfile?.email?.split('@')[0] ||
+                    'Gebruiker';
+                  const commentPhoto = commentAuthorProfile?.photo_url || comment.author_photo || null;
+
                   return (
                     <div key={comment.id || index} className="flex gap-2.5 items-start text-left">
                       <div className="w-6 h-6 rounded-lg bg-app-accent overflow-hidden shrink-0 border border-app-border/50">
-                        {comment.author_photo ? (
-                          <img src={comment.author_photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {commentPhoto?.trim() ? (
+                          <img src={commentPhoto} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <UserIcon className="w-2.5 h-2.5 text-app-muted" />
@@ -305,7 +371,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             <span className="text-[10px] font-black text-app-ink truncate max-w-[110px] sm:max-w-[160px]">
-                              {nicknames[comment.user_id] || comment.author_name || 'Anoniem'}
+                              {commentDisplayName}
                             </span>
                             {isCommentVerified && (
                               <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_6px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">

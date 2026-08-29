@@ -1,22 +1,561 @@
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { createClient } from '@supabase/supabase-js';
 import CryptoJS from 'crypto-js';
 import dotenv from 'dotenv';
+import { postgresSecurityMiddleware, getSecurityStats } from './server/postgresSecurityMiddleware';
 
 dotenv.config();
 
+// Active unified Supabase server client (Backup database & auth)
+const BACKUP_SUPABASE_URL = 'https://ccdoffhlhnbqcdptyxbu.supabase.co';
+const BACKUP_SUPABASE_KEY = 'sb_publishable_qraWFsV3GgtQhS8YKuId5w__BclUMpt';
+
+const activeSupabaseUrl = process.env.VITE_SUPABASE_URL_BACKUP || BACKUP_SUPABASE_URL;
+const activeSupabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY_BACKUP || BACKUP_SUPABASE_KEY;
+
+const serverSupabase = createClient(activeSupabaseUrl, activeSupabaseKey);
+
 async function startServer() {
   const app = express();
+  app.use(compression());
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '35mb' }));
+  app.use(express.urlencoded({ limit: '35mb', extended: true }));
 
-  // Serve API endpoints if needed
+  const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+  const PUBLIC_DIR = path.join(process.cwd(), 'public');
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+  app.use(express.static(PUBLIC_DIR, { maxAge: '1y' }));
+  app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '1y' }));
+  app.use('/api/uploads', express.static(UPLOADS_DIR, { maxAge: '1y' }));
+
+  // 1x1 transparent PNG buffer for missing/offline image fallbacks
+  const TRANSPARENT_PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64'
+  );
+
+  // Serve root-level uploaded images or return graceful file if found
+  app.get('/:filename', (req, res, next) => {
+    const filename = req.params.filename;
+    if (filename && /\.(jpe?g|png|webp|gif|svg|avif|webm|mp3|wav|ogg)$/i.test(filename)) {
+      const publicFile = path.join(PUBLIC_DIR, path.basename(filename));
+      if (fs.existsSync(publicFile)) {
+        return res.sendFile(publicFile);
+      }
+      const localFile = path.join(UPLOADS_DIR, path.basename(filename));
+      if (fs.existsSync(localFile)) {
+        return res.sendFile(localFile);
+      }
+    }
+    next();
+  });
+
+  // Chat Encryption / Decryption Helpers
+  const CHAT_ENCRYPTION_KEY = process.env.VITE_ENCRYPTION_KEY || 'w836mDIpEhFnugUrKLgroqOp026IEKspJrckVQf5g9M=';
+  const LEGACY_CHAT_ENCRYPTION_KEY = 'app-chat-secret-key-2024';
+
+  const encryptGeneralChat = (text: string): string => {
+    try {
+      const encrypted = CryptoJS.AES.encrypt(text, CHAT_ENCRYPTION_KEY).toString();
+      return `gc:${encrypted}`;
+    } catch (error) {
+      console.error('Server encryption error:', error);
+      return text;
+    }
+  };
+
+  const decryptGeneralChat = (cipherText: string): string => {
+    try {
+      if (!cipherText || typeof cipherText !== 'string') {
+        return typeof cipherText === 'string' ? cipherText : '';
+      }
+      
+      let cleanText = cipherText.trim();
+      
+      if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
+        cleanText = cleanText.substring(1, cleanText.length - 1).trim();
+      }
+      if (cleanText.startsWith("'") && cleanText.endsWith("'")) {
+        cleanText = cleanText.substring(1, cleanText.length - 1).trim();
+      }
+      if (cleanText.startsWith('\\"') && cleanText.endsWith('\\"')) {
+        cleanText = cleanText.substring(2, cleanText.length - 2).trim();
+      }
+
+      let actualCipher = cleanText;
+      while (actualCipher.startsWith('gc:')) {
+        actualCipher = actualCipher.substring(3).trim();
+      }
+      
+      // 1. Primary key decrypt
+      try {
+        const bytes = CryptoJS.AES.decrypt(actualCipher, CHAT_ENCRYPTION_KEY);
+        const originalText = bytes.toString(CryptoJS.enc.Utf8);
+        if (originalText && originalText.trim().length > 0) {
+          return originalText;
+        }
+        const latinText = bytes.toString(CryptoJS.enc.Latin1);
+        if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
+          return latinText;
+        }
+      } catch (e) {}
+
+      // 2. Legacy key decrypt
+      try {
+        const bytes = CryptoJS.AES.decrypt(actualCipher, LEGACY_CHAT_ENCRYPTION_KEY);
+        const originalText = bytes.toString(CryptoJS.enc.Utf8);
+        if (originalText && originalText.trim().length > 0) {
+          return originalText;
+        }
+        const latinText = bytes.toString(CryptoJS.enc.Latin1);
+        if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
+          return latinText;
+        }
+      } catch (e) {}
+      
+      return cleanText.startsWith('gc:') ? actualCipher : cipherText;
+    } catch (error) {
+      console.error('Decryption failed for:', cipherText, error);
+      return typeof cipherText === 'string' ? cipherText : '';
+    }
+  };
+
+  // PostgreSQL & SQL Injection Exploit Protection Middleware
+  app.use(postgresSecurityMiddleware);
+
+  // Serve API endpoints
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date() });
+  });
+
+  // Security Shield Stats & Incident Audit Log Endpoint
+  app.get('/api/security/stats', (req, res) => {
+    res.json({ success: true, ...getSecurityStats() });
+  });
+
+  // Image & Media Upload Endpoint (ImgBB with local persistent /uploads/ fallback)
+  app.post('/api/upload-image', async (req, res) => {
+    try {
+      const { image, name, mimeType } = req.body;
+      if (!image) {
+        return res.status(400).json({
+          success: false,
+          error: 'Geen afbeeldingsdata meegeleverd.',
+        });
+      }
+
+      // Block video uploads entirely
+      if (
+        (mimeType && mimeType.includes('video')) ||
+        (typeof image === 'string' && (image.startsWith('data:video/') || image.includes('video/')))
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'Videobestanden worden momenteel niet ondersteund.',
+        });
+      }
+
+      // Strip potential Data URI header if passed as base64 string
+      let base64Data = image;
+      let detectedMime = mimeType || 'image/jpeg';
+      if (typeof image === 'string' && image.includes('base64,')) {
+        const match = image.match(/^data:([^;]+);base64,/);
+        if (match) detectedMime = match[1];
+        base64Data = image.split('base64,')[1];
+      }
+
+      if (detectedMime.includes('video')) {
+        return res.status(400).json({
+          success: false,
+          error: 'Videobestanden worden momenteel niet ondersteund.',
+        });
+      }
+
+      const ext = detectedMime.includes('webp') ? 'webp' : detectedMime.includes('png') ? 'png' : detectedMime.includes('gif') ? 'gif' : detectedMime.includes('audio') ? 'webm' : 'jpg';
+      const cleanName = (name ? name.replace(/[^a-zA-Z0-9_-]/g, '_') : 'img') + `_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+
+      const isImgBBSupported = detectedMime.includes('image/') || detectedMime.includes('webp') || detectedMime.includes('png') || detectedMime.includes('jpg') || detectedMime.includes('jpeg') || detectedMime.includes('gif');
+
+      // 1. Try ImgBB if API key is present AND it's an image
+      const apiKey = process.env.IMGBB_API_KEY;
+      if (apiKey && apiKey.trim() !== '' && isImgBBSupported) {
+        try {
+          const formData = new URLSearchParams();
+          formData.append('image', base64Data);
+          if (name) {
+            formData.append('name', name);
+          }
+
+          const response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(apiKey.trim())}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString(),
+          });
+
+          const data = (await response.json()) as any;
+
+          if (response.ok && data.success && (data.data?.display_url || data.data?.url || data.data?.image?.url)) {
+            const directUrl = data.data.image?.url || data.data.display_url || data.data.url;
+            return res.json({
+              success: true,
+              url: directUrl,
+              display_url: directUrl,
+              thumb: data.data.thumb?.url || directUrl,
+              delete_url: data.data.delete_url,
+              size: data.data.size,
+              width: data.data.width,
+              height: data.data.height,
+            });
+          } else {
+            console.warn('[ImgBB Upload failed, saving to local static storage]:', data?.error?.message || data);
+          }
+        } catch (imgbbErr) {
+          console.warn('[ImgBB Connection Error, saving to local static storage]:', imgbbErr);
+        }
+      }
+
+      // 2. Guaranteed local storage fallback (0% key dependency, 100% reliability for all users)
+      const buffer = Buffer.from(base64Data, 'base64');
+      const filePath = path.join(UPLOADS_DIR, cleanName);
+      await fs.promises.writeFile(filePath, buffer);
+
+      const publicUrl = `/uploads/${cleanName}`;
+      return res.json({
+        success: true,
+        url: publicUrl,
+        display_url: publicUrl,
+        thumb: publicUrl,
+        size: buffer.length,
+      });
+    } catch (err: any) {
+      console.error('[Upload Server Error]', err);
+      return res.status(500).json({
+        success: false,
+        error: err.message || 'Interne serverfout bij uploaden van afbeelding.',
+      });
+    }
+  });
+
+  // Image Proxy to resolve ImgBB viewer pages, CDN URLs, and bypass adblockers
+  app.get('/api/image-proxy', async (req, res) => {
+    try {
+      let targetUrl = req.query.url as string;
+      if (!targetUrl || typeof targetUrl !== 'string') {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.status(200).send(TRANSPARENT_PNG);
+      }
+      targetUrl = targetUrl.trim();
+
+      // Handle relative paths or bare filenames like /uploads/... or 1787748721080_h9vdr68.jpg
+      if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+        if (targetUrl.startsWith('//')) {
+          targetUrl = 'https:' + targetUrl;
+        } else {
+          // Check if it exists in UPLOADS_DIR
+          const cleanBase = path.basename(targetUrl.split('?')[0]);
+          const localPath = path.join(UPLOADS_DIR, cleanBase);
+          if (fs.existsSync(localPath)) {
+            return res.sendFile(localPath);
+          }
+          // If not found locally, return transparent fallback image
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          return res.status(200).send(TRANSPARENT_PNG);
+        }
+      }
+
+      // Check if it is an ImgBB HTML viewer link (e.g. https://ibb.co/xyz)
+      const isIbbViewer = targetUrl.includes('ibb.co/') && !targetUrl.includes('i.ibb.co/');
+
+      let response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,text/html,*/*;q=0.8',
+        }
+      });
+
+      if (!response.ok && (response.status === 404 || response.status === 410)) {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.status(200).send(TRANSPARENT_PNG);
+      }
+
+      let contentType = response.headers.get('content-type') || '';
+
+      // If response is HTML (e.g. ImgBB viewer page or redirect page), extract direct image
+      if (contentType.includes('text/html') || isIbbViewer) {
+        const html = await response.text();
+
+        // Search for direct image URL in meta tags or page content
+        const ogMatch = html.match(/<meta\s+(?:property|name)=["'](?:og:image|twitter:image)["']\s+content=["']([^"']+)["']/i) ||
+                        html.match(/<meta\s+content=["']([^"']+)["']\s+(?:property|name)=["'](?:og:image|twitter:image)["']/i) ||
+                        html.match(/<link\s+rel=["']image_src["']\s+href=["']([^"']+)["']/i) ||
+                        html.match(/<img[^>]+id=["']image-viewer["'][^>]+src=["']([^"']+)["']/i) ||
+                        html.match(/https:\/\/i\.ibb\.co\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+/i);
+
+        const directImgUrl = ogMatch ? (ogMatch[1] || ogMatch[0]) : null;
+
+        if (directImgUrl && (directImgUrl.startsWith('http://') || directImgUrl.startsWith('https://'))) {
+          const directResponse = await fetch(directImgUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            }
+          });
+
+          if (directResponse.ok) {
+            const imgContentType = directResponse.headers.get('content-type') || 'image/jpeg';
+            res.setHeader('Content-Type', imgContentType);
+            res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+            const arrayBuffer = await directResponse.arrayBuffer();
+            return res.send(Buffer.from(arrayBuffer));
+          }
+        }
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.status(200).send(TRANSPARENT_PNG);
+      }
+
+      if (!response.ok) {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.status(200).send(TRANSPARENT_PNG);
+      }
+
+      res.setHeader('Content-Type', contentType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+
+      const arrayBuffer = await response.arrayBuffer();
+      return res.send(Buffer.from(arrayBuffer));
+    } catch (err: any) {
+      console.error('[Image Proxy Error]:', err.message);
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.status(200).send(TRANSPARENT_PNG);
+    }
+  });
+
+  // Admin Media Migration API (Converts all remaining legacy Base64 across all tables)
+  app.post('/api/admin/migrate-media', async (req, res) => {
+    try {
+      const supabase = serverSupabase;
+
+      let totalMigrated = 0;
+      const details = {
+        posts: 0,
+        messages: 0,
+        profileMedia: 0,
+        profiles: 0,
+        forumThreads: 0,
+        forumComments: 0
+      };
+
+      const uploadBase64ToServerOrImgBB = async (b64: string, name: string): Promise<string | null> => {
+        if (!b64 || typeof b64 !== 'string') return null;
+        if (b64.startsWith('data:video/')) return null; // Drop videos
+
+        let base64Data = b64;
+        let detectedMime = 'image/jpeg';
+        if (b64.includes('base64,')) {
+          const match = b64.match(/^data:([^;]+);base64,/);
+          if (match) detectedMime = match[1];
+          base64Data = b64.split('base64,')[1];
+        }
+
+        const ext = detectedMime.includes('webp') ? 'webp' : detectedMime.includes('png') ? 'png' : detectedMime.includes('gif') ? 'gif' : detectedMime.includes('audio') ? 'webm' : 'jpg';
+        const cleanName = `migrated_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+
+        const apiKey = process.env.IMGBB_API_KEY;
+        if (apiKey && apiKey.trim() !== '' && !detectedMime.includes('audio')) {
+          try {
+            const formData = new URLSearchParams();
+            formData.append('image', base64Data);
+            formData.append('name', name);
+            const response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(apiKey.trim())}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: formData.toString(),
+            });
+            const data = (await response.json()) as any;
+            if (response.ok && data.success && (data.data?.display_url || data.data?.url || data.data?.image?.url)) {
+              return data.data.image?.url || data.data.display_url || data.data.url;
+            }
+          } catch (e) {}
+        }
+
+        // Save local
+        const buffer = Buffer.from(base64Data, 'base64');
+        const filePath = path.join(UPLOADS_DIR, cleanName);
+        await fs.promises.writeFile(filePath, buffer);
+        return `/uploads/${cleanName}`;
+      };
+
+      const migrateStringPayload = async (str: string, label: string): Promise<{ text: string; changed: boolean }> => {
+        if (!str || typeof str !== 'string' || !str.includes('data:')) return { text: str, changed: false };
+        const dataUrlRegex = /data:(image|audio|video)\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g;
+        const matches = str.match(dataUrlRegex);
+        if (!matches || matches.length === 0) return { text: str, changed: false };
+
+        let result = str;
+        let changed = false;
+        for (const match of matches) {
+          if (match.startsWith('data:video/')) {
+            result = result.replace(match, '');
+            changed = true;
+          } else {
+            const newUrl = await uploadBase64ToServerOrImgBB(match, label);
+            if (newUrl) {
+              result = result.replace(match, newUrl);
+              changed = true;
+            }
+          }
+        }
+        return { text: result, changed };
+      };
+
+      // 1. Migrate profile_media
+      try {
+        const { data: mediaItems } = await supabase.from('profile_media').select('id, media_url, media_type').limit(300);
+        if (mediaItems) {
+          for (const item of mediaItems) {
+            if (item.media_url && typeof item.media_url === 'string' && item.media_url.includes('data:')) {
+              if (item.media_url.startsWith('data:video/')) {
+                await supabase.from('profile_media').delete().eq('id', item.id);
+                details.profileMedia++;
+                totalMigrated++;
+              } else {
+                const newUrl = await uploadBase64ToServerOrImgBB(item.media_url, `feed_${item.id}`);
+                if (newUrl) {
+                  await supabase.from('profile_media').update({ media_url: newUrl }).eq('id', item.id);
+                  details.profileMedia++;
+                  totalMigrated++;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Server Migration] profile_media error:', e);
+      }
+
+      // 2. Migrate posts (General chat & feed)
+      try {
+        const { data: posts } = await supabase.from('posts').select('id, content, author_photo').order('created_at', { ascending: false }).limit(300);
+        if (posts) {
+          for (const post of posts) {
+            let updated = false;
+            let newContent = post.content;
+            let newAuthorPhoto = post.author_photo;
+
+            if (post.author_photo && post.author_photo.includes('data:')) {
+              const photoUrl = await uploadBase64ToServerOrImgBB(post.author_photo, `author_${post.id}`);
+              if (photoUrl) {
+                newAuthorPhoto = photoUrl;
+                updated = true;
+              }
+            }
+
+            if (post.content && typeof post.content === 'string') {
+              const decrypted = decryptGeneralChat(post.content);
+              const { text: cleanText, changed } = await migrateStringPayload(decrypted, `post_${post.id}`);
+              if (changed) {
+                newContent = encryptGeneralChat(cleanText);
+                updated = true;
+              }
+            }
+
+            if (updated) {
+              await supabase.from('posts').update({ content: newContent, author_photo: newAuthorPhoto }).eq('id', post.id);
+              details.posts++;
+              totalMigrated++;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Server Migration] posts error:', e);
+      }
+
+      // 3. Migrate messages (DMs)
+      try {
+        const { data: msgs } = await supabase.from('messages').select('id, text').order('created_at', { ascending: false }).limit(300);
+        if (msgs) {
+          for (const msg of msgs) {
+            if (msg.text && typeof msg.text === 'string') {
+              const decrypted = decryptGeneralChat(msg.text);
+              const { text: cleanText, changed } = await migrateStringPayload(decrypted, `dm_${msg.id}`);
+              if (changed) {
+                const encrypted = encryptGeneralChat(cleanText);
+                await supabase.from('messages').update({ text: encrypted }).eq('id', msg.id);
+                details.messages++;
+                totalMigrated++;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Server Migration] messages error:', e);
+      }
+
+      // 4. Migrate profiles
+      try {
+        const { data: profiles } = await supabase.from('profiles').select('id, photo_url, banner_url, custom_theme').limit(200);
+        if (profiles) {
+          for (const p of profiles) {
+            let updated = false;
+            let newPhoto = p.photo_url;
+            let newBanner = p.banner_url;
+            let newTheme = p.custom_theme;
+
+            if (p.photo_url && p.photo_url.includes('data:')) {
+              const u = await uploadBase64ToServerOrImgBB(p.photo_url, `p_photo_${p.id}`);
+              if (u) { newPhoto = u; updated = true; }
+            }
+            if (p.banner_url && p.banner_url.includes('data:')) {
+              const u = await uploadBase64ToServerOrImgBB(p.banner_url, `p_banner_${p.id}`);
+              if (u) { newBanner = u; updated = true; }
+            }
+            if (p.custom_theme?.wallpaper && typeof p.custom_theme.wallpaper === 'string' && p.custom_theme.wallpaper.includes('data:')) {
+              const u = await uploadBase64ToServerOrImgBB(p.custom_theme.wallpaper, `p_wall_${p.id}`);
+              if (u) {
+                newTheme = { ...newTheme, wallpaper: u };
+                updated = true;
+              }
+            }
+
+            if (updated) {
+              await supabase.from('profiles').update({ photo_url: newPhoto, banner_url: newBanner, custom_theme: newTheme }).eq('id', p.id);
+              details.profiles++;
+              totalMigrated++;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Server Migration] profiles error:', e);
+      }
+
+      console.log(`[Admin Migration Complete]: Migrated ${totalMigrated} items across all tables.`, details);
+      return res.json({
+        success: true,
+        totalMigrated,
+        details
+      });
+    } catch (err: any) {
+      console.error('[Admin Migration Error]:', err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   // Vite middleware for development
@@ -28,7 +567,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { maxAge: '1y' }));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
@@ -262,13 +801,9 @@ async function startServer() {
           const decryptedContent = decryptGeneralChat(content);
           
           let displayName = author_name || 'Anoniem';
-          const supabaseUrl = process.env.VITE_SUPABASE_URL;
-          const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-          if (supabaseUrl && supabaseKey && author_id) {
+          if (author_id) {
             try {
-              const { createClient: createSupabase } = await import('@supabase/supabase-js');
-              const botSupabase = createSupabase(supabaseUrl, supabaseKey);
-              const { data: profile } = await botSupabase
+              const { data: profile } = await serverSupabase
                 .from('profiles')
                 .select('display_name')
                 .eq('id', author_id)
@@ -304,37 +839,31 @@ async function startServer() {
           let reporterName = 'Systeem/Anoniem';
           let reportedName = 'Onbekend';
 
-          const supabaseUrl = process.env.VITE_SUPABASE_URL;
-          const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-          if (supabaseUrl && supabaseKey) {
-            try {
-              const { createClient: createSupabase } = await import('@supabase/supabase-js');
-              const botSupabase = createSupabase(supabaseUrl, supabaseKey);
-              if (reporter_id && reporter_id !== 'SYSTEM') {
-                const { data: profile } = await botSupabase
-                  .from('profiles')
-                  .select('display_name')
-                  .eq('id', reporter_id)
-                  .single();
-                if (profile?.display_name) {
-                  reporterName = profile.display_name;
-                }
-              } else if (reporter_id === 'SYSTEM') {
-                reporterName = '🚨 Systeem (Automatisch)';
+          try {
+            if (reporter_id && reporter_id !== 'SYSTEM') {
+              const { data: profile } = await serverSupabase
+                .from('profiles')
+                .select('display_name')
+                .eq('id', reporter_id)
+                .single();
+              if (profile?.display_name) {
+                reporterName = profile.display_name;
               }
+            } else if (reporter_id === 'SYSTEM') {
+              reporterName = '🚨 Systeem (Automatisch)';
+            }
 
-              if (reported_id) {
-                const { data: profile } = await botSupabase
-                  .from('profiles')
-                  .select('display_name')
-                  .eq('id', reported_id)
-                  .single();
-                if (profile?.display_name) {
-                  reportedName = profile.display_name;
-                }
+            if (reported_id) {
+              const { data: profile } = await serverSupabase
+                .from('profiles')
+                .select('display_name')
+                .eq('id', reported_id)
+                .single();
+              if (profile?.display_name) {
+                reportedName = profile.display_name;
               }
-            } catch (err) {}
-          }
+            }
+          } catch (err) {}
 
           const targetTypeLabel = target_type === 'user' ? 'Gebruiker' : target_type === 'post' ? 'Post/Bericht' : target_type;
 
@@ -367,7 +896,8 @@ async function startServer() {
         try {
           const { data, error } = await supabaseClient
             .from('profiles')
-            .select('id, display_name, photo_url, custom_theme');
+            .select('id, display_name, photo_url')
+            .limit(100);
           if (error) throw error;
           if (data) {
             profiles = data;
@@ -624,8 +1154,8 @@ async function startServer() {
           console.log('✅ Discord Slash Commands (/) succesvol geregistreerd!');
 
           // --- Supabase Realtime Forwarding to Discord Channels ---
-          const supabaseUrl = process.env.VITE_SUPABASE_URL;
-          const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+          const supabaseUrl = activeSupabaseUrl;
+          const supabaseKey = activeSupabaseKey;
 
           if (supabaseUrl && supabaseKey) {
             console.log('[Discord Bot] Starting Supabase Realtime listeners for forwarding chat & reports...');
@@ -651,20 +1181,23 @@ async function startServer() {
                       .select('display_name')
                       .eq('id', newPost.author_id)
                       .single();
-                    if (profile?.display_name) {
+                    if (profile?.display_name && profile.display_name.trim() !== '') {
                       displayName = profile.display_name;
                     }
                   }
-                  if (displayName === 'Anoniem' && newPost.author_name && newPost.author_name !== 'null') {
+                  if (displayName === 'Anoniem' && newPost.author_name && newPost.author_name !== 'null' && newPost.author_name.trim() !== '') {
                     displayName = newPost.author_name;
                   }
 
+                  const safeDisplayName = displayName.trim() || 'Anoniem';
+                  const safeContent = (decryptedContent || '').trim() || '*(Leeg bericht)*';
+
                   const embed = new EmbedBuilder()
                     .setTitle('💬 Nieuw bericht in de App Chat!')
-                    .setDescription(decryptedContent || '*(Leeg bericht)*')
+                    .setDescription(safeContent.substring(0, 4000))
                     .setColor(0x3498db)
                     .addFields(
-                      { name: '👤 Afzender', value: displayName, inline: true },
+                      { name: '👤 Afzender', value: safeDisplayName.substring(0, 1000), inline: true },
                       { name: '📅 Tijdstip', value: new Date(newPost.created_at).toLocaleString('nl-NL'), inline: true }
                     )
                     .setTimestamp();
@@ -989,17 +1522,7 @@ async function startServer() {
         else if (commandName === 'leaderboard') {
           await interaction.deferReply();
           try {
-            const supabaseUrl = process.env.VITE_SUPABASE_URL;
-            const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-
-            if (!supabaseUrl || !supabaseKey) {
-              await interaction.editReply('❌ Supabase configuratie ontbreekt op de server.');
-              return;
-            }
-
-            const { createClient: createSupabase } = await import('@supabase/supabase-js');
-            const supabaseClient = createSupabase(supabaseUrl, supabaseKey);
-
+            const supabaseClient = serverSupabase;
             const { profiles, isCacheFallback } = await getProfilesWithCache(supabaseClient);
 
             const boards: Record<string, { name: string; score: number }[]> = {
@@ -1075,17 +1598,7 @@ async function startServer() {
 
           await interaction.deferReply();
           try {
-            const supabaseUrl = process.env.VITE_SUPABASE_URL;
-            const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-
-            if (!supabaseUrl || !supabaseKey) {
-              await interaction.editReply('❌ Supabase configuratie ontbreekt op de server.');
-              return;
-            }
-
-            const { createClient: createSupabase } = await import('@supabase/supabase-js');
-            const supabaseClient = createSupabase(supabaseUrl, supabaseKey);
-
+            const supabaseClient = serverSupabase;
             const { profiles, isCacheFallback } = await getProfilesWithCache(supabaseClient);
 
             const found = profiles?.find((p: any) => 
@@ -1147,17 +1660,7 @@ async function startServer() {
         else if (commandName === 'chat') {
           await interaction.deferReply();
           try {
-            const supabaseUrl = process.env.VITE_SUPABASE_URL;
-            const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-
-            if (!supabaseUrl || !supabaseKey) {
-              await interaction.editReply('❌ Supabase configuratie ontbreekt op de server.');
-              return;
-            }
-
-            const { createClient: createSupabase } = await import('@supabase/supabase-js');
-            const supabaseClient = createSupabase(supabaseUrl, supabaseKey);
-
+            const supabaseClient = serverSupabase;
             const { posts, isCacheFallback: isPostsFallback } = await getPostsWithCache(supabaseClient);
             const { profiles } = await getProfilesWithCache(supabaseClient);
 
@@ -1334,8 +1837,8 @@ async function startServer() {
 
           else if (command === 'leaderboard' || command === 'highscores') {
             try {
-              const supabaseUrl = process.env.VITE_SUPABASE_URL;
-              const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+              const supabaseUrl = activeSupabaseUrl;
+              const supabaseKey = activeSupabaseKey;
 
               if (!supabaseUrl || !supabaseKey) {
                 await message.reply('❌ Supabase configuratie ontbreekt op de server.');
@@ -1419,8 +1922,8 @@ async function startServer() {
             }
 
             try {
-              const supabaseUrl = process.env.VITE_SUPABASE_URL;
-              const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+              const supabaseUrl = activeSupabaseUrl;
+              const supabaseKey = activeSupabaseKey;
 
               if (!supabaseUrl || !supabaseKey) {
                 await message.reply('❌ Supabase configuratie ontbreekt op de server.');
@@ -1490,8 +1993,8 @@ async function startServer() {
 
           else if (command === 'unread' || command === 'berichten' || command === 'chat') {
             try {
-              const supabaseUrl = process.env.VITE_SUPABASE_URL;
-              const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+              const supabaseUrl = activeSupabaseUrl;
+              const supabaseKey = activeSupabaseKey;
 
               if (!supabaseUrl || !supabaseKey) {
                 await message.reply('❌ Supabase configuratie ontbreekt op de server.');

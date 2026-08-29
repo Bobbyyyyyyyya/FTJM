@@ -1,8 +1,13 @@
 import React from 'react';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Loader2, X, ChevronLeft, Smile, Paperclip, Volume2, Film } from 'lucide-react';
+import { MessageSquare, Send, X, ChevronLeft, Smile, Paperclip, Volume2, Film } from 'lucide-react';
+import { ThemedSpinner } from './ThemedLoadingScreen';
+import { AnimatedSendIcon } from './AnimatedIcons';
 import { Post, CustomTheme, UserProfile } from '../types';
 import { PostItem } from './PostItem';
+import { VideoTrimmerModal } from './VideoTrimmerModal';
+import { uploadImageToImgBB, compressImageToBlob, compressImage, hexToRgba } from '../utils/helpers';
 
 interface ChatViewProps {
   user: any;
@@ -22,6 +27,7 @@ interface ChatViewProps {
   setEditingPostId: (id: string | null) => void;
   setEditPostInput: (input: string) => void;
   handleUpdatePost: (id: string) => void;
+  handleBlockPost?: (id: string, currentStatus: boolean) => void;
   handleDeletePost: (id: string) => void;
   handleStartConversation: (user: { id: string, display_name: string }) => void;
   editingPostId: string | null;
@@ -37,78 +43,65 @@ interface ChatViewProps {
   userProfile?: UserProfile | null;
 }
 
-export const ChatView: React.FC<ChatViewProps> = React.memo(({
-  user,
-  posts,
-  isAdmin,
-  postInput,
-  setPostInput,
-  handleCreatePost,
-  handleTyping,
-  cooldownRemaining,
-  sending,
-  replyingTo,
-  setReplyingTo,
-  typingStatuses,
-  handleOpenProfile,
-  handleOpenReport,
-  setEditingPostId,
-  setEditPostInput,
-  handleUpdatePost,
-  handleDeletePost,
-  handleStartConversation,
-  editingPostId,
-  editPostInput,
-  saving,
-  useCustomTheme,
-  customTheme,
-  uploading,
-  handleEmojiButtonClick,
-  handleImageUrl,
-  nicknames,
-  profiles,
-  userProfile
-}) => {
+export const ChatView: React.FC<ChatViewProps> = React.memo((props) => {
+  const {
+    user,
+    posts,
+    isAdmin,
+    postInput,
+    setPostInput,
+    handleCreatePost,
+    handleTyping,
+    cooldownRemaining,
+    sending,
+    replyingTo,
+    setReplyingTo,
+    typingStatuses,
+    handleOpenProfile,
+    handleOpenReport,
+    setEditingPostId,
+    setEditPostInput,
+    handleUpdatePost,
+    handleBlockPost,
+    handleDeletePost,
+    handleStartConversation,
+    editingPostId,
+    editPostInput,
+    saving,
+    useCustomTheme,
+    customTheme,
+    uploading,
+    handleEmojiButtonClick,
+    handleImageUrl,
+    nicknames,
+    profiles,
+    userProfile
+  } = props;
+
+  const propsRef = React.useRef(props);
+  React.useLayoutEffect(() => {
+    propsRef.current = props;
+  });
+
+  const onReply = React.useCallback((post: Post) => propsRef.current.setReplyingTo(post), []);
+  const onReport = React.useCallback((type: 'post', id: string, userId: string, name: string) => propsRef.current.handleOpenReport(type, id, userId, name), []);
+  const onEdit = React.useCallback((id: string, content: string) => {
+    propsRef.current.setEditingPostId(id);
+    propsRef.current.setEditPostInput(content);
+  }, []);
+  const onBlockPost = React.useCallback((id: string, currentStatus: boolean) => propsRef.current.handleBlockPost?.(id, currentStatus), []);
+  const onDelete = React.useCallback((id: string) => propsRef.current.handleDeletePost(id), []);
+  const onStartDM = React.useCallback((dmUser: { id: string, display_name: string }) => propsRef.current.handleStartConversation(dmUser), []);
+  const onOpenProfile = React.useCallback((userId: string) => propsRef.current.handleOpenProfile(userId), []);
+  const onTyping = React.useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, channel: string) => propsRef.current.handleTyping(e, channel), []);
+  const onUpdatePost = React.useCallback((id: string) => propsRef.current.handleUpdatePost(id), []);
+  const onCancelEdit = React.useCallback(() => propsRef.current.setEditingPostId(null), []);
+
   const [selectedFile, setSelectedFile] = React.useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = React.useState<'image' | 'audio' | 'video' | null>(null);
+  const [videoToTrim, setVideoToTrim] = React.useState<File | null>(null);
   const [isCompressing, setIsCompressing] = React.useState<boolean>(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const MAX_DIM = 720; // Highly optimized dimension for mobile/web speed & low data egress
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width > height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL('image/jpeg', 0.62); // 0.62 quality provides a dramatic footprint shrink with pristine visual clarity
-            resolve(compressed);
-          } else {
-            resolve(event.target?.result as string);
-          }
-        };
-        img.src = event.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-    });
-  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,46 +119,77 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
       const isImageFile = !isVideoFile && !isAudioFile && (file.type.startsWith('image/') || /\.(jpeg|jpg|gif|png|webp|bmp|svg|avif)$/i.test(file.name));
 
       if (isVideoFile) {
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          let dataUrl = evt.target?.result as string;
-          // Ensure it has data:video/ prefix if browser gave generic or audio mime
-          if (dataUrl && dataUrl.startsWith('data:audio/mp4')) {
-            dataUrl = dataUrl.replace('data:audio/mp4', 'data:video/mp4');
-          } else if (dataUrl && dataUrl.startsWith('data:application/octet-stream')) {
-            dataUrl = dataUrl.replace('data:application/octet-stream', 'data:video/mp4');
-          }
-          setSelectedFile(dataUrl);
-          setSelectedFileType('video');
-        };
-        reader.readAsDataURL(file);
+        setVideoToTrim(file);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       } else if (isAudioFile) {
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          setSelectedFile(evt.target?.result as string);
+        const uploadRes = await uploadImageToImgBB(file, file.name);
+        if (uploadRes?.url) {
+          setSelectedFile(uploadRes.url);
           setSelectedFileType('audio');
-        };
-        reader.readAsDataURL(file);
-      } else if (isImageFile) {
-        if (file.type === 'image/gif' || file.name.endsWith('.gif')) {
-          const reader = new FileReader();
-          reader.onload = (evt) => {
-            setSelectedFile(evt.target?.result as string);
-            setSelectedFileType('image');
-          };
-          reader.readAsDataURL(file);
+          toast.success('Audiobestand geüpload!');
         } else {
-          const compressed = await compressImage(file);
-          setSelectedFile(compressed);
+          setSelectedFile(null);
+          setSelectedFileType(null);
+          toast.error('Kon audiobestand niet uploaden.');
+        }
+      } else if (isImageFile) {
+        // 1. Binary WebP compression
+        const webpBlob = await compressImageToBlob(file, 800, 600, 0.65, 'image/webp');
+        
+        // 2. Upload to CDN / Server storage
+        const imgbbRes = await uploadImageToImgBB(webpBlob, file.name);
+        if (imgbbRes?.url) {
+          setSelectedFile(imgbbRes.url);
           setSelectedFileType('image');
+          toast.success('Afbeelding geüpload naar CDN!');
+        } else {
+          setSelectedFile(null);
+          setSelectedFileType(null);
+          toast.error('Uploaden van afbeelding is mislukt. Probeer het opnieuw.');
         }
       } else {
         alert("Selecteer een geldige video, afbeelding of audiobestand.");
       }
     } catch (err) {
       console.error("Error reading file:", err);
+      toast.error('Kon bestand niet verwerken.');
     } finally {
       setIsCompressing(false);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          setIsCompressing(true);
+          try {
+            const webpBlob = await compressImageToBlob(file, 800, 600, 0.65, 'image/webp');
+            const imgbbRes = await uploadImageToImgBB(webpBlob, 'pasted_image');
+            if (imgbbRes?.url) {
+              setSelectedFile(imgbbRes.url);
+              setSelectedFileType('image');
+              toast.success('Geplakte afbeelding geüpload!');
+            } else {
+              setSelectedFile(null);
+              setSelectedFileType(null);
+              toast.error('Uploaden van geplakte afbeelding is mislukt.');
+            }
+          } catch (err) {
+            console.error('Paste image error:', err);
+            toast.error('Kon geplakte afbeelding niet uploaden.');
+          } finally {
+            setIsCompressing(false);
+          }
+          break;
+        }
+      }
     }
   };
 
@@ -189,7 +213,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
     <div 
       className={`bg-app-card rounded-3xl p-4 sm:p-8 border border-app-border shadow-sm transition-all duration-500 ${useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}`}
       style={useCustomTheme ? { 
-        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+        backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, (100 - (customTheme.chat_opacity ?? 0)) / 100) : undefined),
         borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
         boxShadow: customTheme.chat_opacity === 100 ? 'none' : undefined,
         color: customTheme.text_color
@@ -258,12 +282,13 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               className="mb-4 p-3 bg-app-accent/80 border border-app-border rounded-2xl flex items-center gap-4 backdrop-blur-md"
             >
-              <div className="w-12 h-12 rounded-xl bg-app-card border border-app-border flex items-center justify-center flex-shrink-0">
-                <Loader2 className="w-6 h-6 text-app-muted animate-spin" />
+              <div className="w-12 h-12 rounded-xl bg-app-card border border-app-border flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-inner">
+                <ThemedSpinner size="md" color="var(--custom-primary, #06b6d4)" />
               </div>
               <div>
-                <p className="text-xs font-black text-app-ink uppercase tracking-wider">
+                <p className="text-xs font-black text-app-ink uppercase tracking-wider flex items-center gap-1.5">
                   Bestand Verwerken
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
                 </p>
                 <p className="text-[10px] text-app-muted font-mono mt-0.5">
                   Bestand optimaliseren voor snelle verzending...
@@ -322,11 +347,12 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
             type="text"
             value={postInput}
             onChange={(e) => handleTyping(e, 'forum')}
+            onPaste={handlePaste}
             placeholder={cooldownRemaining > 0 ? `Wacht ${cooldownRemaining}s...` : "Deel een bericht..."}
             disabled={cooldownRemaining > 0}
             className="w-full pl-4 sm:pl-6 pr-28 sm:pr-36 py-3 sm:py-4 bg-app-bg border border-app-border rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-app-ink focus:border-transparent transition-all disabled:opacity-50 text-sm sm:text-base text-app-ink placeholder:text-app-muted"
             style={useCustomTheme ? { 
-              backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? `${customTheme.card_bg_color}${Math.round((100 - (customTheme.chat_opacity ?? 0)) * 2.55).toString(16).padStart(2, '0')}` : undefined),
+              backgroundColor: customTheme.glass_effect ? undefined : (customTheme.card_bg_color ? hexToRgba(customTheme.card_bg_color, (100 - (customTheme.chat_opacity ?? 0)) / 100) : undefined),
               borderColor: customTheme.chat_opacity === 100 ? 'transparent' : undefined,
               color: customTheme.text_color
             } : {}}
@@ -337,34 +363,44 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept="image/*,video/*,audio/*"
+              accept="image/*,audio/*"
               className="hidden"
             />
-            <button 
+            <motion.button 
               type="button"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={() => fileInputRef.current?.click()}
-              disabled={cooldownRemaining > 0}
-              className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all"
-              title="Foto, video of audiobestand uploaden"
+              disabled={cooldownRemaining > 0 || isCompressing}
+              className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-colors cursor-pointer"
+              title="Foto, video of audiobestand uploaden (via ImgBB CDN)"
             >
-              <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <button 
+              {isCompressing ? <ThemedSpinner size="xs" /> : <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />}
+            </motion.button>
+            <motion.button 
               type="button"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={(e) => handleEmojiButtonClick(e, 'post')}
               disabled={cooldownRemaining > 0}
-              className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-all disabled:opacity-50"
+              className="p-1.5 sm:p-2 text-app-muted hover:text-app-ink hover:bg-app-accent rounded-lg sm:rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
               title="Emoji kiezen"
             >
               <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <button 
+            </motion.button>
+            <motion.button 
               type="submit"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.92 }}
               disabled={sending || (!postInput.trim() && !selectedFile) || cooldownRemaining > 0 || uploading}
-              className="px-3 sm:px-4 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center min-w-[40px] sm:min-w-[50px]"
+              className="px-3 sm:px-4 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center min-w-[40px] sm:min-w-[50px] shadow-sm"
             >
-              {sending ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Send className="w-4 h-4 sm:w-5 sm:h-5" />}
-            </button>
+              {sending ? (
+                <ThemedSpinner size="xs" color="currentColor" />
+              ) : (
+                <AnimatedSendIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              )}
+            </motion.button>
           </div>
         </div>
       </form>
@@ -375,26 +411,24 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
             <p className="text-app-muted text-xs sm:text-sm">Nog geen berichten. Deel als eerste iets!</p>
           </div>
         ) : (
-          posts.map((post) => (
+          posts.map((post, index) => (
             <PostItem 
               key={post.id}
               post={post}
               user={user}
               isAdmin={isAdmin}
-              onReply={setReplyingTo}
-              onReport={handleOpenReport}
-              onEdit={(id, content) => {
-                setEditingPostId(id);
-                setEditPostInput(content);
-              }}
-              onDelete={handleDeletePost}
-              onStartDM={handleStartConversation}
-              onOpenProfile={handleOpenProfile}
+              onReply={onReply}
+              onReport={onReport}
+              onEdit={onEdit}
+              onBlockPost={onBlockPost}
+              onDelete={onDelete}
+              onStartDM={onStartDM}
+              onOpenProfile={onOpenProfile}
               editingPostId={editingPostId}
               editPostInput={editPostInput}
-              handleTyping={handleTyping}
-              onUpdatePost={handleUpdatePost}
-              onCancelEdit={() => setEditingPostId(null)}
+              handleTyping={onTyping}
+              onUpdatePost={onUpdatePost}
+              onCancelEdit={onCancelEdit}
               saving={saving}
               nicknames={nicknames}
               allPosts={posts}
@@ -402,6 +436,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
               customTheme={customTheme}
               profiles={profiles}
               userProfile={userProfile}
+              isMediaExpired={false}
             />
           ))
         )}
@@ -417,6 +452,34 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
         >
           <ChevronLeft className="w-5 h-5 rotate-90" />
         </button>
+      )}
+
+      {videoToTrim && (
+        <VideoTrimmerModal
+          file={videoToTrim}
+          onTrimmed={async (dataUrl) => {
+            setVideoToTrim(null);
+            setIsCompressing(true);
+            try {
+              const uploadRes = await uploadImageToImgBB(dataUrl, 'video_clip.webm');
+              if (uploadRes?.url) {
+                setSelectedFile(uploadRes.url);
+                setSelectedFileType('video');
+                toast.success('Videofragment geüpload!');
+              } else {
+                toast.error('Kon videofragment niet uploaden.');
+              }
+            } catch (err) {
+              console.error('Video upload error:', err);
+              toast.error('Fout bij uploaden videofragment.');
+            } finally {
+              setIsCompressing(false);
+            }
+          }}
+          onCancel={() => {
+            setVideoToTrim(null);
+          }}
+        />
       )}
     </div>
   );

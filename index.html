@@ -11,10 +11,34 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
     <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="shortcut icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
     <title>FTJM Forum</title>
+    <script>
+      // Clean up any stale or corrupted Service Worker cache before module scripts load in dev/preview
+      if ('serviceWorker' in navigator) {
+        var isDevOrPreview = location.hostname.endsWith('.run.app') || 
+                              location.hostname === 'localhost' || 
+                              location.hostname === '127.0.0.1' ||
+                              window.self !== window.top;
+        if (isDevOrPreview) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for (var i = 0; i < registrations.length; i++) {
+              registrations[i].unregister();
+            }
+          });
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              for (var i = 0; i < keys.length; i++) {
+                caches.delete(keys[i]);
+              }
+            });
+          }
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

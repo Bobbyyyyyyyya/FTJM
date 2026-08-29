@@ -22,7 +22,9 @@ import {
   Plus,
   Layers,
   LayoutGrid,
-  RefreshCw
+  RefreshCw,
+  ShieldAlert,
+  Ban
 } from 'lucide-react';
 import { formatDate, getMediaShareUrl } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
@@ -47,6 +49,7 @@ interface MediaItem {
   author_photo: string | null;
   likes: string[];
   comments: Comment[];
+  is_blocked?: boolean;
 }
 
 interface MediaSwipeFeedProps {
@@ -58,6 +61,7 @@ interface MediaSwipeFeedProps {
   onOpenProfile: (userId: string) => void;
   onViewFullscreen: (url: string) => void;
   onDeleteMedia?: (mediaId: string, authorId: string) => void;
+  onToggleBlockMedia?: (mediaId: string, authorId: string) => void;
   nicknames: Record<string, string>;
   isAdmin?: boolean;
   profiles?: any[];
@@ -77,6 +81,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
   onOpenProfile,
   onViewFullscreen,
   onDeleteMedia,
+  onToggleBlockMedia,
   nicknames,
   isAdmin,
   profiles,
@@ -106,6 +111,14 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
   const isScrollingRef = useRef<boolean>(false);
 
   const currentMedia = mediaList[currentIndex];
+  const [imgSrc, setImgSrc] = useState(currentMedia?.media_url || '');
+  const [imgProxyTried, setImgProxyTried] = useState(false);
+
+  useEffect(() => {
+    setImgSrc(currentMedia?.media_url || '');
+    setImgProxyTried(false);
+  }, [currentMedia?.media_url]);
+
   const isVideo = currentMedia?.media_type === 'video' || (Boolean(currentMedia?.media_url) && (
     currentMedia.media_url.startsWith('data:video/') || 
     currentMedia.media_url.startsWith('data:audio/mp4') || 
@@ -343,38 +356,67 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
             className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing touch-none flex items-center justify-center overflow-hidden"
             onClick={handleMediaAreaClick}
           >
-            {isVideo ? (
+            {currentMedia.is_blocked && !isAdmin ? (
+              <div className="absolute inset-0 bg-zinc-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center text-zinc-300 gap-4 border border-red-500/30 z-20">
+                <div className="w-16 h-16 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shadow-[0_0_25px_rgba(239,68,68,0.3)]">
+                  <ShieldAlert className="w-8 h-8" />
+                </div>
+                <div className="max-w-xs space-y-1">
+                  <p className="font-black text-sm text-red-400 tracking-wider uppercase">Content Tijdelijk Geblokkeerd</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Deze media is door een moderator tijdelijk verborgen voor de community in afwachting van beoordeling.
+                  </p>
+                </div>
+              </div>
+            ) : (
               <>
-                <video
-                  ref={videoRef}
-                  src={currentMedia.media_url}
-                  className="w-full h-full object-contain pointer-events-none drop-shadow-2xl"
-                  loop
-                  playsInline
-                  autoPlay
-                  muted={isMuted}
-                  preload="auto"
-                />
-                {!isPlaying && (
-                  <motion.div 
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-[2px] pointer-events-none"
-                  >
-                    <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center shadow-2xl text-white">
-                      <Play className="w-10 h-10 ml-1 fill-white" />
-                    </div>
-                  </motion.div>
+                {currentMedia.is_blocked && isAdmin && (
+                  <div className="absolute top-16 left-4 z-30 bg-red-600/90 text-white backdrop-blur-md px-3 py-1 rounded-full border border-red-400 shadow-xl flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider">
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>Geblokkeerd (Zichtbaar voor Admin)</span>
+                  </div>
+                )}
+
+                {isVideo ? (
+                  <>
+                    <video
+                      ref={videoRef}
+                      src={currentMedia.media_url}
+                      className="w-full h-full object-contain pointer-events-none drop-shadow-2xl"
+                      loop
+                      playsInline
+                      autoPlay
+                      muted={isMuted}
+                      preload="auto"
+                    />
+                    {!isPlaying && (
+                      <motion.div 
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-[2px] pointer-events-none"
+                      >
+                        <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center shadow-2xl text-white">
+                          <Play className="w-10 h-10 ml-1 fill-white" />
+                        </div>
+                      </motion.div>
+                    )}
+                  </>
+                ) : (
+                  <img
+                    src={imgSrc}
+                    alt=""
+                    className="w-full h-full object-contain pointer-events-none drop-shadow-2xl"
+                    referrerPolicy="no-referrer"
+                    draggable={false}
+                    onError={() => {
+                      if (!imgProxyTried && (currentMedia?.media_url?.startsWith('http://') || currentMedia?.media_url?.startsWith('https://'))) {
+                        setImgProxyTried(true);
+                        setImgSrc(`/api/image-proxy?url=${encodeURIComponent(currentMedia.media_url)}`);
+                      }
+                    }}
+                  />
                 )}
               </>
-            ) : (
-              <img
-                src={currentMedia.media_url}
-                alt=""
-                className="w-full h-full object-contain pointer-events-none drop-shadow-2xl"
-                referrerPolicy="no-referrer"
-                draggable={false}
-              />
             )}
 
             {/* Double Tap Hearts Animation */}
@@ -446,7 +488,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
             className="w-12 h-12 rounded-full border-2 border-white shadow-xl overflow-hidden bg-zinc-800 active:scale-95 transition-all"
             title="Profiel bekijken"
           >
-            {currentMedia.author_photo ? (
+            {currentMedia.author_photo?.trim() ? (
                <img src={currentMedia.author_photo} alt="" className="w-full h-full object-cover" />
             ) : (
                <UserIcon className="w-6 h-6 m-auto text-white/50" />
@@ -498,16 +540,37 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
           </button>
         </div>
 
-        {/* Extra Options / Delete (Only for user's own media) */}
-        {currentUserId && currentUserId === currentMedia.user_id && onDeleteMedia && (
-          <div className="flex flex-col items-center gap-1 mt-2">
+        {/* Admin Block Toggle Button */}
+        {isAdmin && onToggleBlockMedia && (
+          <div className="flex flex-col items-center gap-1 mt-1">
+            <button 
+              onClick={() => onToggleBlockMedia(currentMedia.id, currentMedia.user_id)}
+              className={`w-10 h-10 rounded-full backdrop-blur-md flex items-center justify-center transition-all active:scale-75 shadow-lg border ${
+                currentMedia.is_blocked 
+                  ? 'bg-emerald-500/25 border-emerald-500/50 text-emerald-400' 
+                  : 'bg-amber-500/25 border-amber-500/50 text-amber-400'
+              }`}
+              title={currentMedia.is_blocked ? "Deblokkeer media" : "Tijdelijk blokkeren voor gebruikers"}
+            >
+              <Ban className="w-4 h-4" />
+            </button>
+            <span className="text-[9px] font-black text-amber-400 uppercase tracking-tighter drop-shadow-md">
+              {currentMedia.is_blocked ? 'Deblok' : 'Blokkeer'}
+            </span>
+          </div>
+        )}
+
+        {/* Extra Options / Delete (For user's own media OR system admin) */}
+        {((currentUserId && currentUserId === currentMedia.user_id) || isAdmin) && onDeleteMedia && (
+          <div className="flex flex-col items-center gap-1 mt-1">
             <button 
               onClick={() => onDeleteMedia(currentMedia.id, currentMedia.user_id)}
               className="w-10 h-10 rounded-full bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md flex items-center justify-center transition-all active:scale-75 shadow-lg border border-red-500/30"
-              title="Mijn foto/video verwijderen"
+              title={isAdmin && currentUserId !== currentMedia.user_id ? "Beheerder: Verwijder media" : "Mijn foto/video verwijderen"}
             >
               <Trash2 className="w-4 h-4 text-red-400" />
             </button>
+            <span className="text-[9px] font-black text-red-400 uppercase tracking-tighter drop-shadow-md">Wis</span>
           </div>
         )}
       </div>
@@ -592,11 +655,19 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                   const isCBeta = isBetaTester(cAuthorProfile || cAuthorProfile?.email);
                   const isCAdmin = cAuthorProfile?.role === "admin" || cAuthorProfile?.email?.toLowerCase() === "markohoksen@gmail.com";
 
+                  const commentDisplayName = 
+                    nicknames[comment.user_id] ||
+                    (cAuthorProfile?.display_name && cAuthorProfile.display_name !== 'Anoniem' ? cAuthorProfile.display_name : null) ||
+                    (comment.author_name && comment.author_name !== 'Anoniem' ? comment.author_name : null) ||
+                    cAuthorProfile?.email?.split('@')[0] ||
+                    'Gebruiker';
+                  const commentPhoto = cAuthorProfile?.photo_url || comment.author_photo || null;
+
                   return (
                     <div key={comment.id || idx} className="flex gap-3 items-start">
                       <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden shrink-0 border border-zinc-700">
-                        {comment.author_photo ? (
-                          <img src={comment.author_photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {commentPhoto?.trim() ? (
+                          <img src={commentPhoto} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-zinc-400">
                             <UserIcon className="w-4 h-4" />
@@ -607,7 +678,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span className="text-xs font-black text-white/90 truncate">
-                              {nicknames[comment.user_id] || comment.author_name || "Anoniem"}
+                              {commentDisplayName}
                             </span>
                             {isCVerified && <Check className="w-3 h-3 text-cyan-400" />}
                           </div>
