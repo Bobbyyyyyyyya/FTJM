@@ -13,6 +13,7 @@ import {
 import { t } from '../utils/translations';
 import { UserProfile, ModernUICustomization, CustomTheme } from '../types';
 import { isTestUser } from '../constants';
+import { getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { Logo } from './Logo';
 import { getAccentHex, getGlassEffectClasses, getRadiusValue } from '../utils/modernUICustom';
 
@@ -253,7 +254,13 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                   title={`${u.display_name} (Online)`}
                 >
                   {u.photo_url?.trim() ? (
-                    <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    <img 
+                      src={getSafeImageUrl(u.photo_url)} 
+                      alt="" 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer" 
+                      onError={handleImageError}
+                    />
                   ) : (
                     <UserIcon className="w-4 h-4 text-app-muted" />
                   )}
@@ -273,7 +280,13 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                       <div className="flex items-center gap-2.5 mb-2.5">
                         <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-app-accent shrink-0 border border-white/10">
                           {u.photo_url?.trim() ? (
-                            <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <img 
+                              src={getSafeImageUrl(u.photo_url)} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                              onError={handleImageError}
+                            />
                           ) : (
                             <UserIcon className="w-5 h-5 text-app-muted m-2" />
                           )}
@@ -339,7 +352,13 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                   title={`${u.display_name} (Offline)`}
                 >
                   {u.photo_url?.trim() ? (
-                    <img src={u.photo_url} alt="" className="w-full h-full object-cover grayscale-[30%]" referrerPolicy="no-referrer" />
+                    <img 
+                      src={getSafeImageUrl(u.photo_url)} 
+                      alt="" 
+                      className="w-full h-full object-cover grayscale-[30%]" 
+                      referrerPolicy="no-referrer" 
+                      onError={handleImageError}
+                    />
                   ) : (
                     <UserIcon className="w-4 h-4 text-app-muted" />
                   )}
@@ -359,7 +378,13 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                       <div className="flex items-center gap-2.5 mb-2.5">
                         <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-app-accent shrink-0 border border-white/10 opacity-75">
                           {u.photo_url?.trim() ? (
-                            <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <img 
+                              src={getSafeImageUrl(u.photo_url)} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                              onError={handleImageError}
+                            />
                           ) : (
                             <UserIcon className="w-5 h-5 text-app-muted m-2" />
                           )}
@@ -471,7 +496,13 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="relative w-8 h-8 rounded-xl overflow-hidden bg-app-accent border border-white/10 shrink-0">
                                   {u.photo_url?.trim() ? (
-                                    <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <img 
+                                      src={getSafeImageUrl(u.photo_url)} 
+                                      alt="" 
+                                      className="w-full h-full object-cover" 
+                                      referrerPolicy="no-referrer" 
+                                      onError={handleImageError}
+                                    />
                                   ) : (
                                     <UserIcon className="w-4 h-4 text-app-muted m-2" />
                                   )}
@@ -526,7 +557,13 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="relative w-8 h-8 rounded-xl overflow-hidden bg-app-accent border border-white/10 shrink-0">
                                   {u.photo_url?.trim() ? (
-                                    <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <img 
+                                      src={getSafeImageUrl(u.photo_url)} 
+                                      alt="" 
+                                      className="w-full h-full object-cover" 
+                                      referrerPolicy="no-referrer" 
+                                      onError={handleImageError}
+                                    />
                                   ) : (
                                     <UserIcon className="w-4 h-4 text-app-muted m-2" />
                                   )}

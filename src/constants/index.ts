@@ -97,12 +97,23 @@ export const SOUND_OPTIONS = [
   { name: 'Melding Chime', url: '/audio/sounds/notification_o14egLP.mp3' },
   { name: '007 Text Message', url: '/audio/sounds/007_Text_Message-3875438.mp3' },
   { name: 'Melding Tone', url: '/audio/sounds/yt1s_nijLeKo.mp3' },
+  { name: 'Hangouts', url: '/audio/sounds/hangouts-message_vevolTt.mp3' },
+  { name: 'Siri', url: '/audio/sounds/siri-message-ringtonesms-tone-hd.mp3' },
+  { name: 'Classic MSN', url: '/audio/sounds/new-message-2002-2005.mp3' },
+  { name: 'Message 2', url: '/audio/sounds/message_2.mp3' },
+  { name: 'Bad To The Bone', url: '/audio/sounds/bad-to-the-bone-meme.mp3' },
+  { name: 'Dexter Sound', url: '/audio/sounds/dexter-meme.mp3' },
 ];
 
 export const RINGTONE_OPTIONS = [
   { name: 'Skype Ringtone (New)', url: '/audio/ringtones/skype_ringtone_new.mp3' },
   { name: 'iPhone Ringtone Remix', url: '/audio/ringtones/iphone-ringtone-remix.mp3' },
   { name: 'iPhone Trap Remix', url: '/audio/ringtones/iphone_ringtone_trap_remixbigconverter.mp3' },
+  { name: 'iPhone Reflection', url: '/audio/ringtones/iphone-reflection-ringtone.mp3' },
+  { name: 'Goofy Ahh', url: '/audio/ringtones/goofy-ahh-ringtone.mp3' },
+  { name: 'Dexter Ringtone', url: '/audio/ringtones/dexter-meme.mp3' },
+  { name: 'Outro Song', url: '/audio/ringtones/outro-song_oqu8zAg.mp3' },
+  { name: 'Samsung Chime', url: '/audio/ringtones/samsung-chime-ringtone.mp3' },
 ];
 
 export const PATTERNS = [

@@ -409,11 +409,11 @@ export async function handleSupabaseError(error: any, operation: string, user?: 
     }
   };
   
-  if (error?.code === '42501' || error?.message?.includes('insufficient permissions')) {
-    toast.error(`Toegang geweigerd: Je hebt onvoldoende rechten voor ${operation}.`);
+  if (error?.code === '42501' || error?.message?.includes('insufficient permissions') || errorMessage?.includes('RLS')) {
+    toast.error(`Toegang geweigerd (RLS): ${errorMessage}`);
   } else {
-    // Show a simplified message for common users, detailed for admins
-    const displayMessage = isAdmin 
+    // Show a simplified message for common users, detailed for admins or RLS errors
+    const displayMessage = (isAdmin || errorMessage.includes('RLS'))
       ? `Fout bij ${operation}: ${errorMessage}`
       : `Er is een systeemfout opgetreden. Probeer het later opnieuw.`;
     
@@ -1100,7 +1100,7 @@ export const uploadBinaryToStorage = async (
         const { data, error } = await supabase.storage
           .from(bucket)
           .upload(fileName, blob, {
-            cacheControl: '86400',
+            cacheControl: '31536000', // 1 year cached egress on Supabase Storage CDN and edge
             upsert: true,
             contentType: blob.type
           });
@@ -1310,6 +1310,50 @@ export const sanitizeCustomTheme = (theme: any): any => {
   }
 
   return clean;
+};
+
+/**
+ * Safely formats any image URL to ensure 100% display reliability across all devices,
+ * browser adblockers (uBlock, Brave Shields), and restricted school/corporate firewalls.
+ * Automatically routes ImgBB (ibb.co & i.ibb.co) through the server image-proxy.
+ */
+export const getSafeImageUrl = (url?: string | null): string => {
+  if (!url || typeof url !== 'string') return '';
+  const clean = url.trim();
+  if (!clean) return '';
+  if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
+  if (clean.startsWith('/api/image-proxy')) return clean;
+
+  // ImgBB (both direct i.ibb.co CDN and ibb.co viewer links)
+  if (clean.includes('ibb.co')) {
+    return `/api/image-proxy?url=${encodeURIComponent(clean)}`;
+  }
+
+  // Handle local uploaded files that might be missing leading slash
+  if (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('/')) {
+    return `/uploads/${clean}`;
+  }
+
+  return clean;
+};
+
+/**
+ * Image error handler fallback: if a direct third-party image fails to load,
+ * automatically retries once via the server-side image-proxy before giving up.
+ */
+export const handleImageError = (
+  e: React.SyntheticEvent<HTMLImageElement, Event>,
+  fallbackSrc?: string
+) => {
+  const target = e.currentTarget;
+  const currentSrc = target.src;
+  if (!currentSrc.includes('/api/image-proxy') && (currentSrc.startsWith('http://') || currentSrc.startsWith('https://'))) {
+    target.src = `/api/image-proxy?url=${encodeURIComponent(currentSrc)}`;
+    return;
+  }
+  if (fallbackSrc) {
+    target.src = fallbackSrc;
+  }
 };
 
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical, Share2, Volume2, VolumeX, ShieldAlert, Ban } from 'lucide-react';
-import { formatDate, getMediaShareUrl } from '../utils/helpers';
+import { formatDate, getMediaShareUrl, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
 import { t } from '../utils/translations';
 
@@ -59,14 +59,9 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
   const [isLikePulsing, setIsLikePulsing] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [imgSrc, setImgSrc] = useState(media.media_url);
-  const [imgProxyTried, setImgProxyTried] = useState(false);
+  
+  
   const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    setImgSrc(media.media_url);
-    setImgProxyTried(false);
-  }, [media.media_url]);
 
   const isVideo = media.media_type === 'video' || (Boolean(media.media_url) && (
     media.media_url.startsWith('data:video/') || 
@@ -96,6 +91,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
   const isLikedByMe = currentUserId ? likesList.includes(currentUserId) : false;
 
   const authorProfile = profiles?.find((p: any) => p.id === media.user_id);
+  const resolvedAuthorPhoto = authorProfile?.photo_url || media.author_photo || null;
   const isVerified = isVerifiedEmail(authorProfile || authorProfile?.email);
   const isBeta = isBetaTester(authorProfile || authorProfile?.email);
   const isAuthorAdmin = authorProfile?.role === 'admin' || authorProfile?.email?.toLowerCase() === 'markohoksen@gmail.com';
@@ -133,14 +129,15 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
           className="flex items-center gap-3 text-left group/author min-w-0 flex-1"
         >
           <div className="w-9 h-9 rounded-xl overflow-hidden bg-app-accent border border-app-border shrink-0">
-            {media.author_photo?.trim() ? (
+            {resolvedAuthorPhoto?.trim() ? (
               <img
-                src={media.author_photo}
+                src={getSafeImageUrl(resolvedAuthorPhoto)}
                 alt=""
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
                 loading="lazy"
                 decoding="async"
+                onError={handleImageError}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -260,19 +257,14 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
               </>
             ) : (
               <img
-                src={imgSrc}
+                src={getSafeImageUrl(media.media_url)}
                 alt=""
                 className="absolute inset-0 w-full h-full object-cover group-hover/media:scale-[1.03] transition-all duration-500 cursor-pointer"
                 onClick={() => onViewFullscreen(media.media_url)}
                 referrerPolicy="no-referrer"
                 loading="lazy"
                 decoding="async"
-                onError={() => {
-                  if (!imgProxyTried && (media.media_url.startsWith('http://') || media.media_url.startsWith('https://'))) {
-                    setImgProxyTried(true);
-                    setImgSrc(`/api/image-proxy?url=${encodeURIComponent(media.media_url)}`);
-                  }
-                }}
+                onError={handleImageError}
               />
             )}
           </>
@@ -360,7 +352,13 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
                     <div key={comment.id || index} className="flex gap-2.5 items-start text-left">
                       <div className="w-6 h-6 rounded-lg bg-app-accent overflow-hidden shrink-0 border border-app-border/50">
                         {commentPhoto?.trim() ? (
-                          <img src={commentPhoto} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <img 
+                            src={getSafeImageUrl(commentPhoto)} 
+                            alt="" 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer" 
+                            onError={handleImageError}
+                          />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <UserIcon className="w-2.5 h-2.5 text-app-muted" />

@@ -78,9 +78,19 @@ export const runAutoBase64Migration = async (
 ): Promise<number> => {
   if (!supabaseClient || !user?.uid) return 0;
 
-  // Egress optimization: throttle repeated auto-scans unless forced
+  // Check if profile currently contains any Base64 strings (PFP, banner, wallpaper, media)
+  const profileHasBase64 = Boolean(
+    currentProfile && (
+      containsBase64DataUrl(currentProfile.photo_url) ||
+      containsBase64DataUrl(currentProfile.banner_url) ||
+      containsBase64DataUrl(currentProfile.custom_theme?.wallpaper) ||
+      containsBase64DataUrl(currentProfile.custom_theme?.banner_url)
+    )
+  );
+
+  // Egress optimization: throttle repeated auto-scans unless forced OR profile contains Base64
   const scanCacheKey = `auto_migration_last_${user.uid}`;
-  if (!forceAllForAdmin) {
+  if (!forceAllForAdmin && !profileHasBase64) {
     try {
       const lastCheck = localStorage.getItem(scanCacheKey);
       if (lastCheck && Date.now() - Number(lastCheck) < 12 * 3600 * 1000) {
@@ -218,6 +228,21 @@ export const runAutoBase64Migration = async (
             localStorage.setItem('cached_profile', JSON.stringify(merged));
           } catch (e) {}
           console.log('[Base64Migration] Profile successfully migrated to CDN URLs');
+
+          // Sync new PFP URL to authored posts, forum threads, and comments
+          if (profileUpdates.photo_url) {
+            try {
+              await Promise.allSettled([
+                supabaseClient.from('posts').update({ author_photo: profileUpdates.photo_url }).eq('author_id', user.uid),
+                supabaseClient.from('forum_threads').update({ author_photo: profileUpdates.photo_url }).eq('author_id', user.uid),
+                supabaseClient.from('forum_comments').update({ author_photo: profileUpdates.photo_url }).eq('author_id', user.uid),
+                supabaseClient.from('notifications').update({ actor_photo: profileUpdates.photo_url }).eq('actor_id', user.uid),
+              ]);
+              callbacks?.setPosts?.(prev => prev.map(p => p.author_id === user.uid ? { ...p, author_photo: profileUpdates.photo_url! } : p));
+            } catch (syncErr) {
+              console.warn('[Base64Migration] Syncing author photo note:', syncErr);
+            }
+          }
         }
       }
     }

@@ -26,7 +26,7 @@ import {
   ShieldAlert,
   Ban
 } from 'lucide-react';
-import { formatDate, getMediaShareUrl } from '../utils/helpers';
+import { formatDate, getMediaShareUrl, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
 import { t } from '../utils/translations';
 
@@ -111,13 +111,6 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
   const isScrollingRef = useRef<boolean>(false);
 
   const currentMedia = mediaList[currentIndex];
-  const [imgSrc, setImgSrc] = useState(currentMedia?.media_url || '');
-  const [imgProxyTried, setImgProxyTried] = useState(false);
-
-  useEffect(() => {
-    setImgSrc(currentMedia?.media_url || '');
-    setImgProxyTried(false);
-  }, [currentMedia?.media_url]);
 
   const isVideo = currentMedia?.media_type === 'video' || (Boolean(currentMedia?.media_url) && (
     currentMedia.media_url.startsWith('data:video/') || 
@@ -286,6 +279,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
   const isLikedByMe = currentUserId ? likesList.includes(currentUserId) : false;
 
   const authorProfile = profiles?.find((p: any) => p.id === currentMedia.user_id);
+  const resolvedAuthorPhoto = authorProfile?.photo_url || currentMedia.author_photo || null;
   const isVerified = isVerifiedEmail(authorProfile || authorProfile?.email);
   const isBeta = isBetaTester(authorProfile || authorProfile?.email);
   const isAuthorAdmin = authorProfile?.role === "admin" || authorProfile?.email?.toLowerCase() === "markohoksen@gmail.com";
@@ -403,17 +397,12 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                   </>
                 ) : (
                   <img
-                    src={imgSrc}
+                    src={getSafeImageUrl(currentMedia?.media_url)}
                     alt=""
                     className="w-full h-full object-contain pointer-events-none drop-shadow-2xl"
                     referrerPolicy="no-referrer"
                     draggable={false}
-                    onError={() => {
-                      if (!imgProxyTried && (currentMedia?.media_url?.startsWith('http://') || currentMedia?.media_url?.startsWith('https://'))) {
-                        setImgProxyTried(true);
-                        setImgSrc(`/api/image-proxy?url=${encodeURIComponent(currentMedia.media_url)}`);
-                      }
-                    }}
+                    onError={handleImageError}
                   />
                 )}
               </>
@@ -488,8 +477,14 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
             className="w-12 h-12 rounded-full border-2 border-white shadow-xl overflow-hidden bg-zinc-800 active:scale-95 transition-all"
             title="Profiel bekijken"
           >
-            {currentMedia.author_photo?.trim() ? (
-               <img src={currentMedia.author_photo} alt="" className="w-full h-full object-cover" />
+            {resolvedAuthorPhoto?.trim() ? (
+              <img 
+                src={getSafeImageUrl(resolvedAuthorPhoto)} 
+                alt="" 
+                className="w-full h-full object-cover" 
+                referrerPolicy="no-referrer"
+                onError={handleImageError}
+              />
             ) : (
                <UserIcon className="w-6 h-6 m-auto text-white/50" />
             )}
@@ -667,7 +662,13 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                     <div key={comment.id || idx} className="flex gap-3 items-start">
                       <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden shrink-0 border border-zinc-700">
                         {commentPhoto?.trim() ? (
-                          <img src={commentPhoto} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <img 
+                            src={getSafeImageUrl(commentPhoto)} 
+                            alt="" 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer" 
+                            onError={handleImageError}
+                          />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-zinc-400">
                             <UserIcon className="w-4 h-4" />

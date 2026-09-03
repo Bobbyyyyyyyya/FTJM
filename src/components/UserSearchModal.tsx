@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, User as UserIcon, Users, Mail, Check, ShieldCheck, FlaskConical } from 'lucide-react';
 import { UserProfile } from '../types';
 import { isVerifiedEmail, isBetaTester, isTestUser } from '../constants';
+import { getSafeImageUrl, handleImageError } from '../utils/helpers';
 
 interface UserSearchModalProps {
   show: boolean;
@@ -109,7 +110,13 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                         <div key={u.id} className="flex items-center gap-2 bg-app-ink text-app-bg pl-1 pr-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ring-1 ring-app-border">
                           <div className="w-5 h-5 rounded-full overflow-hidden bg-app-bg/20">
                             {u.photo_url ? (
-                              <img src={u.photo_url} alt="" className="w-full h-full object-cover" />
+                              <img 
+                                src={getSafeImageUrl(u.photo_url)} 
+                                alt="" 
+                                className="w-full h-full object-cover" 
+                                referrerPolicy="no-referrer"
+                                onError={handleImageError}
+                              />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-[8px]">
                                 {u.display_name?.charAt(0)}
@@ -162,7 +169,13 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                             isSelected ? 'bg-app-ink ring-2 ring-app-ink/20' : 'bg-app-card border border-app-border'
                           }`}>
                             {u.photo_url?.trim() ? (
-                              <img src={u.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              <img 
+                                src={getSafeImageUrl(u.photo_url)} 
+                                alt="" 
+                                className="w-full h-full object-cover" 
+                                referrerPolicy="no-referrer" 
+                                onError={handleImageError}
+                              />
                             ) : (
                               <UserIcon className={`w-6 h-6 ${isSelected ? 'text-app-bg' : 'text-app-muted'}`} />
                             )}

@@ -72,13 +72,14 @@ import { RichContent } from './components/RichContent';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { UserSearchModal } from './components/UserSearchModal';
-// Lazy load major views
-const ChatView = React.lazy(() => import('./components/ChatView').then(module => ({ default: module.ChatView })));
-const ForumView = React.lazy(() => import('./components/ForumView').then(module => ({ default: module.ForumView })));
-const MessagesView = React.lazy(() => import('./components/MessagesView').then(module => ({ default: module.MessagesView })));
-const SettingsView = React.lazy(() => import('./components/SettingsView').then(module => ({ default: module.SettingsView })));
-const AudioLogsView = React.lazy(() => import('./components/AudioLogsView').then(module => ({ default: module.AudioLogsView })));
-const GamesView = React.lazy(() => import('./components/GamesView').then(module => ({ default: module.GamesView })));
+import { lazyWithRetry } from './utils/lazyWithRetry';
+// Lazy load major views with auto-recovery against missing chunks on version upgrades
+const ChatView = lazyWithRetry(() => import('./components/ChatView'), 'ChatView');
+const ForumView = lazyWithRetry(() => import('./components/ForumView'), 'ForumView');
+const MessagesView = lazyWithRetry(() => import('./components/MessagesView'), 'MessagesView');
+const SettingsView = lazyWithRetry(() => import('./components/SettingsView'), 'SettingsView');
+const AudioLogsView = lazyWithRetry(() => import('./components/AudioLogsView'), 'AudioLogsView');
+const GamesView = lazyWithRetry(() => import('./components/GamesView'), 'GamesView');
 import { MediaFeedCard } from './components/MediaFeedCard';
 import { MediaSwipeFeed } from './components/MediaSwipeFeed';
 import { PublicSharedMediaModal } from './components/PublicSharedMediaModal';
@@ -91,11 +92,11 @@ import { t, Language, getLanguage, setLanguage } from './utils/translations';
 
 // Constants & Helpers
 import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVerifiedEmail, isBetaTester, isTestUser, isValidEmail, isProtectedNameOrImpersonation } from './constants';
-import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba } from './utils/helpers';
+import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba, getSafeImageUrl, handleImageError } from './utils/helpers';
 import { AntiNamePiracyModal } from './components/AntiNamePiracyModal';
 
 import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
-import { saveDMsBatchLocally, getLocalDMsForConversation, savePostsBatchLocally, getLocalPosts } from './utils/localMessageArchive';
+import { saveDMsBatchLocally, getLocalDMsForConversation, savePostsBatchLocally, getLocalPosts, deletePostLocally, deleteDMLocally } from './utils/localMessageArchive';
 import { runAutoBase64Migration, containsBase64DataUrl, migrateFeedMediaList } from './utils/base64Migration';
 import { rateLimiter } from './utils/rateLimiter';
 import CryptoJS from 'crypto-js';
@@ -327,21 +328,19 @@ export default function App() {
 
   const filteredPosts = React.useMemo(() => {
     const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
-    if (isSystemAdmin || !joinDate) {
+    if (isSystemAdmin) {
       return posts;
     }
-    const joinTime = new Date(joinDate).getTime();
-    return posts.filter(p => new Date(p.created_at).getTime() >= joinTime);
-  }, [posts, joinDate, user, profile]);
+    return posts.filter(p => !p.is_blocked);
+  }, [posts, user, profile]);
 
   const filteredThreads = React.useMemo(() => {
     const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
-    if (isSystemAdmin || !joinDate) {
+    if (isSystemAdmin) {
       return threads;
     }
-    const joinTime = new Date(joinDate).getTime();
-    return threads.filter(t => new Date(t.created_at || '').getTime() >= joinTime);
-  }, [threads, joinDate, user, profile]);
+    return threads.filter(t => !t.is_blocked);
+  }, [threads, user, profile]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const usersRef = useRef<UserProfile[]>(users);
   useEffect(() => {
@@ -598,6 +597,31 @@ export default function App() {
       });
     };
     window.addEventListener('sw-update-available', handleUpdate);
+
+    // Periodic check for new app deployments / updates
+    let initialScriptHash: string | null = null;
+    const checkAppVersion = async () => {
+      try {
+        const res = await fetch(`/?vcheck=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+          const html = await res.text();
+          const match = html.match(/src="(\/assets\/index-[^"]+\.js)"/);
+          if (match && match[1]) {
+            const currentScript = match[1];
+            if (!initialScriptHash) {
+              initialScriptHash = currentScript;
+            } else if (initialScriptHash !== currentScript) {
+              console.log('[VersionCheck] New deployment detected:', currentScript);
+              window.dispatchEvent(new CustomEvent('sw-update-available'));
+            }
+          }
+        }
+      } catch (e) {
+        // Silent fail
+      }
+    };
+    checkAppVersion();
+    const versionInterval = setInterval(checkAppVersion, 45000);
     
     // Auto-unlock audio on first interaction
     const autoUnlock = async () => {
@@ -636,6 +660,7 @@ export default function App() {
     window.addEventListener('keydown', autoUnlock);
 
     return () => {
+      clearInterval(versionInterval);
       window.removeEventListener('sw-update-available', handleUpdate);
       window.removeEventListener('click', autoUnlock);
       window.removeEventListener('touchstart', autoUnlock);
@@ -853,7 +878,7 @@ export default function App() {
       const { data, error } = await supabaseClient
         .from('profile_media')
         .insert([newRecord])
-        .select('id, user_id, media_url, media_type, caption, likes, comments, created_at');
+        .select('id, user_id, media_url, media_type, likes, comments, created_at');
 
       if (error) {
         console.error('Failed to insert into public.profile_media:', error);
@@ -877,7 +902,7 @@ export default function App() {
       const broadcastItem = {
         ...savedItem,
         author_name: profile?.display_name || user.displayName || 'Anoniem',
-        author_photo: profile?.photo_url || user.photoURL || null,
+        author_photo: profile?.photo_url || photoURLInput || user.photoURL || null,
         likes: savedItem.likes || [],
         comments: savedItem.comments || []
       };
@@ -955,15 +980,22 @@ export default function App() {
 
     setProfileMediaLoading(true);
     try {
+      const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
+      
       // Delete strictly from public.profile_media table
-      const { error } = await supabaseClient
+      const { data, error } = await supabaseClient
         .from('profile_media')
         .delete()
-        .or(`id.eq.${itemId},media_url.eq.${mediaUrl}`);
+        .or(`id.eq.${itemId},media_url.eq.${mediaUrl}`)
+        .select('id');
 
       if (error) {
         toast.error('Fout bij het verwijderen uit public.profile_media: ' + error.message);
         throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        throw new Error('Supabase RLS Fout: Verwijderen van profielmedia is geblokkeerd door Row Level Security (0 rijen verwijderd).');
       }
 
       setProfileMedia(prev => prev.filter(m => m.id !== itemId && m.media_url !== mediaUrl));
@@ -1023,7 +1055,7 @@ export default function App() {
       try {
         const { data, error } = await supabaseClient
           .from('profile_media')
-          .select('id, user_id, media_url, media_type, caption, likes, comments, created_at')
+          .select('id, user_id, media_url, media_type, likes, comments, created_at')
           .eq('user_id', selectedUser.id)
           .order('created_at', { ascending: false })
           .limit(50);
@@ -1134,7 +1166,7 @@ export default function App() {
       // Fetch strictly from public.profile_media table in Supabase
       const { data: dbMediaData, error: dbError } = await supabaseClient
         .from('profile_media')
-        .select('id, user_id, media_url, media_type, caption, likes, comments, created_at')
+        .select('id, user_id, media_url, media_type, likes, comments, created_at')
         .order('created_at', { ascending: false })
         .limit(30);
 
@@ -1196,7 +1228,7 @@ export default function App() {
           ...m,
           media_type: isVid ? 'video' : (m.media_type || 'image'),
           author_name: authorProfile?.display_name || (user && m.user_id === user.uid ? (profile?.display_name || user.displayName) : null) || 'Anoniem',
-          author_photo: authorProfile?.photo_url || (user && m.user_id === user.uid ? (profile?.photo_url || user.photoURL) : null) || null,
+          author_photo: authorProfile?.photo_url || (user && m.user_id === user.uid ? (profile?.photo_url || photoURLInput || user.photoURL) : null) || null,
           likes: m.likes || [],
           comments: enrichedComments
         };
@@ -1466,13 +1498,18 @@ export default function App() {
 
     try {
       // Delete strictly from public.profile_media table
-      const { error: dbError } = await supabaseClient
+      const { data, error: dbError } = await supabaseClient
         .from('profile_media')
         .delete()
-        .or(`id.eq.${mediaId},media_url.eq.${mediaId}`);
+        .or(`id.eq.${mediaId},media_url.eq.${mediaId}`)
+        .select('id');
 
       if (dbError) {
         throw dbError;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('Supabase RLS Fout: Verwijderen van media is geblokkeerd door Row Level Security (0 rijen verwijderd).');
       }
 
       if (authorId === user.uid) {
@@ -2388,7 +2425,7 @@ export default function App() {
 
   // Security & Permissions
   const isHardwareBanned = rateLimiter.isBanned();
-  const isAdmin = profile?.role === 'admin' || user?.email === 'markohoksen@gmail.com';
+  const isAdmin = profile?.role === 'admin' || user?.email?.toLowerCase() === 'markohoksen@gmail.com';
   const isBlocked = profile?.is_blocked === true || isHardwareBanned;
 
   const notesData = parseAdminNotes(profile?.admin_notes, profile?.custom_theme);
@@ -2397,7 +2434,7 @@ export default function App() {
 
   // Auto-set admin role for markohoksen@gmail.com
   useEffect(() => {
-    if (user?.email === 'markohoksen@gmail.com' && profile && profile.role !== 'admin') {
+    if (user?.email?.toLowerCase() === 'markohoksen@gmail.com' && profile && profile.role !== 'admin') {
       supabaseClient.from('profiles').update({ role: 'admin' }).eq('id', user.uid);
     }
   }, [user, profile]);
@@ -2587,7 +2624,7 @@ export default function App() {
 
             // Determine admin role status from fetched profile
             const profileRole = pRes.data?.role;
-            const isUserAdmin = profileRole === 'admin' || currentUser.email === 'markohoksen@gmail.com';
+            const isUserAdmin = profileRole === 'admin' || currentUser.email?.toLowerCase() === 'markohoksen@gmail.com';
 
             // Whitelist verification
             const wlData = wlRes.data;
@@ -2647,15 +2684,9 @@ export default function App() {
               hasFetchedProfile.current = true;
 
               // Automatically trigger background migration of legacy Base64 data to ImgBB (All media if Admin)
-              const isUserAdmin = profileData.role === 'admin' || mappedUser.email?.toLowerCase() === 'markohoksen@gmail.com';
-              runAutoBase64Migration(newClient, mappedUser, profileData, {
-                setProfile,
-                setPosts,
-                setMessages,
-                setConversations,
-                setProfileMedia,
-                setFeedMedia
-              }, isUserAdmin).catch(e => console.warn('[AutoBase64Migration] Background error:', e));
+              // Migration is now manual only via Settings to prevent slow logins
+              // const isUserAdmin = profileData.role === 'admin' || mappedUser.email?.toLowerCase() === 'markohoksen@gmail.com';
+              // runAutoBase64Migration(newClient, mappedUser, profileData, { ... }, isUserAdmin).catch(...);
             } else if (whitelisted) {
               // Automatically provision profile inline on first login
               const newProfile: UserProfile = {
@@ -2692,15 +2723,9 @@ export default function App() {
                 hasFetchedProfile.current = true;
 
                 // Trigger background migration if needed
-                const isUserAdmin = mappedUser.email?.toLowerCase() === 'markohoksen@gmail.com';
-                runAutoBase64Migration(newClient, mappedUser, newProfile, {
-                  setProfile,
-                  setPosts,
-                  setMessages,
-                  setConversations,
-                  setProfileMedia,
-                  setFeedMedia
-                }, isUserAdmin).catch(e => console.warn('[AutoBase64Migration] Background error:', e));
+                // Migration is now manual only via Settings to prevent slow logins
+                // const isUserAdmin = mappedUser.email?.toLowerCase() === 'markohoksen@gmail.com';
+                // runAutoBase64Migration(newClient, mappedUser, newProfile, { ... }, isUserAdmin).catch(...);
               }
             }
           } catch (err) {
@@ -3166,7 +3191,7 @@ export default function App() {
           const [wRes, uRes, rRes] = await Promise.all([
             supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(30),
             fetchProfilesWithFallback(),
-            supabaseClient.from('reports').select('id, reporter_id, reported_id, reporter_name, reported_name, target_type, reason, status, details, created_at, resource_id').order('created_at', { ascending: false }).limit(50)
+            supabaseClient.from('reports').select('id, reporter_id, reported_id, target_type, reason, status, details, created_at').order('created_at', { ascending: false }).limit(50)
           ]);
           
           if (wRes.error) {
@@ -3249,7 +3274,7 @@ export default function App() {
       const [wRes, uRes, rRes] = await Promise.all([
         supabaseClient.from('whitelist').select('email, added_at').order('added_at', { ascending: false }).limit(30),
         fetchProfilesWithFallback(),
-        supabaseClient.from('reports').select('id, reporter_id, reported_id, reporter_name, reported_name, target_type, reason, status, details, created_at, resource_id').order('created_at', { ascending: false }).limit(50)
+        supabaseClient.from('reports').select('id, reporter_id, reported_id, target_type, reason, status, details, created_at').order('created_at', { ascending: false }).limit(50)
       ]);
       
       if (wRes.error) console.error('Admin: Error fetching whitelist:', wRes.error);
@@ -3719,6 +3744,7 @@ export default function App() {
       .on('broadcast', { event: 'delete_message' }, (payload) => {
         console.log('Broadcast delete message (on conversations channel) received:', payload);
         const { id, conversation_id } = payload.payload;
+        deleteDMLocally(id);
 
         // Update messages if this conversation is active
         if (activeConversationRef.current?.id === conversation_id) {
@@ -3963,6 +3989,7 @@ export default function App() {
       .on('broadcast', { event: 'delete_message' }, (payload) => {
         console.log('Broadcast delete message received:', payload);
         const { id } = payload.payload;
+        deleteDMLocally(id);
         setMessages(prev => prev.filter(m => m.id !== id));
       })
       .subscribe((status) => {
@@ -4305,7 +4332,7 @@ export default function App() {
 
   // Real-time posts feed
   useEffect(() => {
-    if (!user || !isWhitelisted) {
+    if (!user || isWhitelisted === false) {
       console.log('Posts sync skipped:', { user: !!user, isWhitelisted });
       return;
     }
@@ -4369,6 +4396,7 @@ export default function App() {
         } else if (payload.eventType === 'DELETE') {
           const deletedId = payload.old?.id;
           if (deletedId) {
+            deletePostLocally(deletedId);
             setPosts(prev => {
               const newPosts = prev.filter(p => p.id !== deletedId);
               localStorage.setItem('cached_posts', JSON.stringify(newPosts));
@@ -4421,6 +4449,7 @@ export default function App() {
       .on('broadcast', { event: 'delete_post' }, (payload) => {
         console.log('Broadcast delete post received:', payload);
         const { id } = payload.payload;
+        deletePostLocally(id);
         setPosts(prev => {
           const newPosts = prev.filter(p => p.id !== id);
           localStorage.setItem('cached_posts', JSON.stringify(newPosts));
@@ -4434,64 +4463,111 @@ export default function App() {
 
     postsChannelRef.current = channel;
 
-    // Initial fetch with local IndexedDB archive merge
+    let isMounted = true;
+
+    // Fetch posts from database and merge with local IndexedDB archive
     const fetchPosts = async () => {
-      if (isPostingRef.current || hasFetchedPosts.current) return;
+      if (isPostingRef.current || !isMounted) return;
       
-      // Load local IndexedDB posts first
-      const localPosts = await getLocalPosts();
-      if (localPosts.length > 0) {
-        setPosts(localPosts);
-      }
+      try {
+        const localPosts = await getLocalPosts().catch(() => []);
+        if (!isMounted) return;
 
-      let query = supabaseClient
-        .from('posts')
-        .select('id, content, author_id, author_name, author_photo, created_at, parent_id')
-        .order('created_at', { ascending: false })
-        .limit(30);
-
-      const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
-      if (!isSystemAdmin && joinDate) {
-        query = query.gte('created_at', joinDate);
-      }
-      
-      const { data, error } = await query;
-      
-      if (data) {
-        const decryptedPosts = (data as Post[]).map(p => ({ ...p, content: decryptGeneralChat(p.content) }));
+        const query = supabaseClient
+          .from('posts')
+          .select('id, content, author_id, author_name, author_photo, created_at, parent_id')
+          .order('created_at', { ascending: false })
+          .limit(50);
         
-        // Merge local IndexedDB archive with server posts
-        const postMap = new Map<string, Post>();
-        localPosts.forEach(p => postMap.set(p.id, p));
-        decryptedPosts.forEach(p => postMap.set(p.id, p));
+        const { data, error } = await query;
+        if (!isMounted) return;
+        
+        if (data && data.length > 0) {
+          const decryptedPosts = (data as Post[]).map(p => ({ ...p, content: decryptGeneralChat(p.content) }));
+          
+          const checkPosts = decryptedPosts.slice(0, 20);
+          const fetchedIds = new Set(checkPosts.map(p => p.id));
+          const oldestFetchedTime = checkPosts.length > 0 ? new Date(checkPosts[checkPosts.length - 1].created_at).getTime() : 0;
 
-        const mergedPosts = Array.from(postMap.values()).sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
+          const deletedPostIds: string[] = [];
+          const activeLocalPosts = localPosts.filter(p => {
+            const pTime = new Date(p.created_at).getTime();
+            // If the post is within our latest fetched posts window but is not returned by Supabase,
+            // it must have been deleted from the database. Let's prune it locally.
+            if (pTime >= oldestFetchedTime && !fetchedIds.has(p.id)) {
+              deletedPostIds.push(p.id);
+              return false;
+            }
+            return true;
+          });
 
-        setPosts(mergedPosts);
-        localStorage.setItem('cached_posts', JSON.stringify(mergedPosts.slice(0, 50)));
-        savePostsBatchLocally(mergedPosts);
+          if (deletedPostIds.length > 0) {
+            console.log('Purging deleted posts from local archive:', deletedPostIds);
+            deletedPostIds.forEach(id => {
+              deletePostLocally(id);
+            });
+          }
 
-        if (mergedPosts.length > 0) {
-          lastPostId.current = mergedPosts[0].id;
+          const postMap = new Map<string, Post>();
+          activeLocalPosts.forEach(p => postMap.set(p.id, p));
+          decryptedPosts.forEach(p => postMap.set(p.id, p));
+
+          setPosts(prev => {
+            // Only preserve pending optimistic posts created in last 15s by current user
+            const now = Date.now();
+            prev.forEach(p => {
+              if (!postMap.has(p.id) && p.author_id === user?.uid && now - new Date(p.created_at).getTime() < 15000) {
+                postMap.set(p.id, p);
+              }
+            });
+            const mergedPosts = Array.from(postMap.values()).sort((a, b) => 
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+            localStorage.setItem('cached_posts', JSON.stringify(mergedPosts.slice(0, 50)));
+            savePostsBatchLocally(mergedPosts);
+            return mergedPosts;
+          });
+
+          if (decryptedPosts.length > 0) {
+            lastPostId.current = decryptedPosts[0].id;
+          }
+        } else if (localPosts.length > 0) {
+          setPosts(localPosts);
         }
-        hasFetchedPosts.current = true;
+      } catch (err) {
+        console.error('Error fetching posts:', err);
       }
     };
 
     fetchPosts();
     setLoading(false);
 
+    // Listen for local archive purge
+    const handleArchiveCleared = (e: any) => {
+      const target = e.detail?.target || 'all';
+      if (target === 'all' || target === 'posts') {
+        fetchPosts();
+      }
+    };
+    window.addEventListener('local-archive-cleared', handleArchiveCleared);
+
+    // Periodic polling to guarantee sync even if websocket drops
+    const postsInterval = setInterval(() => {
+      fetchPosts();
+    }, 6000);
+
     return () => {
+      isMounted = false;
+      window.removeEventListener('local-archive-cleared', handleArchiveCleared);
+      clearInterval(postsInterval);
       supabaseClient.removeChannel(channel);
       postsChannelRef.current = null;
     };
-  }, [user?.uid, isWhitelisted]);
+  }, [user?.uid, isWhitelisted, supabaseClient]);
 
   // Real-time forum threads sync
   useEffect(() => {
-    if (!user || !isWhitelisted) return;
+    if (!user || isWhitelisted === false) return;
 
     const fetchThreads = async () => {
       try {
@@ -4500,11 +4576,6 @@ export default function App() {
           .select('id, author_id, author_name, author_photo, title, content, created_at, updated_at, comment_count')
           .order('updated_at', { ascending: false })
           .limit(30);
-
-        const isSystemAdmin = user?.email?.toLowerCase() === 'markohoksen@gmail.com' || profile?.role === 'admin';
-        if (!isSystemAdmin && joinDate) {
-          query = query.gte('created_at', joinDate);
-        }
 
         const { data, error } = await query;
         
@@ -4560,11 +4631,11 @@ export default function App() {
     return () => {
       supabaseClient.removeChannel(threadsChannel);
     };
-  }, [user?.uid, isWhitelisted, activeThread?.id]);
+  }, [user?.uid, isWhitelisted, activeThread?.id, supabaseClient]);
 
   // Real-time forum comments sync
   useEffect(() => {
-    if (!user || !isWhitelisted || !activeThread) return;
+    if (!user || isWhitelisted === false || !activeThread) return;
 
     const channel = supabaseClient
       .channel(`forum_comments:${activeThread.id}`)
@@ -4892,12 +4963,57 @@ export default function App() {
       return;
     }
 
+    // Auto-migrate PFP from Base64 to ImgBB CDN
+    let finalPhotoUrl = photoURLInput.trim() || user.photoURL || null;
+    if (finalPhotoUrl && containsBase64DataUrl(finalPhotoUrl)) {
+      try {
+        const uploadRes = await uploadImageToImgBB(finalPhotoUrl, `pfp_${user.uid}`);
+        if (uploadRes?.url) {
+          finalPhotoUrl = uploadRes.url;
+          setPhotoURLInput(uploadRes.url);
+        }
+      } catch (err) {
+        console.warn('PFP auto-migration to ImgBB failed:', err);
+      }
+    }
+
+    // Auto-migrate Banner from Base64 to ImgBB CDN
+    let finalBannerUrl = bannerURLInput.trim() || null;
+    if (finalBannerUrl && containsBase64DataUrl(finalBannerUrl)) {
+      try {
+        const uploadRes = await uploadImageToImgBB(finalBannerUrl, `banner_${user.uid}`);
+        if (uploadRes?.url) {
+          finalBannerUrl = uploadRes.url;
+          setBannerURLInput(uploadRes.url);
+        }
+      } catch (err) {
+        console.warn('Banner auto-migration to ImgBB failed:', err);
+      }
+    }
+
+    const cleanCustomTheme = sanitizeCustomTheme({
+      ...(profile?.custom_theme || {}),
+      ...customTheme,
+      agreed_terms_v2: true
+    });
+    if (cleanCustomTheme.wallpaper && containsBase64DataUrl(cleanCustomTheme.wallpaper)) {
+      try {
+        const uploadRes = await uploadImageToImgBB(cleanCustomTheme.wallpaper, `wallpaper_${user.uid}`);
+        if (uploadRes?.url) {
+          cleanCustomTheme.wallpaper = uploadRes.url;
+          setCustomTheme(prev => ({ ...prev, wallpaper: uploadRes.url }));
+        }
+      } catch (err) {
+        console.warn('Wallpaper auto-migration to ImgBB failed:', err);
+      }
+    }
+
     const updatedData: any = {
       id: user.uid,
       display_name: displayNameInput.trim() || user.displayName || 'Anoniem',
-      photo_url: photoURLInput.trim() || user.photoURL || null,
+      photo_url: finalPhotoUrl,
       bio: bioInput.trim() || null,
-      banner_url: bannerURLInput.trim() || null,
+      banner_url: finalBannerUrl,
       notification_settings: {
         enable_sounds: notificationSettings.enable_sounds,
         notify_new_posts: notificationSettings.notify_new_posts,
@@ -4906,11 +5022,7 @@ export default function App() {
         message_sound: notificationSettings.message_sound,
         post_sound: notificationSettings.post_sound
       },
-      custom_theme: sanitizeCustomTheme({
-        ...(profile?.custom_theme || {}),
-        ...customTheme,
-        agreed_terms_v2: true
-      }),
+      custom_theme: cleanCustomTheme,
       use_custom_theme: useCustomTheme,
       custom_sounds: customSounds,
       updated_at: new Date().toISOString()
@@ -4977,6 +5089,12 @@ export default function App() {
       
       // Update local profile state
       setProfile(prev => ({ ...prev, ...updatedData } as UserProfile));
+      setUsers(prev => prev.map(u => u.id === user.uid ? { ...u, ...updatedData } : u));
+      setFeedMedia(prev => prev.map(m => m.user_id === user.uid ? { 
+        ...m, 
+        author_photo: updatedData.photo_url || m.author_photo, 
+        author_name: updatedData.display_name || m.author_name 
+      } : m));
       localStorage.setItem('cached_profile', JSON.stringify({ ...profile, ...updatedData }));
       
       toast.success('Instellingen opgeslagen');
@@ -5080,11 +5198,22 @@ export default function App() {
     }
   };
 
-  const handleResetToGoogle = () => {
+  const handleResetToGoogle = async () => {
     if (!user) return;
-    setDisplayNameInput(user.displayName || '');
-    setPhotoURLInput(user.photoURL || '');
-    toast.info('Google profiel gegevens geladen. Vergeet niet op te slaan!');
+    const gName = user.displayName || '';
+    const gPhoto = user.photoURL || '';
+    setDisplayNameInput(gName);
+    setPhotoURLInput(gPhoto);
+    if (gPhoto) {
+      setProfile(prev => prev ? { ...prev, photo_url: gPhoto } : null);
+      setUsers(prev => prev.map(u => u.id === user.uid ? { ...u, photo_url: gPhoto } : u));
+      try {
+        await supabaseClient.from('profiles').update({ photo_url: gPhoto, updated_at: new Date().toISOString() }).eq('id', user.uid);
+      } catch (err) {
+        console.warn('Auto-save Google photo error:', err);
+      }
+    }
+    toast.success('Google profiel gegevens geladen en opgeslagen!');
   };
 
   const handleToggleFollow = async (targetUserId: string) => {
@@ -5707,15 +5836,12 @@ export default function App() {
       } catch {}
 
       // 3. Delete the thread itself
-      let query = supabaseClient.from('forum_threads').delete().eq('id', threadId).select('id');
+      let query = supabaseClient.from('forum_threads').delete().eq('id', threadId);
       if (!isAdmin) {
         query = query.eq('author_id', user.uid);
       }
-      const { data, error } = await query;
+      const { error } = await query;
       if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error('Kon topic niet verwijderen. Mogelijk heb je niet de juiste rechten (RLS).');
-      }
 
       setThreads(prev => prev.filter(t => t.id !== threadId));
       if (activeThread?.id === threadId) {
@@ -5737,15 +5863,12 @@ export default function App() {
         await supabaseClient.from('forum_comments').delete().eq('parent_id', commentId);
       } catch {}
 
-      let query = supabaseClient.from('forum_comments').delete().eq('id', commentId).select('id');
+      let query = supabaseClient.from('forum_comments').delete().eq('id', commentId);
       if (!isAdmin) {
         query = query.eq('author_id', user.uid);
       }
-      const { data, error } = await query;
+      const { error } = await query;
       if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error('Kon reactie niet verwijderen. Mogelijk heb je niet de juiste rechten (RLS).');
-      }
 
       setThreadComments(prev => prev.filter(c => c.id !== commentId && c.parent_id !== commentId));
       setThreads(prev => prev.map(t => t.id === threadId ? { ...t, comment_count: Math.max(0, (t.comment_count || 1) - 1) } : t));
@@ -5764,7 +5887,9 @@ export default function App() {
         .update({ is_blocked: !currentBlockStatus })
         .eq('id', postId);
         
-      if (error) throw error;
+      if (error) {
+        console.warn('Post block database note:', error.message);
+      }
       
       setPosts(prev => {
         const updated = prev.map(p => p.id === postId ? { ...p, is_blocked: !currentBlockStatus } : p);
@@ -5784,41 +5909,61 @@ export default function App() {
     isPostingRef.current = true;
     const deletePromise = (async () => {
       console.log('Attempting to delete post and attached replies/comments:', postId);
+      console.log('Delete post context check:', {
+        postId,
+        uid: user.uid,
+        email: user.email,
+        isAdmin,
+      });
       
       // 1. Delete all replies / comments attached to this post
       try {
-        await supabaseClient.from('posts').delete().eq('parent_id', postId);
+        const repliesRes = await supabaseClient.from('posts').delete().eq('parent_id', postId);
+        if (repliesRes.error) {
+          console.warn('Replies delete note:', repliesRes.error);
+        }
       } catch (err) {
         console.warn('Error deleting replies for post:', err);
       }
 
       // 2. Delete any attached notifications for this post
       try {
-        await supabaseClient.from('notifications').delete().eq('resource_id', postId);
+        const notifRes = await supabaseClient.from('notifications').delete().eq('resource_id', postId);
+        if (notifRes.error) {
+          console.warn('Notifications delete note:', notifRes.error);
+        }
       } catch {}
 
       // 3. Delete the post itself
+      console.log('Attempting to delete post:', postId);
       let query = supabaseClient
         .from('posts')
-        .delete()
-        .eq('id', postId)
-        .select('id');
+        .delete({ count: 'exact' })
+        .eq('id', postId);
       
       if (!isAdmin) {
         query = query.eq('author_id', user.uid);
       }
 
-      const { data, error } = await query;
+      const result = await query;
+      console.log('Delete post result:', {
+        data: result.data,
+        error: result.error,
+        count: result.count,
+        status: result.status,
+        statusText: result.statusText,
+      });
 
-      if (error) {
-        console.error('Delete post error details:', error);
+      if (result.error) {
         isPostingRef.current = false;
-        throw error;
+        throw result.error;
       }
-      
-      if (!data || data.length === 0) {
+
+      if (result.count !== 1) {
         isPostingRef.current = false;
-        throw new Error('Kon bericht niet verwijderen. Mogelijk heb je niet de juiste rechten in de database (Supabase RLS).');
+        throw new Error(
+          `Geen post verwijderd. Database returned count=${result.count}`
+        );
       }
 
       // Broadcast delete to others
@@ -5831,6 +5976,7 @@ export default function App() {
       }
 
       // Update local state immediately for better UX (remove post and its replies)
+      deletePostLocally(postId);
       setPosts(prev => {
         const newPosts = prev.filter(p => p.id !== postId && p.parent_id !== postId);
         localStorage.setItem('cached_posts', JSON.stringify(newPosts));
@@ -6057,23 +6203,23 @@ export default function App() {
       console.log('Attempting to delete direct message:', messageId);
       let query = supabaseClient
         .from('messages')
-        .delete()
-        .eq('id', messageId)
-        .select('id');
+        .delete({ count: 'exact' })
+        .eq('id', messageId);
       
       if (!isAdmin) {
         query = query.eq('sender_id', user.uid);
       }
 
-      const { data, error } = await query;
+      const { error, count } = await query;
 
       if (error) {
         console.error('Delete message error:', error);
         throw error;
       }
-      
-      if (!data || data.length === 0) {
-        throw new Error('Kon bericht niet verwijderen. Mogelijk heb je niet de juiste rechten (RLS).');
+
+      if (count === 0) {
+        console.warn('Delete message notice: count is 0.');
+        throw new Error('Geen bericht verwijderd. Controleer of het bericht reeds verwijderd is of controleer je rechten.');
       }
 
       // Broadcast delete to others
@@ -6099,6 +6245,7 @@ export default function App() {
       }
 
       // Update local state immediately for better UX
+      deleteDMLocally(messageId);
       setMessages(prev => prev.filter(m => m.id !== messageId));
 
       // Find new last message and update conversation in background
@@ -8025,7 +8172,13 @@ export default function App() {
                               >
                                 <div className="w-8 h-8 rounded-full bg-app-accent flex-shrink-0 overflow-hidden mt-0.5">
                                   {notif.actor_photo ? (
-                                    <img src={notif.actor_photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <img 
+                                      src={getSafeImageUrl(notif.actor_photo)} 
+                                      alt="" 
+                                      className="w-full h-full object-cover" 
+                                      referrerPolicy="no-referrer" 
+                                      onError={handleImageError}
+                                    />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-app-muted">
                                       {notif.actor_name?.[0] || 'M'}
@@ -8116,10 +8269,11 @@ export default function App() {
                   </div>
                   {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                     <img 
-                      src={profile?.photo_url || user.photoURL || undefined} 
+                      src={getSafeImageUrl(profile?.photo_url || user.photoURL)} 
                       alt={profile?.display_name || user.displayName || ''} 
                       className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-app-border object-cover"
                       referrerPolicy="no-referrer"
+                      onError={handleImageError}
                     />
                   ) : (
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
@@ -8489,10 +8643,11 @@ export default function App() {
                         <div className="relative mb-6">
                           {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                             <img 
-                              src={profile?.photo_url || user.photoURL || undefined} 
+                              src={getSafeImageUrl(profile?.photo_url || user.photoURL)} 
                               alt={profile?.display_name || user.displayName || ''} 
                               className="w-24 h-24 rounded-3xl border-4 border-app-card shadow-md"
                               referrerPolicy="no-referrer"
+                              onError={handleImageError}
                             />
                           ) : (
                             <div className="w-24 h-24 rounded-3xl bg-app-accent flex items-center justify-center border border-app-border">
@@ -8707,7 +8862,7 @@ export default function App() {
                           <div className="flex items-start gap-4">
                             <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent border border-app-border shrink-0">
                               {profile?.photo_url ? (
-                                <img src={profile.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={getSafeImageUrl(profile.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center">
                                   <UserIcon className="w-5 h-5 text-app-muted" />
@@ -9009,10 +9164,11 @@ export default function App() {
                 <div className="h-32 bg-app-ink relative overflow-hidden">
                   {(selectedUser.banner_url || selectedUser.custom_theme?.banner_url) ? (
                     <img 
-                      src={selectedUser.banner_url || selectedUser.custom_theme?.banner_url} 
+                      src={getSafeImageUrl(selectedUser.banner_url || selectedUser.custom_theme?.banner_url)} 
                       alt="" 
                       className="absolute inset-0 w-full h-full object-cover"
                       referrerPolicy="no-referrer"
+                      onError={handleImageError}
                     />
                   ) : (
                     <div className="absolute inset-0 opacity-10 pointer-events-none">
@@ -9033,7 +9189,7 @@ export default function App() {
                     <div className="w-32 h-32 rounded-[2rem] bg-app-card p-2 shadow-xl border border-app-border">
                       <div className="w-full h-full rounded-[1.5rem] bg-app-accent flex items-center justify-center overflow-hidden border border-app-border">
                         {selectedUser.photo_url ? (
-                          <img src={selectedUser.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <img src={getSafeImageUrl(selectedUser.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                         ) : (
                           <UserIcon className="w-12 h-12 text-app-muted" />
                         )}
@@ -9231,11 +9387,12 @@ export default function App() {
                                       />
                                     ) : (
                                       <img 
-                                        src={media.media_url} 
+                                        src={getSafeImageUrl(media.media_url)} 
                                         alt="" 
                                         className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all"
                                         onClick={() => setSelectedFullscreenMedia(media.media_url)}
                                         referrerPolicy="no-referrer"
+                                        onError={handleImageError}
                                       />
                                     )}
                                   </>
@@ -9541,7 +9698,7 @@ export default function App() {
                               >
                                 <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent flex-shrink-0 border border-app-border">
                                   {follower.photo_url ? (
-                                    <img src={follower.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <img src={getSafeImageUrl(follower.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center">
                                       <UserIcon className="w-5 h-5 text-app-muted" />
@@ -9646,7 +9803,7 @@ export default function App() {
                               >
                                 <div className="w-10 h-10 rounded-xl overflow-hidden bg-app-accent flex-shrink-0 border border-app-border">
                                   {followed.photo_url ? (
-                                    <img src={followed.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <img src={getSafeImageUrl(followed.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center">
                                       <UserIcon className="w-5 h-5 text-app-muted" />
@@ -9716,10 +9873,11 @@ export default function App() {
                 />
               ) : (
                 <img 
-                  src={selectedFullscreenMedia} 
+                  src={getSafeImageUrl(selectedFullscreenMedia)} 
                   alt="Fullscreen Preview" 
                   className="max-w-full max-h-[85vh] rounded-3xl object-contain shadow-2xl"
                   referrerPolicy="no-referrer"
+                  onError={handleImageError}
                 />
               )}
             </div>
@@ -10036,17 +10194,6 @@ export default function App() {
                       : authStep === 'password'
                         ? 'Beveiligde aanmelding verifiëren'
                         : 'Toegang tot FTJM Enterprise'}
-                  </p>
-                </div>
-
-                {/* Backup Server Active Banner in Auth Modal */}
-                <div className="mb-6 p-4 rounded-2xl bg-amber-500/15 border border-amber-500/35 text-amber-200 text-xs leading-relaxed flex flex-col gap-1.5 relative z-10 backdrop-blur-md shadow-lg shadow-amber-950/20">
-                  <div className="flex items-center gap-2 font-black text-amber-300 uppercase tracking-wider text-[11px]">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
-                    <span>⚠️ Back-up Server Geactiveerd</span>
-                  </div>
-                  <p className="text-[11px] font-medium text-amber-100/90 leading-snug">
-                    Het platform draait momenteel op de <strong>back-upserver</strong>. Accounts van de primaire server zijn hier <strong>niet op overgezet</strong>. Lukt inloggen niet? Registreer dan een nieuw account voor deze back-upomgeving.
                   </p>
                 </div>
 
@@ -10456,10 +10603,11 @@ export default function App() {
                             <div className="w-16 h-16 rounded-full border-2 border-cyan-400 overflow-hidden shadow-lg shadow-cyan-500/20 mb-2 mt-2 flex items-center justify-center bg-[#0a385c]">
                               {lookupProfile?.photo_url ? (
                                 <img
-                                  src={lookupProfile.photo_url}
+                                  src={getSafeImageUrl(lookupProfile.photo_url)}
                                   alt={lookupProfile.display_name}
                                   className="w-full h-full object-cover"
                                   referrerPolicy="no-referrer"
+                                  onError={handleImageError}
                                 />
                               ) : (
                                 <UserIcon className="w-8 h-8 text-cyan-300" />

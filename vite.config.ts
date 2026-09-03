@@ -46,9 +46,9 @@ export default defineConfig(({mode}) => {
       rollupOptions: {
         output: {
           compact: true,
-          entryFileNames: 'assets/app-secure.js',
-          chunkFileNames: 'assets/secure-[hash].js',
-          assetFileNames: 'assets/[name].[ext]',
+          entryFileNames: 'assets/secure-app-[hash].js',
+          chunkFileNames: 'assets/secure-[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash].[ext]',
         },
       },
     },

@@ -11,12 +11,15 @@ import { postgresSecurityMiddleware, getSecurityStats } from './server/postgresS
 
 dotenv.config();
 
-// Active unified Supabase server client (Backup database & auth)
-const BACKUP_SUPABASE_URL = 'https://ccdoffhlhnbqcdptyxbu.supabase.co';
-const BACKUP_SUPABASE_KEY = 'sb_publishable_qraWFsV3GgtQhS8YKuId5w__BclUMpt';
+// Active unified Supabase server client (Main database & auth)
+const MAIN_SUPABASE_URL = 'https://lahoorkdcopypnubnosl.supabase.co';
+const MAIN_SUPABASE_KEY = 'sb_publishable_53DnrJekb2FrlxjduTP1BQ_KX43MYLy';
 
-const activeSupabaseUrl = process.env.VITE_SUPABASE_URL_BACKUP || BACKUP_SUPABASE_URL;
-const activeSupabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY_BACKUP || BACKUP_SUPABASE_KEY;
+const activeSupabaseUrl = process.env.VITE_SUPABASE_URL || MAIN_SUPABASE_URL;
+const activeSupabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || 
+                          process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 
+                          process.env.VITE_SUPABASE_ANON_KEY || 
+                          MAIN_SUPABASE_KEY;
 
 const serverSupabase = createClient(activeSupabaseUrl, activeSupabaseKey);
 
@@ -33,9 +36,32 @@ async function startServer() {
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
-  app.use(express.static(PUBLIC_DIR, { maxAge: '1y' }));
-  app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '1y' }));
-  app.use('/api/uploads', express.static(UPLOADS_DIR, { maxAge: '1y' }));
+
+  // Cached Egress configuration: 1-year immutable caching for static media & uploads
+  const setCacheControlHeaders = (res: express.Response) => {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
+  };
+
+  app.use(express.static(PUBLIC_DIR, { 
+    setHeaders: (res, filePath) => {
+      const fileName = path.basename(filePath);
+      if (fileName === 'sw.js' || fileName === 'manifest.json' || fileName.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      } else {
+        setCacheControlHeaders(res);
+      }
+    }
+  }));
+  app.use('/uploads', express.static(UPLOADS_DIR, { 
+    maxAge: '1y',
+    immutable: true,
+    setHeaders: (res) => setCacheControlHeaders(res)
+  }));
+  app.use('/api/uploads', express.static(UPLOADS_DIR, { 
+    maxAge: '1y',
+    immutable: true,
+    setHeaders: (res) => setCacheControlHeaders(res)
+  }));
 
   // 1x1 transparent PNG buffer for missing/offline image fallbacks
   const TRANSPARENT_PNG = Buffer.from(
@@ -47,6 +73,7 @@ async function startServer() {
   app.get('/:filename', (req, res, next) => {
     const filename = req.params.filename;
     if (filename && /\.(jpe?g|png|webp|gif|svg|avif|webm|mp3|wav|ogg)$/i.test(filename)) {
+      setCacheControlHeaders(res);
       const publicFile = path.join(PUBLIC_DIR, path.basename(filename));
       if (fs.existsSync(publicFile)) {
         return res.sendFile(publicFile);
@@ -318,7 +345,7 @@ async function startServer() {
           if (directResponse.ok) {
             const imgContentType = directResponse.headers.get('content-type') || 'image/jpeg';
             res.setHeader('Content-Type', imgContentType);
-            res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
             const arrayBuffer = await directResponse.arrayBuffer();
             return res.send(Buffer.from(arrayBuffer));
           }
@@ -336,7 +363,7 @@ async function startServer() {
       }
 
       res.setHeader('Content-Type', contentType || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
 
       const arrayBuffer = await response.arrayBuffer();
       return res.send(Buffer.from(arrayBuffer));
@@ -347,6 +374,161 @@ async function startServer() {
       return res.status(200).send(TRANSPARENT_PNG);
     }
   });
+
+  // Reusable Base64 to ImgBB CDN (or Local Static) Converter
+  const uploadBase64ToServerOrImgBB = async (b64: string, name: string): Promise<string | null> => {
+    if (!b64 || typeof b64 !== 'string') return null;
+    if (b64.startsWith('data:video/')) return null; // Drop videos
+
+    let base64Data = b64;
+    let detectedMime = 'image/jpeg';
+    if (b64.includes('base64,')) {
+      const match = b64.match(/^data:([^;]+);base64,/);
+      if (match) detectedMime = match[1];
+      base64Data = b64.split('base64,')[1];
+    }
+
+    const ext = detectedMime.includes('webp') ? 'webp' : detectedMime.includes('png') ? 'png' : detectedMime.includes('gif') ? 'gif' : detectedMime.includes('audio') ? 'webm' : 'jpg';
+    const cleanName = `migrated_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+
+    const apiKey = process.env.IMGBB_API_KEY;
+    if (apiKey && apiKey.trim() !== '' && !detectedMime.includes('audio')) {
+      try {
+        const formData = new URLSearchParams();
+        formData.append('image', base64Data);
+        formData.append('name', name);
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(apiKey.trim())}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString(),
+        });
+        const data = (await response.json()) as any;
+        if (response.ok && data.success && (data.data?.display_url || data.data?.url || data.data?.image?.url)) {
+          return data.data.image?.url || data.data.display_url || data.data.url;
+        }
+      } catch (e) {}
+    }
+
+    // Save local with 1-year immutable cache header
+    const buffer = Buffer.from(base64Data, 'base64');
+    const filePath = path.join(UPLOADS_DIR, cleanName);
+    await fs.promises.writeFile(filePath, buffer);
+    return `/uploads/${cleanName}`;
+  };
+
+  const migrateStringPayload = async (str: string, label: string): Promise<{ text: string; changed: boolean }> => {
+    if (!str || typeof str !== 'string' || !str.includes('data:')) return { text: str, changed: false };
+    const dataUrlRegex = /data:(image|audio|video)\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g;
+    const matches = str.match(dataUrlRegex);
+    if (!matches || matches.length === 0) return { text: str, changed: false };
+
+    let result = str;
+    let changed = false;
+    for (const match of matches) {
+      if (match.startsWith('data:video/')) {
+        result = result.replace(match, '');
+        changed = true;
+      } else {
+        const newUrl = await uploadBase64ToServerOrImgBB(match, label);
+        if (newUrl) {
+          result = result.replace(match, newUrl);
+          changed = true;
+        }
+      }
+    }
+    return { text: result, changed };
+  };
+
+  // Automatic Background Worker: Continuously migrates legacy Base64 PFPs and Banners in the database to ImgBB CDN
+  async function autoMigrateBase64ProfilesAndBanners() {
+    try {
+      console.log('[AutoMigration] Checking for legacy Base64 PFPs and Banners in database...');
+      const { data: profiles, error } = await serverSupabase
+        .from('profiles')
+        .select('id, photo_url, banner_url, custom_theme')
+        .limit(200);
+
+      if (error || !profiles) {
+        console.warn('[AutoMigration] Profiles query note:', error?.message);
+        return;
+      }
+
+      let migratedCount = 0;
+      for (const p of profiles) {
+        let changed = false;
+        let newPhoto = p.photo_url;
+        let newBanner = p.banner_url;
+        let newTheme = p.custom_theme ? { ...p.custom_theme } : {};
+
+        // Auto-migrate PFP
+        if (p.photo_url && typeof p.photo_url === 'string' && p.photo_url.includes('data:')) {
+          const url = await uploadBase64ToServerOrImgBB(p.photo_url, `pfp_${p.id}`);
+          if (url) {
+            newPhoto = url;
+            changed = true;
+            migratedCount++;
+          }
+        }
+
+        // Auto-migrate Banner
+        if (p.banner_url && typeof p.banner_url === 'string' && p.banner_url.includes('data:')) {
+          const url = await uploadBase64ToServerOrImgBB(p.banner_url, `banner_${p.id}`);
+          if (url) {
+            newBanner = url;
+            changed = true;
+            migratedCount++;
+          }
+        }
+
+        // Auto-migrate Wallpaper
+        if (newTheme.wallpaper && typeof newTheme.wallpaper === 'string' && newTheme.wallpaper.includes('data:')) {
+          const url = await uploadBase64ToServerOrImgBB(newTheme.wallpaper, `wallpaper_${p.id}`);
+          if (url) {
+            newTheme.wallpaper = url;
+            changed = true;
+            migratedCount++;
+          }
+        }
+
+        if (changed) {
+          console.log(`[AutoMigration] Migrated legacy Base64 for user ${p.id} to CDN (photo: ${Boolean(newPhoto)}, banner: ${Boolean(newBanner)})`);
+          await serverSupabase
+            .from('profiles')
+            .update({
+              photo_url: newPhoto,
+              banner_url: newBanner,
+              custom_theme: newTheme,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', p.id);
+
+          // Synchronize author photo across other tables
+          if (newPhoto && newPhoto !== p.photo_url) {
+            await Promise.allSettled([
+              serverSupabase.from('posts').update({ author_photo: newPhoto }).eq('author_id', p.id),
+              serverSupabase.from('forum_threads').update({ author_photo: newPhoto }).eq('author_id', p.id),
+              serverSupabase.from('forum_comments').update({ author_photo: newPhoto }).eq('author_id', p.id),
+              serverSupabase.from('notifications').update({ actor_photo: newPhoto }).eq('actor_id', p.id)
+            ]);
+          }
+        }
+      }
+
+      if (migratedCount > 0) {
+        console.log(`[AutoMigration] Success: Automatically migrated ${migratedCount} PFPs/Banners to ImgBB / CDN.`);
+      }
+    } catch (jobErr) {
+      console.warn('[AutoMigration] Background worker note:', jobErr);
+    }
+  }
+
+  // Launch initial scan 5 seconds after startup, then every 20 minutes
+  setTimeout(() => {
+    autoMigrateBase64ProfilesAndBanners().catch(console.error);
+  }, 5000);
+  setInterval(() => {
+    autoMigrateBase64ProfilesAndBanners().catch(console.error);
+  }, 20 * 60 * 1000);
 
   // Admin Media Migration API (Converts all remaining legacy Base64 across all tables)
   app.post('/api/admin/migrate-media', async (req, res) => {
@@ -361,69 +543,6 @@ async function startServer() {
         profiles: 0,
         forumThreads: 0,
         forumComments: 0
-      };
-
-      const uploadBase64ToServerOrImgBB = async (b64: string, name: string): Promise<string | null> => {
-        if (!b64 || typeof b64 !== 'string') return null;
-        if (b64.startsWith('data:video/')) return null; // Drop videos
-
-        let base64Data = b64;
-        let detectedMime = 'image/jpeg';
-        if (b64.includes('base64,')) {
-          const match = b64.match(/^data:([^;]+);base64,/);
-          if (match) detectedMime = match[1];
-          base64Data = b64.split('base64,')[1];
-        }
-
-        const ext = detectedMime.includes('webp') ? 'webp' : detectedMime.includes('png') ? 'png' : detectedMime.includes('gif') ? 'gif' : detectedMime.includes('audio') ? 'webm' : 'jpg';
-        const cleanName = `migrated_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
-
-        const apiKey = process.env.IMGBB_API_KEY;
-        if (apiKey && apiKey.trim() !== '' && !detectedMime.includes('audio')) {
-          try {
-            const formData = new URLSearchParams();
-            formData.append('image', base64Data);
-            formData.append('name', name);
-            const response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(apiKey.trim())}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: formData.toString(),
-            });
-            const data = (await response.json()) as any;
-            if (response.ok && data.success && (data.data?.display_url || data.data?.url || data.data?.image?.url)) {
-              return data.data.image?.url || data.data.display_url || data.data.url;
-            }
-          } catch (e) {}
-        }
-
-        // Save local
-        const buffer = Buffer.from(base64Data, 'base64');
-        const filePath = path.join(UPLOADS_DIR, cleanName);
-        await fs.promises.writeFile(filePath, buffer);
-        return `/uploads/${cleanName}`;
-      };
-
-      const migrateStringPayload = async (str: string, label: string): Promise<{ text: string; changed: boolean }> => {
-        if (!str || typeof str !== 'string' || !str.includes('data:')) return { text: str, changed: false };
-        const dataUrlRegex = /data:(image|audio|video)\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+/g;
-        const matches = str.match(dataUrlRegex);
-        if (!matches || matches.length === 0) return { text: str, changed: false };
-
-        let result = str;
-        let changed = false;
-        for (const match of matches) {
-          if (match.startsWith('data:video/')) {
-            result = result.replace(match, '');
-            changed = true;
-          } else {
-            const newUrl = await uploadBase64ToServerOrImgBB(match, label);
-            if (newUrl) {
-              result = result.replace(match, newUrl);
-              changed = true;
-            }
-          }
-        }
-        return { text: result, changed };
       };
 
       // 1. Migrate profile_media
@@ -537,6 +656,14 @@ async function startServer() {
 
             if (updated) {
               await supabase.from('profiles').update({ photo_url: newPhoto, banner_url: newBanner, custom_theme: newTheme }).eq('id', p.id);
+              if (newPhoto && newPhoto !== p.photo_url) {
+                await Promise.allSettled([
+                  supabase.from('posts').update({ author_photo: newPhoto }).eq('author_id', p.id),
+                  supabase.from('forum_threads').update({ author_photo: newPhoto }).eq('author_id', p.id),
+                  supabase.from('forum_comments').update({ author_photo: newPhoto }).eq('author_id', p.id),
+                  supabase.from('notifications').update({ actor_photo: newPhoto }).eq('actor_id', p.id),
+                ]);
+              }
               details.profiles++;
               totalMigrated++;
             }
@@ -558,6 +685,16 @@ async function startServer() {
     }
   });
 
+  // Serve compiled assets under /assets/ or return 404 if chunk does not exist
+  app.use('/assets', (req, res, next) => {
+    const distAssetPath = path.join(process.cwd(), 'dist', 'assets', path.basename(req.path));
+    if (fs.existsSync(distAssetPath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.sendFile(distAssetPath);
+    }
+    return res.status(404).setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0').send('Asset not found');
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -567,8 +704,21 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath, { maxAge: '1y' }));
+    
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        const fileName = path.basename(filePath);
+        if (fileName === 'sw.js' || fileName === 'manifest.json' || fileName.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+        } else if (filePath.includes(path.join('dist', 'assets'))) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      }
+    }));
+
+    // SPA fallback: Send index.html with NO CACHE
     app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

@@ -1,6 +1,6 @@
-const CACHE_NAME = 'ftjm-v3.5';
+const CACHE_NAME = 'ftjm-v4.0';
 
-// Self unregister in development/preview environments
+// Self install and immediately skip waiting to activate new version
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
@@ -13,6 +13,7 @@ self.addEventListener('activate', (event) => {
         return Promise.all(
           cacheNames.map((cacheName) => {
             if (cacheName !== CACHE_NAME) {
+              console.log('[SW] Deleting old cache:', cacheName);
               return caches.delete(cacheName);
             }
           })
@@ -85,54 +86,38 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle static assets with strict MIME type validation
-  const isScriptOrStyle = event.request.destination === 'script' || 
-                          event.request.destination === 'style' || 
-                          url.pathname.endsWith('.js') || 
-                          url.pathname.endsWith('.mjs') || 
-                          url.pathname.endsWith('.css');
-
+  // Network-First strategy with Cache Fallback for all static assets:
+  // Guarantees that newly deployed code & messages load instantly without stale cache traps
   event.respondWith(
-    caches.open(CACHE_NAME).then((cache) => {
-      if (!cache || typeof cache.match !== 'function') {
-        return fetch(event.request);
-      }
-
-      return cache.match(event.request).then((cachedResponse) => {
-        // Guard against corrupted HTML cached as JavaScript / CSS
-        if (cachedResponse && isScriptOrStyle) {
-          const contentType = cachedResponse.headers.get('content-type') || '';
-          if (contentType.includes('text/html')) {
-            // Delete invalid cache entry immediately
-            cache.delete(event.request).catch(() => {});
-            cachedResponse = undefined;
-          }
-        }
-
-        const fetchPromise = fetch(event.request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              const contentType = networkResponse.headers.get('content-type') || '';
-              // NEVER cache an HTML response when requesting a script or stylesheet
-              if (isScriptOrStyle && contentType.includes('text/html')) {
-                return networkResponse;
-              }
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const contentType = networkResponse.headers.get('content-type') || '';
+          const isScriptOrStyle = event.request.destination === 'script' || 
+                                  event.request.destination === 'style' || 
+                                  url.pathname.endsWith('.js') || 
+                                  url.pathname.endsWith('.css');
+          
+          // Never cache HTML when requesting scripts/styles
+          if (!isScriptOrStyle || !contentType.includes('text/html')) {
+            caches.open(CACHE_NAME).then((cache) => {
               try {
                 cache.put(event.request, networkResponse.clone()).catch(() => {});
               } catch (e) {}
-            }
-            return networkResponse;
-          })
-          .catch((err) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            throw err;
-          });
-
-        return cachedResponse || fetchPromise;
-      });
-    })
+            });
+          }
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // If offline / network fails, return cached response
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          return new Response('Network error and not cached.', { status: 408, statusText: 'Request Timeout' });
+        });
+      })
   );
 });
 

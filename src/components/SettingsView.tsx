@@ -6,7 +6,7 @@ import { rateLimiter } from '../utils/rateLimiter';
 import CryptoJS from 'crypto-js';
 import { UserProfile, CustomTheme, NotificationSettings, User, Report, Conversation, ModernUICustomization } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, isVerifiedEmail, isBetaTester } from '../constants';
-import { formatDate, convertEmoticons, maskEmail, parseAdminNotes, getDeviceOSInfo } from '../utils/helpers';
+import { formatDate, convertEmoticons, maskEmail, parseAdminNotes, getDeviceOSInfo, uploadImageToImgBB, compressImageToBlob, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
 import { getLocalArchiveStats, clearLocalArchive } from '../utils/localMessageArchive';
 import { runAutoBase64Migration } from '../utils/base64Migration';
@@ -770,6 +770,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [archiveStats, setArchiveStats] = React.useState({ dmsCount: 0, postsCount: 0, bookmarksCount: 0 });
   const [loadingArchiveStats, setLoadingArchiveStats] = React.useState(false);
+  const [confirmingClearArchive, setConfirmingClearArchive] = React.useState<'none' | 'all' | 'dms' | 'posts'>('none');
+  const [clearingArchive, setClearingArchive] = React.useState(false);
 
   const refreshArchiveStats = React.useCallback(async () => {
     setLoadingArchiveStats(true);
@@ -1095,10 +1097,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="relative group">
                     {(photoURLInput?.trim() || profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                       <img 
-                        src={photoURLInput || profile?.photo_url || user.photoURL || undefined} 
+                        src={getSafeImageUrl(photoURLInput || profile?.photo_url || user.photoURL)} 
                         alt="" 
                         className="w-24 h-24 rounded-3xl object-cover border-4 border-app-bg shadow-xl group-hover:opacity-75 transition-all"
                         referrerPolicy="no-referrer"
+                        onError={handleImageError}
                       />
                     ) : (
                       <div className="w-24 h-24 rounded-3xl bg-app-accent flex items-center justify-center border-4 border-app-bg shadow-xl">
@@ -1172,15 +1175,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (!file) return;
+
+                              // 1. Instant local preview for immediate visual feedback
+                              try {
+                                const localPreviewUrl = URL.createObjectURL(file);
+                                setPhotoURLInput(localPreviewUrl);
+                                if (setProfile) {
+                                  setProfile((prev: any) => prev ? { ...prev, photo_url: localPreviewUrl } : null);
+                                }
+                              } catch (previewErr) {
+                                console.warn('Local preview error:', previewErr);
+                              }
+
+                              // 2. Upload to CDN and auto-persist to database
                               toast.promise(
-                                compressImage(file, 200, 200, 0.70).then((dataUrl) => {
-                                  setPhotoURLInput(dataUrl);
-                                  return "Profielfoto succesvol geladen!";
-                                }),
+                                (async () => {
+                                  let finalUrl = '';
+                                  try {
+                                    const blob = await compressImageToBlob(file, 250, 250, 0.80, 'image/webp');
+                                    const uploadRes = await uploadImageToImgBB(blob, `pfp_${user.uid}`);
+                                    if (uploadRes?.url) {
+                                      finalUrl = uploadRes.url;
+                                    }
+                                  } catch (imgbbErr) {
+                                    console.warn('ImgBB upload fallback:', imgbbErr);
+                                  }
+
+                                  if (!finalUrl) {
+                                    finalUrl = await compressImage(file, 200, 200, 0.70);
+                                  }
+
+                                  setPhotoURLInput(finalUrl);
+                                  if (setProfile) {
+                                    setProfile((prev: any) => prev ? { ...prev, photo_url: finalUrl } : null);
+                                  }
+
+                                  // Auto-save to Supabase profiles
+                                  try {
+                                    await supabase
+                                      .from('profiles')
+                                      .update({ photo_url: finalUrl, updated_at: new Date().toISOString() })
+                                      .eq('id', user.uid);
+
+                                    const cached = localStorage.getItem('cached_profile');
+                                    if (cached) {
+                                      const parsed = JSON.parse(cached);
+                                      localStorage.setItem('cached_profile', JSON.stringify({ ...parsed, photo_url: finalUrl }));
+                                    }
+                                  } catch (dbErr) {
+                                    console.warn('Auto-save profile picture to database error:', dbErr);
+                                  }
+
+                                  return "Profielfoto direct bijgewerkt en opgeslagen!";
+                                })(),
                                 {
-                                  loading: "Profielfoto verwerken & optimaliseren...",
+                                  loading: "Profielfoto uploaden & opslaan...",
                                   success: (msg) => msg,
-                                  error: "Kon foto niet verwerken."
+                                  error: "Kon profielfoto niet uploaden."
                                 }
                               );
                             }}
@@ -1311,15 +1362,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
+
+                          // 1. Instant local preview for immediate visual feedback
+                          try {
+                            const localPreviewUrl = URL.createObjectURL(file);
+                            setBannerURLInput(localPreviewUrl);
+                            if (setProfile) {
+                              setProfile((prev: any) => prev ? { ...prev, banner_url: localPreviewUrl } : null);
+                            }
+                          } catch (previewErr) {
+                            console.warn('Local banner preview error:', previewErr);
+                          }
+
+                          // 2. Upload to CDN and auto-persist to database
                           toast.promise(
-                            compressImage(file, 640, 240, 0.60).then((dataUrl) => {
-                              setBannerURLInput(dataUrl);
-                              return "Profielbanner succesvol geladen!";
-                            }),
+                            (async () => {
+                              let finalUrl = '';
+                              try {
+                                const blob = await compressImageToBlob(file, 1200, 400, 0.75, 'image/webp');
+                                const uploadRes = await uploadImageToImgBB(blob, `banner_${user.uid}`);
+                                if (uploadRes?.url) {
+                                  finalUrl = uploadRes.url;
+                                }
+                              } catch (imgbbErr) {
+                                console.warn('ImgBB banner upload fallback:', imgbbErr);
+                              }
+
+                              if (!finalUrl) {
+                                finalUrl = await compressImage(file, 640, 240, 0.60);
+                              }
+
+                              setBannerURLInput(finalUrl);
+                              if (setProfile) {
+                                setProfile((prev: any) => prev ? { ...prev, banner_url: finalUrl } : null);
+                              }
+
+                              // Auto-save to Supabase profiles
+                              try {
+                                await supabase
+                                  .from('profiles')
+                                  .update({ banner_url: finalUrl, updated_at: new Date().toISOString() })
+                                  .eq('id', user.uid);
+
+                                const cached = localStorage.getItem('cached_profile');
+                                if (cached) {
+                                  const parsed = JSON.parse(cached);
+                                  localStorage.setItem('cached_profile', JSON.stringify({ ...parsed, banner_url: finalUrl }));
+                                }
+                              } catch (dbErr) {
+                                console.warn('Auto-save banner to database error:', dbErr);
+                              }
+
+                              return "Profielbanner direct bijgewerkt en opgeslagen!";
+                            })(),
                             {
-                              loading: "Profielbanner verwerken & optimaliseren...",
+                              loading: "Profielbanner uploaden & opslaan...",
                               success: (msg) => msg,
-                              error: "Kon banner niet verwerken."
+                              error: "Kon profielbanner niet uploaden."
                             }
                           );
                         }}
@@ -1333,12 +1432,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div className="relative h-24 rounded-xl overflow-hidden bg-app-ink flex items-end">
                       {bannerURLInput?.trim() ? (
                         <img 
-                          src={bannerURLInput} 
+                          src={getSafeImageUrl(bannerURLInput)} 
                           alt="Banner Voorvertoning" 
                           className="absolute inset-0 w-full h-full object-cover"
                           referrerPolicy="no-referrer"
                           onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
+                            handleImageError(e);
+                            if (e.currentTarget.src.includes('/api/image-proxy')) {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }
                           }}
                         />
                       ) : (
@@ -1350,10 +1452,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="w-12 h-12 rounded-[1rem] bg-app-accent flex items-center justify-center overflow-hidden">
                           {(photoURLInput?.trim() || profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
                             <img 
-                              src={photoURLInput || profile?.photo_url || user.photoURL || undefined} 
+                              src={getSafeImageUrl(photoURLInput || profile?.photo_url || user.photoURL)} 
                               alt="" 
                               className="w-full h-full object-cover" 
                               referrerPolicy="no-referrer" 
+                              onError={handleImageError}
                             />
                           ) : (
                             <UserIcon className="w-6 h-6 text-app-muted" />
@@ -2340,12 +2443,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   const file = e.target.files?.[0];
                                   if (!file) return;
                                   toast.promise(
-                                    compressImage(file, 1024, 576, 0.60).then((dataUrl) => {
-                                      setCustomTheme({ ...customTheme, wallpaper: dataUrl });
-                                      return "Achtergrond succesvol geladen!";
-                                    }),
+                                    (async () => {
+                                      const blob = await compressImageToBlob(file, 1280, 720, 0.75, 'image/webp');
+                                      const uploadRes = await uploadImageToImgBB(blob, `wallpaper_${user.uid}`);
+                                      if (uploadRes?.url) {
+                                        setCustomTheme({ ...customTheme, wallpaper: uploadRes.url });
+                                        return "Achtergrond direct gemigreerd naar CDN!";
+                                      }
+                                      const fallback = await compressImage(file, 1024, 576, 0.60);
+                                      setCustomTheme({ ...customTheme, wallpaper: fallback });
+                                      return "Achtergrond geoptimaliseerd en geladen!";
+                                    })(),
                                     {
-                                      loading: "Achtergrond optimaliseren...",
+                                      loading: "Achtergrond uploaden & migreren naar ImgBB CDN...",
                                       success: (msg) => msg,
                                       error: "Kon achtergrond niet verwerken."
                                     }
@@ -3136,24 +3246,90 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Clear Button */}
-                  <div className="flex justify-end pt-1">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (window.confirm(t("Weet je zeker dat je je lokale berichtgeschiedenis wilt wissen? Je serverberichten blijven intact."))) {
-                          await clearLocalArchive('all');
-                          await refreshArchiveStats();
-                          toast.success(t("Lokaal archief gewist"), {
-                            description: t("Je lokale berichtenarchief op dit apparaat is leeggemaakt.")
-                          });
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-red-500/20 shadow-sm"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>{t("Lokaal Berichtenarchief Wissen")}</span>
-                    </button>
+                  {/* Clear Actions */}
+                  <div className="pt-2 border-t border-app-border/40">
+                    {confirmingClearArchive === 'none' ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11px] text-app-muted">
+                          {t("Lokale opslag vrijmaken zonder servergegevens te beïnvloeden:")}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingClearArchive('posts')}
+                            disabled={clearingArchive || archiveStats.postsCount === 0}
+                            className="px-3 py-1.5 bg-app-card hover:bg-app-accent text-app-muted hover:text-app-ink disabled:opacity-40 rounded-xl text-xs font-semibold transition-all border border-app-border"
+                          >
+                            {t("Chat wissen")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingClearArchive('dms')}
+                            disabled={clearingArchive || archiveStats.dmsCount === 0}
+                            className="px-3 py-1.5 bg-app-card hover:bg-app-accent text-app-muted hover:text-app-ink disabled:opacity-40 rounded-xl text-xs font-semibold transition-all border border-app-border"
+                          >
+                            {t("DM's wissen")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingClearArchive('all')}
+                            disabled={clearingArchive}
+                            className="px-3.5 py-1.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-red-500/20 shadow-sm"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{t("Alles wissen")}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-xs text-red-500 font-medium">
+                          {confirmingClearArchive === 'posts' && t("Weet je zeker dat je het lokale chatberichten-archief wilt wissen?")}
+                          {confirmingClearArchive === 'dms' && t("Weet je zeker dat je het lokale DM-archief wilt wissen?")}
+                          {confirmingClearArchive === 'all' && t("Weet je zeker dat je het volledige lokale berichtenarchief wilt wissen?")}
+                          <span className="block text-[10px] text-app-muted mt-0.5">{t("Serverberichten blijven veilig bewaard.")}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingClearArchive('none')}
+                            disabled={clearingArchive}
+                            className="px-3 py-1 bg-app-card hover:bg-app-accent text-app-ink rounded-lg text-xs font-semibold transition-all border border-app-border"
+                          >
+                            {t("Annuleren")}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={clearingArchive}
+                            onClick={async () => {
+                              const target = confirmingClearArchive;
+                              setClearingArchive(true);
+                              try {
+                                const success = await clearLocalArchive(target);
+                                if (success) {
+                                  await refreshArchiveStats();
+                                  setConfirmingClearArchive('none');
+                                  toast.success(t("Lokaal archief gewist"), {
+                                    description: t("Het geselecteerde lokale berichtenarchief is succesvol leeggemaakt.")
+                                  });
+                                } else {
+                                  toast.error(t("Kon lokaal archief niet wissen"));
+                                }
+                              } catch (err) {
+                                console.error('Failed to clear archive:', err);
+                                toast.error(t("Fout bij opschonen"));
+                              } finally {
+                                setClearingArchive(false);
+                              }
+                            }}
+                            className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                          >
+                            {clearingArchive && <RefreshCw className="w-3 h-3 animate-spin" />}
+                            <span>{clearingArchive ? t("Wissen...") : t("Ja, nu wissen")}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3889,9 +4065,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div className="flex items-center gap-3 min-w-0">
                                   <img 
-                                    src={u.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=random`} 
+                                    src={getSafeImageUrl(u.photo_url) || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=random`} 
                                     className="w-10 h-10 rounded-xl object-cover flex-shrink-0 border border-app-border"
                                     alt=""
+                                    referrerPolicy="no-referrer"
+                                    onError={handleImageError}
                                   />
                                   <div className="min-w-0">
                                     <div className="text-xs font-bold text-app-ink uppercase tracking-tight truncate flex flex-wrap items-center gap-1.5">
@@ -4336,7 +4514,13 @@ CREATE TRIGGER tr_secure_profile_updates
                                   <span className="font-extrabold text-app-muted uppercase tracking-wider text-[8px]">Melder:</span>
                                   <div className="flex items-center gap-2">
                                     {reporter?.photo_url && (
-                                      <img src={reporter.photo_url} alt="" className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                      <img 
+                                        src={getSafeImageUrl(reporter.photo_url)} 
+                                        alt="" 
+                                        className="w-5 h-5 rounded-full object-cover" 
+                                        referrerPolicy="no-referrer" 
+                                        onError={handleImageError}
+                                      />
                                     )}
                                     <div>
                                       <p className="font-black text-app-ink">{reporter?.display_name || 'Onbekend'}</p>
@@ -4351,7 +4535,13 @@ CREATE TRIGGER tr_secure_profile_updates
                                   <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-2">
                                       {reportedUser?.photo_url && (
-                                        <img src={reportedUser.photo_url} alt="" className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                        <img 
+                                          src={getSafeImageUrl(reportedUser.photo_url)} 
+                                          alt="" 
+                                          className="w-5 h-5 rounded-full object-cover" 
+                                          referrerPolicy="no-referrer" 
+                                          onError={handleImageError}
+                                        />
                                       )}
                                       <div>
                                         <p className="font-black text-app-ink">{reportedUser?.display_name || 'Onbekend'}</p>

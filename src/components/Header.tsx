@@ -2,7 +2,7 @@ import React from 'react';
 import { User as UserIcon, ShieldCheck, LogOut } from 'lucide-react';
 import { UserProfile, CustomTheme, User } from '../types';
 import { t } from '../utils/translations';
-import { hexToRgba } from '../utils/helpers';
+import { hexToRgba, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { Logo } from './Logo';
 
 interface HeaderProps {
@@ -51,7 +51,13 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             <div className="relative">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-app-bg flex items-center justify-center overflow-hidden border border-app-border shadow-sm">
                 {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
-                  <img src={profile?.photo_url || user.photoURL || undefined} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img 
+                    src={getSafeImageUrl(profile?.photo_url || user.photoURL)} 
+                    alt="" 
+                    className="w-full h-full object-cover" 
+                    referrerPolicy="no-referrer" 
+                    onError={handleImageError}
+                  />
                 ) : (
                   <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-app-muted" />
                 )}

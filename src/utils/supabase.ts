@@ -3,13 +3,16 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { secureSupabaseStorage } from './encryption';
 import { rateLimiter } from './rateLimiter';
 
-// Backup Supabase database & auth configuration
-const BACKUP_SUPABASE_URL = 'https://ccdoffhlhnbqcdptyxbu.supabase.co';
-const BACKUP_SUPABASE_KEY = 'sb_publishable_qraWFsV3GgtQhS8YKuId5w__BclUMpt';
+// Main Supabase database & auth configuration
+const MAIN_SUPABASE_URL = 'https://lahoorkdcopypnubnosl.supabase.co';
+const MAIN_SUPABASE_KEY = 'sb_publishable_53DnrJekb2FrlxjduTP1BQ_KX43MYLy';
 
-// Use the backup Supabase instance by default (or explicit backup env variables if supplied)
-const activeUrl = import.meta.env.VITE_SUPABASE_URL_BACKUP || BACKUP_SUPABASE_URL;
-const activeKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY_BACKUP || BACKUP_SUPABASE_KEY;
+// Use the main Supabase instance by default (or environment variables if supplied)
+const activeUrl = import.meta.env.VITE_SUPABASE_URL || MAIN_SUPABASE_URL;
+const activeKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || 
+                  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 
+                  import.meta.env.VITE_SUPABASE_ANON_KEY || 
+                  MAIN_SUPABASE_KEY;
 
 if (!activeUrl || !activeKey) {
   console.warn('Supabase URL or Publishable Key is missing. Please check your environment variables.');

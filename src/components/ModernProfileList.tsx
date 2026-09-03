@@ -3,7 +3,7 @@ import { Users, Search, Mail, ShieldCheck, User as UserIcon, PanelLeft, PanelRig
 import { UserProfile, CustomTheme, ModernUICustomization } from '../types';
 import { isTestUser } from '../constants';
 import { getAccentHex, getGlassEffectClasses, getRadiusValue } from '../utils/modernUICustom';
-import { hexToRgba } from '../utils/helpers';
+import { hexToRgba, getSafeImageUrl, handleImageError } from '../utils/helpers';
 
 interface ModernProfileListProps {
   users: UserProfile[];
@@ -222,10 +222,11 @@ const UserRow: React.FC<UserRowProps> = ({ user, isOnline, onOpenProfile, onStar
           <div className="w-full h-full rounded-xl overflow-hidden bg-app-accent border border-white/10">
             {user.photo_url?.trim() ? (
               <img
-                src={user.photo_url}
+                src={getSafeImageUrl(user.photo_url)}
                 alt=""
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
+                onError={handleImageError}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">

@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Plus, User as UserIcon, Users, ChevronLeft, Send, MessageSquare, ShieldCheck, Smile, Link, Phone, PhoneOff, Volume2, Edit3, Trash2, X, Check, Search, Paperclip, Video, EyeOff } from 'lucide-react';
 import { Conversation, DirectMessage, CustomTheme, UserProfile } from '../../types';
-import { formatDate, formatTime, uploadImageToImgBB, compressImageToBlob, compressImage, hexToRgba } from '../../utils/helpers';
+import { formatDate, formatTime, getSafeImageUrl, handleImageError, uploadImageToImgBB, compressImageToBlob, compressImage, hexToRgba } from '../../utils/helpers';
 import { RichContent } from '../RichContent';
 import { VideoTrimmerModal } from '../VideoTrimmerModal';
 import { ThemedSpinner } from '../ThemedLoadingScreen';
@@ -341,7 +341,7 @@ export const ModernMessagesView: React.FC<ModernMessagesViewProps> = React.memo(
                               return (
                                 <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
                                   {photo ? (
-                                    <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <img src={getSafeImageUrl(photo)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                                   ) : (
                                     <UserIcon className="w-2 h-2 text-app-muted" />
                                   )}
@@ -472,7 +472,7 @@ export const ModernMessagesView: React.FC<ModernMessagesViewProps> = React.memo(
                           return (
                             <div key={uid} className="w-full h-full bg-app-bg/50 overflow-hidden rounded-md flex items-center justify-center">
                               {photo ? (
-                                <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={getSafeImageUrl(photo)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                               ) : (
                                 <UserIcon className="w-2 h-2 text-app-muted" />
                               )}
@@ -485,7 +485,7 @@ export const ModernMessagesView: React.FC<ModernMessagesViewProps> = React.memo(
                       const otherUid = otherParticipants[0];
                       const photo = otherUid ? getParticipantPhoto(otherUid, activeConversation.participant_photos) : null;
                       return photo ? (
-                        <img src={photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={getSafeImageUrl(photo)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                       ) : (
                         <UserIcon className="w-6 h-6 text-app-muted m-auto h-full" />
                       );

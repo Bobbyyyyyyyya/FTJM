@@ -27,18 +27,50 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
+
+    const rawMessage = (error?.message || '').toLowerCase();
+    const isChunkError = 
+      rawMessage.includes('failed to fetch dynamically imported module') ||
+      rawMessage.includes('dynamically imported module') ||
+      rawMessage.includes('importing a module script failed') ||
+      rawMessage.includes('loading chunk') ||
+      rawMessage.includes('error loading dynamically imported module');
+
+    if (isChunkError && typeof window !== 'undefined') {
+      const lastReload = sessionStorage.getItem('ftjm_eb_chunk_reload');
+      const now = Date.now();
+      if (!lastReload || now - Number(lastReload) > 10000) {
+        sessionStorage.setItem('ftjm_eb_chunk_reload', String(now));
+        console.log('[ErrorBoundary] Chunk mismatch detected after update. Reloading page...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 300);
+      }
+    }
   }
 
   public render() {
     if (this.state.hasError) {
-      let errorMessage = 'Er is een onverwachte fout opgetreden.';
-      try {
-        const parsedError = JSON.parse(this.state.error?.message || '');
-        if (parsedError.error) {
-          errorMessage = `Systeemfout: ${parsedError.error} (${parsedError.operationType})`;
+      const rawMessage = (this.state.error?.message || '').toLowerCase();
+      const isChunkError = 
+        rawMessage.includes('failed to fetch dynamically imported module') ||
+        rawMessage.includes('dynamically imported module') ||
+        rawMessage.includes('importing a module script failed') ||
+        rawMessage.includes('loading chunk') ||
+        rawMessage.includes('error loading dynamically imported module');
+
+      let errorMessage = isChunkError 
+        ? 'Er is een nieuwe versie van FTJM beschikbaar! De pagina wordt automatisch vernieuwd om de nieuwste functies te laden...'
+        : 'Er is een onverwachte fout opgetreden.';
+      if (!isChunkError) {
+        try {
+          const parsedError = JSON.parse(this.state.error?.message || '');
+          if (parsedError.error) {
+            errorMessage = `Systeemfout: ${parsedError.error} (${parsedError.operationType})`;
+          }
+        } catch {
+          errorMessage = this.state.error?.message || errorMessage;
         }
-      } catch {
-        errorMessage = this.state.error?.message || errorMessage;
       }
 
       return (

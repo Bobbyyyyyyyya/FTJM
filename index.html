@@ -19,10 +19,8 @@
     <script>
       // Clean up any stale or corrupted Service Worker cache before module scripts load in dev/preview
       if ('serviceWorker' in navigator) {
-        var isDevOrPreview = location.hostname.endsWith('.run.app') || 
-                              location.hostname === 'localhost' || 
-                              location.hostname === '127.0.0.1' ||
-                              window.self !== window.top;
+        var isDevOrPreview = location.hostname === 'localhost' || 
+                              location.hostname === '127.0.0.1';
         if (isDevOrPreview) {
           navigator.serviceWorker.getRegistrations().then(function(registrations) {
             for (var i = 0; i < registrations.length; i++) {
@@ -38,6 +36,30 @@
           }
         }
       }
+
+      // Early recovery from stale dynamic chunk imports on version upgrades
+      window.addEventListener('vite:preloadError', function(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        var last = sessionStorage.getItem('ftjm_early_preload_reload');
+        var now = Date.now();
+        if (!last || now - Number(last) > 8000) {
+          sessionStorage.setItem('ftjm_early_preload_reload', String(now));
+          window.location.reload();
+        }
+      });
+      window.addEventListener('error', function(e) {
+        var msg = (e && e.message) ? String(e.message) : '';
+        if (msg.indexOf('Failed to fetch dynamically imported module') !== -1 ||
+            msg.indexOf('dynamically imported module') !== -1 ||
+            msg.indexOf('Importing a module script failed') !== -1) {
+          var last = sessionStorage.getItem('ftjm_early_chunk_reload');
+          var now = Date.now();
+          if (!last || now - Number(last) > 8000) {
+            sessionStorage.setItem('ftjm_early_chunk_reload', String(now));
+            window.location.reload();
+          }
+        }
+      });
     </script>
   </head>
   <body>

@@ -141,27 +141,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
             </span>
             Systeem Status: <span className="text-white font-black">{websiteStatus}</span>
           </motion.div>
-
-          {/* Backup Server Active Notice Banner */}
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.15 }}
-            className="mb-8 w-full max-w-xl mx-auto px-5 py-4 bg-amber-500/15 border border-amber-500/35 rounded-2xl backdrop-blur-md text-amber-200 text-xs text-left flex items-start gap-3.5 shadow-xl shadow-amber-950/30"
-          >
-            <div className="w-9 h-9 rounded-xl bg-amber-500/25 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-300 font-black text-lg shadow-inner">
-              ⚠️
-            </div>
-            <div className="flex-1 space-y-1">
-              <div className="font-black text-amber-300 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Nood / Back-up Server Actief</span>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/25 text-[9px] font-black text-amber-200 border border-amber-400/40">Back-up Modus</span>
-              </div>
-              <p className="text-[11.5px] text-amber-100/90 leading-relaxed font-medium">
-                Het netwerk draait momenteel op de <strong>back-upserver</strong>. Let op: accounts uit de primaire database zijn hier <strong>niet op overgezet</strong>. Indien inloggen niet lukt, dien je voor deze back-upserver een nieuw account aan te maken.
-              </p>
-            </div>
-          </motion.div>
           
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
