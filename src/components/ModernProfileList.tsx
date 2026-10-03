@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { Users, Search, Mail, ShieldCheck, User as UserIcon, PanelLeft, PanelRight, LayoutList, ChevronRight, X } from 'lucide-react';
 import { UserProfile, CustomTheme, ModernUICustomization } from '../types';
 import { isTestUser } from '../constants';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
 import { getAccentHex, getGlassEffectClasses, getRadiusValue } from '../utils/modernUICustom';
 import { hexToRgba, getSafeImageUrl, handleImageError } from '../utils/helpers';
+import { LetterAvatar } from './UserAvatar';
 
 interface ModernProfileListProps {
   users: UserProfile[];
@@ -229,9 +232,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, isOnline, onOpenProfile, onStar
                 onError={handleImageError}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <UserIcon className="w-4 h-4 text-app-muted" />
-              </div>
+              <LetterAvatar name={user.display_name} className="w-full h-full" />
             )}
           </div>
           {isOnline && (
@@ -245,6 +246,8 @@ const UserRow: React.FC<UserRowProps> = ({ user, isOnline, onOpenProfile, onStar
             <p className="text-xs font-bold text-app-ink truncate max-w-[100px]">
               {user.display_name || 'Anoniem'}
             </p>
+            <VerifiedBadge user={user} size="xs" />
+            <DeveloperBadge user={user} size="xs" />
             {user.role === 'admin' && (
               <ShieldCheck className="w-3 h-3 text-red-500 shrink-0" />
             )}

@@ -32,11 +32,14 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ForumThread, ForumComment, UserProfile } from '../../types';
-import { formatDate } from '../../utils/helpers';
+import { formatDate, getPublicProductionOrigin } from '../../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../../constants';
+import { VerifiedBadge } from '../VerifiedBadge';
+import { DeveloperBadge } from '../DeveloperBadge';
 import { decryptGeneralChat } from '../../utils/encryption';
 import { RichContent } from '../RichContent';
 import { ThemedSpinner } from '../ThemedLoadingScreen';
+import { LetterAvatar } from '../UserAvatar';
 import { 
   FORUM_CATEGORIES, 
   FORUM_REACTIONS, 
@@ -146,7 +149,11 @@ export const NormalForumView: React.FC<NormalForumViewProps> = React.memo(({
   };
 
   const handleShareThread = (thread: ForumThread) => {
-    const url = window.location.href;
+    let url = window.location.href;
+    const origin = getPublicProductionOrigin();
+    if (window.location.origin && origin) {
+      url = url.replace(window.location.origin, origin);
+    }
     if (navigator.clipboard) {
       navigator.clipboard.writeText(url);
       toast.success('Link naar dit topic gekopieerd naar klembord!');
@@ -375,18 +382,13 @@ export const NormalForumView: React.FC<NormalForumViewProps> = React.memo(({
                         referrerPolicy="no-referrer" 
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-xl bg-app-accent flex items-center justify-center border border-app-border">
-                        <UserIcon className="w-5 h-5 text-app-muted" />
-                      </div>
+                      <LetterAvatar name={authorName} className="w-10 h-10 rounded-xl" />
                     )}
                     <div className="flex flex-col text-left">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-sm font-black text-app-ink">{authorName}</span>
-                        {isVerified && (
-                          <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5" title="Geverifieerd Account">
-                            <Check className="w-2.5 h-2.5 stroke-[4]" />
-                          </span>
-                        )}
+                        <VerifiedBadge user={activeAuthorProfile || activeAuthorProfile?.email} size="sm" />
+                        <DeveloperBadge user={activeAuthorProfile || activeAuthorProfile?.email} size="sm" />
                         {isBeta && (
                           <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-500 p-0.5 rounded" title="Beta Tester">
                             <FlaskConical className="w-3 h-3 stroke-[2.5]" />
@@ -577,19 +579,14 @@ export const NormalForumView: React.FC<NormalForumViewProps> = React.memo(({
                               referrerPolicy="no-referrer" 
                             />
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                              <UserIcon className="w-4 h-4 text-app-muted" />
-                            </div>
+                            <LetterAvatar name={commentAuthorName} className="w-8 h-8 rounded-full" />
                           )}
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-black text-app-ink group-hover:underline">
                               {commentAuthorName}
                             </span>
-                            {isVerified && (
-                              <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5" title="Geverifieerd Account">
-                                <Check className="w-2 h-2 stroke-[4]" />
-                              </span>
-                            )}
+                            <VerifiedBadge user={commentAuthor || commentAuthor?.email} size="xs" />
+                            <DeveloperBadge user={commentAuthor || commentAuthor?.email} size="xs" />
                             {isBeta && (
                               <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-500 p-0.5 rounded" title="Beta Tester">
                                 <FlaskConical className="w-2.5 h-2.5 stroke-[2.5]" />
@@ -944,11 +941,8 @@ export const NormalForumView: React.FC<NormalForumViewProps> = React.memo(({
 
                           <span className="font-bold text-app-ink flex items-center gap-1">
                             {threadAuthorName}
-                            {isVerified && (
-                              <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5" title="Geverifieerd">
-                                <Check className="w-2 h-2 stroke-[4]" />
-                              </span>
-                            )}
+                            <VerifiedBadge user={threadAuthor || threadAuthor?.email} size="xs" />
+                            <DeveloperBadge user={threadAuthor || threadAuthor?.email} size="xs" />
                             {isBeta && (
                               <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-500 p-0.5 rounded" title="Beta Tester">
                                 <FlaskConical className="w-2 h-2" />

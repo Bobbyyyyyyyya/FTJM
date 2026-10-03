@@ -1,8 +1,9 @@
 import React from 'react';
 import { User as UserIcon, ShieldCheck } from 'lucide-react';
 import { UserProfile, CustomTheme, User } from '../types';
-import { formatDate } from '../utils/helpers';
+import { formatDate, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { t } from '../utils/translations';
+import { LetterAvatar } from './UserAvatar';
 
 interface SidebarProps {
   user: User;
@@ -32,15 +33,18 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
         <div className="relative mb-6">
           {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
             <img 
-              src={profile?.photo_url || user.photoURL || undefined} 
+              src={getSafeImageUrl(profile?.photo_url || user.photoURL)} 
               alt={profile?.display_name || user.displayName || ''} 
               className="w-24 h-24 rounded-3xl border-4 border-app-card shadow-md"
               referrerPolicy="no-referrer"
+              onError={handleImageError}
             />
           ) : (
-            <div className="w-24 h-24 rounded-3xl bg-app-accent flex items-center justify-center border border-app-border">
-              <UserIcon className="w-10 h-10 text-app-muted" />
-            </div>
+            <LetterAvatar 
+              name={profile?.display_name || user.displayName || user.email} 
+              className="w-24 h-24 rounded-3xl border-4 border-app-card shadow-md" 
+              textClassName="text-3xl font-black"
+            />
           )}
         </div>
         <h2 className="text-2xl font-bold text-app-ink">{profile?.display_name || user.displayName || t('Anoniem')}</h2>

@@ -63,7 +63,9 @@ import {
   Zap,
   Monitor,
   LayoutGrid,
-  Smartphone
+  Smartphone,
+  Share2,
+  Copy
 } from 'lucide-react';
 
 // Components
@@ -80,9 +82,11 @@ const MessagesView = lazyWithRetry(() => import('./components/MessagesView'), 'M
 const SettingsView = lazyWithRetry(() => import('./components/SettingsView'), 'SettingsView');
 const AudioLogsView = lazyWithRetry(() => import('./components/AudioLogsView'), 'AudioLogsView');
 const GamesView = lazyWithRetry(() => import('./components/GamesView'), 'GamesView');
+const NewsView = lazyWithRetry(() => import('./components/NewsView'), 'NewsView');
 import { MediaFeedCard } from './components/MediaFeedCard';
 import { MediaSwipeFeed } from './components/MediaSwipeFeed';
 import { PublicSharedMediaModal } from './components/PublicSharedMediaModal';
+import { PublicSharedProfileModal } from './components/PublicSharedProfileModal';
 import { DesktopAppPromptModal, getDesktopOperatingSystem } from './components/DesktopAppPromptModal';
 import { useVoiceCall } from './hooks/useVoiceCall';
 import { VoiceCallUI } from './components/VoiceCallUI';
@@ -91,9 +95,13 @@ import { GroupVoiceCallUI } from './components/GroupVoiceCallUI';
 import { t, Language, getLanguage, setLanguage } from './utils/translations';
 
 // Constants & Helpers
-import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVerifiedEmail, isBetaTester, isTestUser, isValidEmail, isProtectedNameOrImpersonation } from './constants';
-import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba, getSafeImageUrl, handleImageError } from './utils/helpers';
+import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVerifiedEmail, isBetaTester, isDeveloper, isTestUser, isValidEmail, isProtectedNameOrImpersonation, APP_VERSION } from './constants';
+import { VerifiedBadge } from './components/VerifiedBadge';
+import { DeveloperBadge } from './components/DeveloperBadge';
+import { LetterAvatar } from './components/UserAvatar';
+import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba, getSafeImageUrl, handleImageError, getProfileShareUrl } from './utils/helpers';
 import { AntiNamePiracyModal } from './components/AntiNamePiracyModal';
+import { UpdateModal } from './components/UpdateModal';
 
 import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
 import { saveDMsBatchLocally, getLocalDMsForConversation, savePostsBatchLocally, getLocalPosts, deletePostLocally, deleteDMLocally } from './utils/localMessageArchive';
@@ -476,7 +484,7 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v2.5.5') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.7.0') !== 'true';
   });
   const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
@@ -1152,6 +1160,27 @@ export default function App() {
     return null;
   });
 
+  const [sharedProfileId, setSharedProfileId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const profileParam = params.get('profile') || params.get('user') || params.get('u') || params.get('profile_id');
+      if (profileParam) return profileParam;
+      const hash = window.location.hash;
+      if (hash.includes('profile=')) {
+        const match = hash.match(/profile=([^&]+)/);
+        if (match) return decodeURIComponent(match[1]);
+      }
+      if (hash.includes('user=')) {
+        const match = hash.match(/user=([^&]+)/);
+        if (match) return decodeURIComponent(match[1]);
+      }
+    } catch (e) {
+      console.error('Error parsing shared profile URL param:', e);
+    }
+    return null;
+  });
+
   // If user is authenticated and whitelist approved, navigate to the media feed to view the shared post with full swipe/like/comment features
   useEffect(() => {
     if (sharedMediaId && user && isWhitelisted) {
@@ -1159,6 +1188,27 @@ export default function App() {
       setFeedViewMode('swipe');
     }
   }, [sharedMediaId, user, isWhitelisted]);
+
+  // If user is authenticated, open shared profile in the profile modal
+  useEffect(() => {
+    if (sharedProfileId && user && isWhitelisted) {
+      const existing = users.find(u => u.id === sharedProfileId);
+      if (existing) {
+        setSelectedUser(existing);
+      } else {
+        supabaseClient
+          .from('profiles')
+          .select('*')
+          .eq('id', sharedProfileId)
+          .maybeSingle()
+          .then(({ data, error }) => {
+            if (data && !error) {
+              setSelectedUser(data as UserProfile);
+            }
+          });
+      }
+    }
+  }, [sharedProfileId, user, isWhitelisted, users]);
 
   const fetchFeedMedia = async () => {
     setFeedLoading(true);
@@ -2261,11 +2311,12 @@ export default function App() {
     // Always apply fonts to DOM and body reliably
     applyThemeFont(customTheme);
 
-    const isThemeActive = useCustomTheme || Boolean(customTheme?.modern_ui);
+    const isThemeActive = useCustomTheme || Boolean(customTheme?.modern_ui) || Boolean(customTheme?.wallpaper);
 
     if (!isThemeActive) {
       root.removeAttribute('data-custom-theme');
       root.removeAttribute('data-modern-ui');
+      document.body.style.backgroundColor = '';
       // Reset custom theme variables when disabled
       root.style.removeProperty('--custom-primary');
       root.style.removeProperty('--custom-secondary');
@@ -2317,6 +2368,10 @@ export default function App() {
     const cardRgb = hexToRgb(customTheme.card_bg_color, { r: 255, g: 255, b: 255 });
     const accentRgb = hexToRgb(customTheme.accent_color, { r: 6, g: 182, b: 212 });
     const isDark = isDarkColor(customTheme.body_bg_color || customTheme.card_bg_color || '#ffffff');
+    const effectiveTextColor = customTheme.text_color || (isDark ? '#fafafa' : '#18181b');
+    const isTextDark = isDarkColor(effectiveTextColor);
+    const textContrast = isTextDark ? '#ffffff' : '#09090b';
+    root.style.setProperty('--custom-text-contrast', textContrast);
 
     if (isDark) {
       root.classList.add('dark');
@@ -2333,7 +2388,16 @@ export default function App() {
     if (customTheme.card_bg_color) root.style.setProperty('--custom-card-bg', customTheme.card_bg_color);
     if (customTheme.sidebar_bg_color) root.style.setProperty('--custom-sidebar-bg', customTheme.sidebar_bg_color);
     if (customTheme.header_bg_color) root.style.setProperty('--custom-header-bg', customTheme.header_bg_color);
-    if (customTheme.body_bg_color) root.style.setProperty('--custom-body-bg', customTheme.body_bg_color);
+    if (customTheme.wallpaper) {
+      root.style.setProperty('--custom-body-bg', isDark ? '#09090b' : '#ffffff');
+      document.body.style.backgroundColor = 'transparent';
+    } else if (customTheme.body_bg_color) {
+      root.style.setProperty('--custom-body-bg', customTheme.body_bg_color);
+      document.body.style.backgroundColor = '';
+    } else {
+      root.style.setProperty('--custom-body-bg', isDark ? '#09090b' : '#ffffff');
+      document.body.style.backgroundColor = '';
+    }
     
     // Dynamic contrast & border tokens
     root.style.setProperty('--custom-muted', `rgba(${textRgb.r}, ${textRgb.g}, ${textRgb.b}, 0.65)`);
@@ -7214,10 +7278,29 @@ export default function App() {
     }
   };
 
-  const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => {
+  const handleMarkAllNotificationsAsRead = async () => {
+    if (!user) return;
+    try {
+      const { error } = await supabaseClient
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', user.uid);
+      
+      if (!error) {
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+        toast.success('Alle meldingen gemarkeerd als gelezen.');
+      }
+    } catch (err: any) {
+      console.error('Fout bij markeren meldingen als gelezen:', err);
+    }
+  };
+
+  const handleSaveHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout' | 'catclicker' | 'parkour3d', score: number) => {
     if (!user || isWhitelisted !== true) return;
     
-    const currentTheme = profile?.custom_theme || {};
+    // Zorg ervoor dat we de huidige (actieve) customTheme als basis nemen
+    // in plaats van alleen de (mogelijk verouderde) profile.custom_theme
+    const currentTheme = customTheme || profile?.custom_theme || {};
     const gameHighScores = currentTheme.game_high_scores || {};
     
     const oldScore = gameHighScores[gameId] || 0;
@@ -7257,7 +7340,7 @@ export default function App() {
     }
   };
 
-  const handleShareHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number, targetType: 'general' | 'dm', conversationId?: string) => {
+  const handleShareHighScore = async (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout' | 'catclicker' | 'parkour3d', score: number, targetType: 'general' | 'dm', conversationId?: string) => {
     if (!user || isWhitelisted !== true) return;
     
     const gameIdLabel = gameId;
@@ -7906,27 +7989,34 @@ export default function App() {
       )}
 
       {/* Global Custom Wallpaper Layer */}
-      {useCustomTheme && customTheme.wallpaper && (
+      {Boolean(customTheme?.wallpaper) && (
         <div 
-          className="fixed inset-0 -z-50 bg-cover bg-no-repeat transition-all duration-700 custom-wallpaper pointer-events-none"
+          className="fixed inset-0 z-0 bg-cover bg-no-repeat transition-all duration-700 custom-wallpaper pointer-events-none"
           style={{ 
             backgroundImage: `url(${customTheme.wallpaper})`,
             filter: `blur(${customTheme.blur_amount || 0}px)`,
-            opacity: (customTheme.opacity || 100) / 100,
-            backgroundPosition: `${customTheme.wallpaper_x || 50}% ${customTheme.wallpaper_y || 50}%`
+            opacity: ((customTheme.opacity ?? 100) / 100),
+            backgroundPosition: `${customTheme.wallpaper_x ?? 50}% ${customTheme.wallpaper_y ?? 50}%`,
+            backgroundAttachment: 'fixed'
           }}
         />
       )}
 
       <div 
-        className="min-h-screen transition-all duration-500 relative" 
-        style={useCustomTheme ? { 
-          backgroundColor: customTheme.wallpaper ? 'transparent' : customTheme.body_bg_color,
+        className="min-h-screen transition-all duration-500 relative z-10" 
+        style={customTheme?.wallpaper ? { 
+          backgroundColor: 'transparent',
+          backgroundImage: useCustomTheme ? 'var(--custom-pattern)' : undefined,
+          backgroundSize: 'var(--custom-pattern-size)',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed'
+        } : (useCustomTheme ? { 
+          backgroundColor: customTheme.body_bg_color || undefined,
           backgroundImage: 'var(--custom-pattern)',
           backgroundSize: 'var(--custom-pattern-size)',
           backgroundPosition: 'center',
           backgroundAttachment: 'fixed'
-        } : {}}
+        } : {})}
       >
       {user && !isModernUI && (
         <nav 
@@ -8276,9 +8366,7 @@ export default function App() {
                       onError={handleImageError}
                     />
                   ) : (
-                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                      <UserIcon className="w-3 h-3 sm:w-4 sm:h-4 text-app-muted" />
-                    </div>
+                    <LetterAvatar name={profile?.display_name || user.displayName || user.email} className="w-7 h-7 sm:w-8 sm:h-8 rounded-full" textClassName="text-xs" />
                   )}
                 </div>
                 <button 
@@ -8401,6 +8489,12 @@ export default function App() {
               setMobileChatView('chat');
             }}
             onLogout={handleLogout}
+            notifications={notifications}
+            onNotificationClick={handleNotificationClick}
+            onClearAllNotifications={handleClearAllNotifications}
+            onDeleteNotification={handleDeleteNotification}
+            onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead}
+            nicknames={nicknames}
           />
           {view === 'messages' && !activeConversation && (
             <ModernTopDMBar
@@ -8487,28 +8581,41 @@ export default function App() {
       <main className={
         !user ? "" : 
         isModernUI ? (
-          `${
-            view === 'messages' ? 'pt-16' : 'pt-6 sm:pt-8'
-          } w-full max-w-7xl mx-auto px-4 ${
-            (modernCustom?.sidebar_position || 'left') === 'right'
-              ? 'sm:pl-6 sm:pr-28'
-              : (modernCustom?.sidebar_position || 'left') === 'compact'
-              ? 'sm:pl-22 sm:pr-6'
-              : (modernCustom?.sidebar_position || 'left') === 'bottom_dock'
-              ? 'sm:px-8'
-              : 'sm:pl-28 sm:pr-8'
-          } ${
-            view !== 'messages' && customTheme.profile_list_position === 'left'
-              ? ((modernCustom?.sidebar_position || 'left') === 'bottom_dock' || (modernCustom?.sidebar_position || 'left') === 'right' ? 'lg:pl-[280px]' : 'lg:pl-[340px]')
-              : ''
-          } ${
-            view !== 'messages' && (customTheme.profile_list_position || 'right') === 'right'
-              ? ((modernCustom?.sidebar_position || 'left') === 'right' ? 'lg:pr-[340px]' : 'lg:pr-[280px]')
-              : ''
-          } ${
-            (modernCustom?.sidebar_position || 'left') === 'bottom_dock' ? 'pb-32 sm:pb-28' : 'pb-28 sm:pb-12'
-          } transition-all duration-500`
+          view === 'arcade' ? (
+            `w-full pt-1 sm:pt-2 pb-1 sm:pb-2 px-1 sm:px-2 ${
+              (modernCustom?.sidebar_position || 'left') === 'right'
+                ? 'sm:pl-2 sm:pr-24'
+                : (modernCustom?.sidebar_position || 'left') === 'compact'
+                ? 'sm:pl-20 sm:pr-2'
+                : (modernCustom?.sidebar_position || 'left') === 'bottom_dock'
+                ? 'sm:px-2 pb-24 sm:pb-20'
+                : 'sm:pl-24 sm:pr-2'
+            } transition-all duration-300`
+          ) : (
+            `${
+              view === 'messages' ? 'pt-16' : 'pt-6 sm:pt-8'
+            } w-full max-w-7xl mx-auto px-4 ${
+              (modernCustom?.sidebar_position || 'left') === 'right'
+                ? 'sm:pl-6 sm:pr-28'
+                : (modernCustom?.sidebar_position || 'left') === 'compact'
+                ? 'sm:pl-22 sm:pr-6'
+                : (modernCustom?.sidebar_position || 'left') === 'bottom_dock'
+                ? 'sm:px-8'
+                : 'sm:pl-28 sm:pr-8'
+            } ${
+              view !== 'messages' && customTheme.profile_list_position === 'left'
+                ? ((modernCustom?.sidebar_position || 'left') === 'bottom_dock' || (modernCustom?.sidebar_position || 'left') === 'right' ? 'lg:pl-[280px]' : 'lg:pl-[340px]')
+                : ''
+            } ${
+              view !== 'messages' && (customTheme.profile_list_position || 'right') === 'right'
+                ? ((modernCustom?.sidebar_position || 'left') === 'right' ? 'lg:pr-[340px]' : 'lg:pr-[280px]')
+                : ''
+            } ${
+              (modernCustom?.sidebar_position || 'left') === 'bottom_dock' ? 'pb-32 sm:pb-28' : 'pb-28 sm:pb-12'
+            } transition-all duration-500`
+          )
         ) :
+        view === 'arcade' ? "w-full px-1 sm:px-2 py-1 sm:py-2" :
         (view === 'media_feed' && feedViewMode === 'swipe') ? "max-w-5xl mx-auto w-full px-2 sm:px-6 py-2 sm:py-6 pb-20 sm:pb-8" : 
         "max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12 pb-24 sm:pb-12"
       }>
@@ -8525,6 +8632,23 @@ export default function App() {
                       const url = new URL(window.location.href);
                       url.searchParams.delete('media');
                       url.searchParams.delete('media_id');
+                      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+                    } catch {}
+                  }}
+                  onLogin={handleLogin}
+                />
+              )}
+              {sharedProfileId && (
+                <PublicSharedProfileModal
+                  userId={sharedProfileId}
+                  onClose={() => {
+                    setSharedProfileId(null);
+                    try {
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete('profile');
+                      url.searchParams.delete('user');
+                      url.searchParams.delete('u');
+                      url.searchParams.delete('profile_id');
                       window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
                     } catch {}
                   }}
@@ -8650,9 +8774,11 @@ export default function App() {
                               onError={handleImageError}
                             />
                           ) : (
-                            <div className="w-24 h-24 rounded-3xl bg-app-accent flex items-center justify-center border border-app-border">
-                              <UserIcon className="w-10 h-10 text-app-muted" />
-                            </div>
+                            <LetterAvatar 
+                              name={profile?.display_name || user.displayName || user.email} 
+                              className="w-24 h-24 rounded-3xl border-4 border-app-card shadow-md" 
+                              textClassName="text-3xl font-black"
+                            />
                           )}
                         </div>
                         <h2 className="text-2xl font-bold text-app-ink">{profile?.display_name || user.displayName || 'Anoniem'}</h2>
@@ -8864,9 +8990,7 @@ export default function App() {
                               {profile?.photo_url ? (
                                 <img src={getSafeImageUrl(profile.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <UserIcon className="w-5 h-5 text-app-muted" />
-                                </div>
+                                <LetterAvatar name={profile?.display_name || user?.displayName || user?.email} className="w-full h-full" />
                               )}
                             </div>
                             
@@ -9083,7 +9207,7 @@ export default function App() {
                 </div>
               )}
               {view === 'arcade' && (
-                <div className="max-w-6xl mx-auto h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
+                <div className="w-full h-[calc(100vh-1.5rem)] flex flex-col overflow-hidden">
                   <GamesView 
                     userProfile={profile}
                     conversations={filteredConversations}
@@ -9093,40 +9217,14 @@ export default function App() {
                 </div>
               )}
               {view === 'news' && (
-                <div className="max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
-                  <div className="mb-8">
-                    <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink">{t("Laatste Nieuws")}</h2>
-                    <p className="text-app-muted font-medium text-sm">{t("Blijf op de hoogte van de laatste ontwikkelingen")}</p>
-                  </div>
-                  
-                  <div className="space-y-6">
-                    {NEWS_ITEMS.map((item) => (
-                      <motion.div 
-                        key={item.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        onClick={() => setExpandedNewsId(expandedNewsId === item.id ? null : item.id)}
-                        className={`bg-app-card rounded-3xl border border-app-border p-6 shadow-sm hover:shadow-md transition-all cursor-pointer ${expandedNewsId === item.id ? 'ring-2 ring-app-ink' : ''}`}
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <span className="px-3 py-1 bg-app-accent text-app-ink text-[10px] font-bold uppercase tracking-widest rounded-full">
-                            {item.category}
-                          </span>
-                          <span className="text-[10px] font-bold text-app-muted uppercase tracking-widest">
-                            {item.date}
-                          </span>
-                        </div>
-                        <h3 className="text-xl font-bold text-app-ink mb-2">{item.title}</h3>
-                        <p className={`text-app-muted leading-relaxed ${expandedNewsId === item.id ? '' : 'line-clamp-2'}`}>{item.content}</p>
-                        {expandedNewsId !== item.id && (
-                          <p className="mt-4 text-[10px] font-bold text-app-ink uppercase tracking-widest flex items-center gap-1">
-                            Klik om meer te lezen <ArrowRight className="w-3 h-3" />
-                          </p>
-                        )}
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
+                <NewsView
+                  onNavigateToView={(targetView) => setView(targetView)}
+                  hasSeenNews={hasSeenNews}
+                  onMarkAllAsRead={() => {
+                    setHasSeenNews(true);
+                    localStorage.setItem('has_seen_news_v2.5', 'true');
+                  }}
+                />
               )}
               </React.Suspense>
             </motion.div>
@@ -9175,13 +9273,45 @@ export default function App() {
                       <Logo className="w-64 h-64 object-contain opacity-20 -rotate-12 -translate-x-12 -translate-y-12" fallbackTextSize="text-4xl font-black tracking-tighter" />
                     </div>
                   )}
-                  <button 
-                    onClick={() => setSelectedUser(null)}
-                    className="absolute top-6 right-6 p-3 bg-app-bg/20 hover:bg-app-bg/30 rounded-2xl transition-all text-app-bg backdrop-blur-md shadow-lg border border-app-bg/10 active:scale-95 z-10"
-                    title="Sluiten"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                  <div className="absolute top-6 right-6 flex items-center gap-2 z-10">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const shareUrl = getProfileShareUrl(selectedUser.id);
+                        if (navigator.share) {
+                          navigator.share({
+                            title: `${selectedUser.display_name} op het Forum`,
+                            text: `Bekijk het profiel van ${selectedUser.display_name}!`,
+                            url: shareUrl,
+                          }).catch(() => {});
+                        } else {
+                          navigator.clipboard.writeText(shareUrl).then(() => {
+                            toast.success(t("Profiellink gekopieerd naar klembord!"));
+                          }).catch(() => {
+                            const textArea = document.createElement('textarea');
+                            textArea.value = shareUrl;
+                            document.body.appendChild(textArea);
+                            textArea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textArea);
+                            toast.success(t("Profiellink gekopieerd naar klembord!"));
+                          });
+                        }
+                      }}
+                      className="p-3 bg-app-bg/20 hover:bg-app-bg/30 rounded-2xl transition-all text-app-bg backdrop-blur-md shadow-lg border border-app-bg/10 active:scale-95 flex items-center justify-center cursor-pointer"
+                      title="Deel profiel"
+                    >
+                      <Share2 className="w-5 h-5" />
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedUser(null)}
+                      className="p-3 bg-app-bg/20 hover:bg-app-bg/30 rounded-2xl transition-all text-app-bg backdrop-blur-md shadow-lg border border-app-bg/10 active:scale-95 cursor-pointer"
+                      title="Sluiten"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="px-8 pb-8">
@@ -9191,7 +9321,7 @@ export default function App() {
                         {selectedUser.photo_url ? (
                           <img src={getSafeImageUrl(selectedUser.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                         ) : (
-                          <UserIcon className="w-12 h-12 text-app-muted" />
+                          <LetterAvatar name={selectedUser.display_name} className="w-full h-full" textClassName="text-4xl font-black" />
                         )}
                       </div>
                     </div>
@@ -9208,11 +9338,8 @@ export default function App() {
                         <div className="flex-1">
                           <h3 className="text-2xl font-bold text-app-ink tracking-tight flex items-center gap-1.5 flex-wrap">
                             <span>{selectedUser.display_name}</span>
-                            {isVerifiedEmail(selectedUser) && (
-                              <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 select-none shadow-[0_0_8px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">
-                                <Check className="w-3.5 h-3.5 stroke-[4]" />
-                              </span>
-                            )}
+                            <VerifiedBadge user={selectedUser} size="md" />
+                            <DeveloperBadge user={selectedUser} size="md" showLabel={true} />
                             {isBetaTester(selectedUser) && (
                               <span className="inline-flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
                                 <FlaskConical className="w-3 h-3 stroke-[2.5]" />
@@ -9281,7 +9408,7 @@ export default function App() {
                           </button>
                         </div>
 
-                        {user && user.uid !== selectedUser.id && (
+                        {user && user.uid !== selectedUser.id ? (
                           <button
                             type="button"
                             onClick={() => handleToggleFollow(selectedUser.id)}
@@ -9305,6 +9432,36 @@ export default function App() {
                                 <span>Volg deze persoon</span>
                               </>
                             )}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const shareUrl = getProfileShareUrl(selectedUser.id);
+                              if (navigator.share) {
+                                navigator.share({
+                                  title: `${selectedUser.display_name} op het Forum`,
+                                  text: `Bekijk mijn profiel op het Forum!`,
+                                  url: shareUrl,
+                                }).catch(() => {});
+                              } else {
+                                navigator.clipboard.writeText(shareUrl).then(() => {
+                                  toast.success(t("Profiellink gekopieerd naar klembord!"));
+                                }).catch(() => {
+                                  const textArea = document.createElement('textarea');
+                                  textArea.value = shareUrl;
+                                  document.body.appendChild(textArea);
+                                  textArea.select();
+                                  document.execCommand('copy');
+                                  document.body.removeChild(textArea);
+                                  toast.success(t("Profiellink gekopieerd naar klembord!"));
+                                });
+                              }
+                            }}
+                            className="w-full py-3 sm:py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 border select-none bg-cyan-500/15 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/25"
+                          >
+                            <Share2 className="w-4 h-4" />
+                            <span>Mijn Profiellink Delen</span>
                           </button>
                         )}
                       </div>
@@ -9700,9 +9857,7 @@ export default function App() {
                                   {follower.photo_url ? (
                                     <img src={getSafeImageUrl(follower.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                                   ) : (
-                                    <div className="w-full h-full flex items-center justify-center">
-                                      <UserIcon className="w-5 h-5 text-app-muted" />
-                                    </div>
+                                    <LetterAvatar name={follower.display_name} className="w-full h-full" />
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0 text-left">
@@ -9710,11 +9865,8 @@ export default function App() {
                                     <p className="font-bold text-sm text-app-ink truncate group-hover/item:text-cyan-500 transition-colors">
                                       {follower.display_name}
                                     </p>
-                                    {isFollowerVerified && (
-                                      <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_8px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
-                                        <Check className="w-2 h-2 stroke-[4]" />
-                                      </span>
-                                    )}
+                                    <VerifiedBadge user={follower} size="xs" />
+                                    <DeveloperBadge user={follower} size="xs" />
                                     {isFollowerBeta && (
                                       <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
                                         <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />
@@ -9805,9 +9957,7 @@ export default function App() {
                                   {followed.photo_url ? (
                                     <img src={getSafeImageUrl(followed.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                                   ) : (
-                                    <div className="w-full h-full flex items-center justify-center">
-                                      <UserIcon className="w-5 h-5 text-app-muted" />
-                                    </div>
+                                    <LetterAvatar name={followed.display_name} className="w-full h-full" />
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0 text-left">
@@ -9815,11 +9965,8 @@ export default function App() {
                                     <p className="font-bold text-sm text-app-ink truncate group-hover/item:text-cyan-500 transition-colors">
                                       {followed.display_name}
                                     </p>
-                                    {isFollowedVerified && (
-                                      <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_8px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
-                                        <Check className="w-2 h-2 stroke-[4]" />
-                                      </span>
-                                    )}
+                                    <VerifiedBadge user={followed} size="xs" />
+                                    <DeveloperBadge user={followed} size="xs" />
                                     {isFollowedBeta && (
                                       <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
                                         <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />
@@ -9919,8 +10066,8 @@ export default function App() {
                     </button>
                   </div>
                   <div className="flex items-center gap-4 p-4 bg-app-bg rounded-2xl border border-app-border shadow-sm">
-                    <div className="w-12 h-12 rounded-xl bg-app-accent flex items-center justify-center overflow-hidden border border-app-border">
-                      <UserIcon className="w-6 h-6 text-app-muted" />
+                    <div className="w-12 h-12 rounded-xl overflow-hidden border border-app-border shrink-0">
+                      <LetterAvatar name={reportTarget.displayName} className="w-full h-full" />
                     </div>
                     <div>
                       <p className="font-bold text-app-ink">{reportTarget.displayName}</p>
@@ -10033,104 +10180,15 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <AnimatePresence mode="wait">
-          {showWhatsNew && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
-            >
-              <motion.div 
-                initial={{ scale: 0.95, y: 15 }}
-                animate={{ scale: 1, y: 0 }}
-                className="bg-gradient-to-b from-[#003b68] to-[#00213b] w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-cyan-500/20 overflow-hidden relative"
-              >
-                {/* Visual design embellishments */}
-                <div className="absolute top-0 right-0 w-[220px] h-[220px] bg-cyan-400/10 rounded-full blur-[45px] pointer-events-none" />
-                <div className="absolute -bottom-10 -left-10 w-[200px] h-[200px] bg-blue-500/10 rounded-full blur-[50px] pointer-events-none" />
-
-                <div className="relative p-8 sm:p-10 space-y-6">
-                  {/* Header */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-gradient-to-tr from-cyan-400 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                        <Sparkles className="w-6 h-6 text-white animate-pulse" />
-                      </div>
-                      <div>
-                        <h2 className="text-2xl font-black text-white tracking-tighter uppercase leading-none">
-                          V2.5.5 Update
-                        </h2>
-                        <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1">
-                          MODERN UI 2.5.5 & FEARS TO FATHOM AUDIO
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Body Content */}
-                  <div className="space-y-3 py-1">
-                    <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Layout className="w-5 h-5 text-cyan-400 shrink-0" />
-                        <div>
-                          <h4 className="font-extrabold text-sm text-white">Modern UI v2.5.5</h4>
-                          <p className="text-xs text-blue-100/70 mt-1">
-                            Geoptimaliseerde Glass & Float layout met ultrasnelle navigatiebalk, dynamische profielenlijst (links, rechts of in de sidebar) en vloeiende animaties.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Volume2 className="w-5 h-5 text-purple-400 shrink-0" />
-                        <div>
-                          <h4 className="font-extrabold text-sm text-white">Fears to Fathom als Standaard Geluid</h4>
-                          <p className="text-xs text-blue-100/70 mt-1">
-                            De iconische 'Fears to Fathom' toon is nu het standaard notificatiegeluid voor alle chatberichten en nieuwe forumposts.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Zap className="w-5 h-5 text-amber-400 shrink-0" />
-                        <div>
-                          <h4 className="font-extrabold text-sm text-white">Automatische CDN Media Migratie</h4>
-                          <p className="text-xs text-blue-100/70 mt-1">
-                            Oude Base64-afbeeldingen worden bij het inloggen automatisch omgezet naar snelle CDN-links voor bliksemsnelle laadtijden.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                        <Monitor className="w-5 h-5 text-indigo-400 shrink-0" />
-                        <div>
-                          <h4 className="font-extrabold text-sm text-white">Desktop App & 4MB Uploads</h4>
-                          <p className="text-xs text-blue-100/70 mt-1">
-                            Download de desktop client (v1.3.1) of gebruik de webversie met ondersteuning voor bestanden en media tot 4 MB.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Footer Navigation bar */}
-                  <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                    <div className="w-[10px]" />
-                    <button
-                      onClick={() => {
-                        setShowWhatsNew(false);
-                        localStorage.setItem('has_seen_whats_new_v2.5.5', 'true');
-                      }}
-                      className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer transition-all active:scale-95 shadow-lg shadow-cyan-500/20"
-                    >
-                      Aan de slag!
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <UpdateModal
+          isOpen={showWhatsNew}
+          onClose={() => {
+            setShowWhatsNew(false);
+            localStorage.setItem('has_seen_whats_new_v2.7.0', 'true');
+          }}
+          onOpenNews={() => setView('news')}
+          version={APP_VERSION}
+        />
 
         <MentionOverlay 
           show={mentionResults.length > 0}
@@ -10155,12 +10213,14 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
               className="fixed inset-0 bg-black/75 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 overflow-y-auto"
             >
               <motion.div
-                initial={{ scale: 0.95, y: 25 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.95, y: 25 }}
+                initial={{ scale: 0.94, y: 20, opacity: 0 }}
+                animate={{ scale: 1, y: 0, opacity: 1 }}
+                exit={{ scale: 0.94, y: 20, opacity: 0 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 320 }}
                 className="bg-gradient-to-b from-[#003b68] to-[#00213b] border-2 border-white/10 w-full max-w-md rounded-[2.5rem] p-8 sm:p-10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden"
               >
                 {/* Visual Revamp: Glowing Ambient Circles */}
@@ -10181,20 +10241,31 @@ export default function App() {
                     <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <Logo className="w-full h-full object-contain p-0.5 relative z-10" fallbackTextSize="text-sm font-black tracking-tighter" />
                   </div>
-                  <h3 className="text-3xl font-black text-white tracking-tighter text-center leading-none">
-                    {isRegisterMode 
-                      ? 'Account Registreren' 
-                      : authStep === 'password'
-                        ? 'Wachtwoord Invoeren'
-                        : 'Inloggen'}
-                  </h3>
-                  <p className="text-xs text-cyan-300 font-extrabold mt-1.5 uppercase tracking-widest text-center">
-                    {isRegisterMode 
-                      ? 'Sluit je aan bij FTJM Network' 
-                      : authStep === 'password'
-                        ? 'Beveiligde aanmelding verifiëren'
-                        : 'Toegang tot FTJM Enterprise'}
-                  </p>
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                      key={isRegisterMode ? 'header-register' : authStep === 'password' ? 'header-password' : 'header-email'}
+                      initial={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
+                      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                      exit={{ opacity: 0, y: 8, filter: 'blur(3px)' }}
+                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                      className="flex flex-col items-center text-center w-full"
+                    >
+                      <h3 className="text-3xl font-black text-white tracking-tighter text-center leading-none">
+                        {isRegisterMode 
+                          ? 'Account Registreren' 
+                          : authStep === 'password'
+                            ? 'Wachtwoord Invoeren'
+                            : 'Inloggen'}
+                      </h3>
+                      <p className="text-xs text-cyan-300 font-extrabold mt-1.5 uppercase tracking-widest text-center">
+                        {isRegisterMode 
+                          ? 'Sluit je aan bij FTJM Network' 
+                          : authStep === 'password'
+                            ? 'Beveiligde aanmelding verifiëren'
+                            : 'Toegang tot FTJM Enterprise'}
+                      </p>
+                    </motion.div>
+                  </AnimatePresence>
                 </div>
 
                 <form onSubmit={async (e) => {
@@ -10464,223 +10535,253 @@ export default function App() {
                     setAuthLoading(false);
                   }
                 }} className="space-y-4">
-                  {authError && (
-                    <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-xl text-xs flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 shrink-0" />
-                      <span>{authError}</span>
-                    </div>
-                  )}
-
-                  {isRegisterMode ? (
-                    <>
-                      <div>
-                        <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                          Weergavenaam
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Bijv. Mark"
-                          autoComplete="name"
-                          value={authDisplayName}
-                          onChange={(e) => setAuthDisplayName(e.target.value)}
-                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                          E-mailadres
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          placeholder="voorbeeld@adres.nl"
-                          autoComplete="username email"
-                          value={authEmail}
-                          onChange={(e) => setAuthEmail(e.target.value)}
-                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                          Wachtwoord
-                        </label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••••••"
-                          autoComplete="new-password"
-                          value={authPassword}
-                          onChange={(e) => setAuthPassword(e.target.value)}
-                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                        />
-                      </div>
-
-                      <div className="flex items-start gap-2.5 mt-2 mb-2 px-1">
-                        <input
-                          id="auth-agree-terms-checkbox"
-                          type="checkbox"
-                          required
-                          checked={authAgreeTerms}
-                          onChange={(e) => setAuthAgreeTerms(e.target.checked)}
-                          className="mt-0.5 w-4 h-4 text-cyan-500 rounded border-white/25 bg-white/10 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-400"
-                        />
-                        <label htmlFor="auth-agree-terms-checkbox" className="text-xs text-blue-100/70 leading-normal select-none cursor-pointer">
-                          Ik ga akkoord met de <span className="text-cyan-400 font-extrabold underline">Algemene Voorwaarden</span> en het <span className="text-cyan-400 font-extrabold underline">Privacybeleid</span> van FTJM Enterprise.
-                        </label>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={authLoading}
-                        className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                  <AnimatePresence>
+                    {authError && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0, y: -6, marginBottom: 0 }}
+                        animate={{ opacity: 1, height: 'auto', y: 0, marginBottom: 16 }}
+                        exit={{ opacity: 0, height: 0, y: -6, marginBottom: 0 }}
+                        transition={{ duration: 0.22, ease: "easeOut" }}
+                        className="overflow-hidden"
                       >
-                        {authLoading ? (
-                          <ThemedSpinner size="xs" color="#002f54" />
-                        ) : (
-                          'Registreren & Inloggen'
-                        )}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      {authStep === 'email' ? (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="space-y-4"
+                        <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-xl text-xs flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span>{authError}</span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <AnimatePresence mode="wait" initial={false}>
+                    {isRegisterMode ? (
+                      <motion.div
+                        key="view-register"
+                        initial={{ opacity: 0, x: -14, filter: 'blur(3px)' }}
+                        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, x: 14, filter: 'blur(3px)' }}
+                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                        className="space-y-4"
+                      >
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            Weergavenaam
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Bijv. Mark"
+                            autoComplete="name"
+                            value={authDisplayName}
+                            onChange={(e) => setAuthDisplayName(e.target.value)}
+                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            E-mailadres
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            placeholder="voorbeeld@adres.nl"
+                            autoComplete="username email"
+                            value={authEmail}
+                            onChange={(e) => setAuthEmail(e.target.value)}
+                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            Wachtwoord
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="••••••••••••"
+                            autoComplete="new-password"
+                            value={authPassword}
+                            onChange={(e) => setAuthPassword(e.target.value)}
+                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                          />
+                        </div>
+
+                        <div className="flex items-start gap-2.5 mt-2 mb-2 px-1">
+                          <input
+                            id="auth-agree-terms-checkbox"
+                            type="checkbox"
+                            required
+                            checked={authAgreeTerms}
+                            onChange={(e) => setAuthAgreeTerms(e.target.checked)}
+                            className="mt-0.5 w-4 h-4 text-cyan-500 rounded border-white/25 bg-white/10 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-400"
+                          />
+                          <label htmlFor="auth-agree-terms-checkbox" className="text-xs text-blue-100/70 leading-normal select-none cursor-pointer">
+                            Ik ga akkoord met de <span className="text-cyan-400 font-extrabold underline">Algemene Voorwaarden</span> en het <span className="text-cyan-400 font-extrabold underline">Privacybeleid</span> van FTJM Enterprise.
+                          </label>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={authLoading}
+                          className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-black/20"
                         >
-                          <div>
-                            <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                              Gebruikersnaam of E-mailadres
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="Type je gebruikersnaam of e-mail"
-                              autoComplete="username"
-                              value={authEmail}
-                              onChange={(e) => setAuthEmail(e.target.value)}
-                              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                            />
-                          </div>
+                          {authLoading ? (
+                            <ThemedSpinner size="xs" color="#002f54" />
+                          ) : (
+                            'Registreren & Inloggen'
+                          )}
+                        </button>
+                      </motion.div>
+                    ) : authStep === 'email' ? (
+                      <motion.div
+                        key="view-login-email"
+                        initial={{ opacity: 0, x: -14, filter: 'blur(3px)' }}
+                        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, x: -14, filter: 'blur(3px)' }}
+                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                        className="space-y-4"
+                      >
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            Gebruikersnaam of E-mailadres
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Type je gebruikersnaam of e-mail"
+                            autoComplete="username"
+                            value={authEmail}
+                            onChange={(e) => setAuthEmail(e.target.value)}
+                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                          />
+                        </div>
 
-                          <button
-                            type="submit"
-                            disabled={authLoading}
-                            className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
-                          >
-                            {authLoading ? (
-                              <ThemedSpinner size="xs" color="#002f54" />
-                            ) : (
-                              'Volgende'
-                            )}
-                          </button>
-                        </motion.div>
-                      ) : (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          className="space-y-4"
+                        <button
+                          type="submit"
+                          disabled={authLoading}
+                          className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-black/20"
                         >
-                          {/* Centered user card */}
-                          <div className="flex flex-col items-center bg-white/5 border border-white/10 rounded-2xl p-4 relative overflow-hidden mb-4">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAuthStep('email');
-                                setLookupProfile(null);
-                                setAuthPassword('');
-                              }}
-                              className="absolute top-3 left-3 text-white/50 hover:text-white transition-colors flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider"
-                            >
-                              <ChevronLeft className="w-3.5 h-3.5" />
-                              Wissel
-                            </button>
-
-                            <div className="w-16 h-16 rounded-full border-2 border-cyan-400 overflow-hidden shadow-lg shadow-cyan-500/20 mb-2 mt-2 flex items-center justify-center bg-[#0a385c]">
-                              {lookupProfile?.photo_url ? (
-                                <img
-                                  src={getSafeImageUrl(lookupProfile.photo_url)}
-                                  alt={lookupProfile.display_name}
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                  onError={handleImageError}
-                                />
-                              ) : (
-                                <UserIcon className="w-8 h-8 text-cyan-300" />
-                              )}
-                            </div>
-
-                            <p className="text-sm font-black text-white text-center tracking-tight">
-                              {lookupProfile?.display_name}
-                            </p>
-                            <p className="text-[10px] text-blue-100/40 text-center font-mono mt-0.5 truncate max-w-xs">
-                              {lookupProfile?.email}
-                            </p>
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                              Wachtwoord
-                            </label>
-                            <input
-                              type="password"
-                              required
-                              placeholder="••••••••••••"
-                              autoComplete="current-password"
-                              autoFocus
-                              value={authPassword}
-                              onChange={(e) => setAuthPassword(e.target.value)}
-                              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
-                            />
-                          </div>
-
-                          <button
-                            type="submit"
-                            disabled={authLoading}
-                            className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
-                          >
-                            {authLoading ? (
-                              <ThemedSpinner size="xs" color="#002f54" />
-                            ) : (
-                              'Inloggen'
-                            )}
-                          </button>
-
+                          {authLoading ? (
+                            <ThemedSpinner size="xs" color="#002f54" />
+                          ) : (
+                            'Volgende'
+                          )}
+                        </button>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="view-login-password"
+                        initial={{ opacity: 0, x: 14, filter: 'blur(3px)' }}
+                        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, x: 14, filter: 'blur(3px)' }}
+                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                        className="space-y-4"
+                      >
+                        {/* Centered user card */}
+                        <div className="flex flex-col items-center bg-white/5 border border-white/10 rounded-2xl p-4 relative overflow-hidden mb-4 backdrop-blur-sm">
                           <button
                             type="button"
-                            onClick={handlePasskeyLogin}
-                            disabled={authLoading}
-                            className="w-full py-4 bg-[#0a385c] hover:bg-cyan-950 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-300 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
+                            onClick={() => {
+                              setAuthStep('email');
+                              setLookupProfile(null);
+                              setAuthPassword('');
+                            }}
+                            className="absolute top-3 left-3 text-white/50 hover:text-white transition-colors flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider hover:bg-white/5 px-2 py-1 rounded-lg"
                           >
-                            <Fingerprint className="w-5 h-5 text-cyan-400 animate-pulse" />
-                            Inloggen met Passkey
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            Wissel
                           </button>
-                        </motion.div>
-                      )}
-                    </>
-                  )}
+
+                          <div className="w-16 h-16 rounded-full border-2 border-cyan-400 overflow-hidden shadow-lg shadow-cyan-500/20 mb-2 mt-2 flex items-center justify-center bg-[#0a385c]">
+                            {lookupProfile?.photo_url ? (
+                              <img
+                                src={getSafeImageUrl(lookupProfile.photo_url)}
+                                alt={lookupProfile.display_name}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                                onError={handleImageError}
+                              />
+                            ) : (
+                              <LetterAvatar name={lookupProfile?.display_name || lookupProfile?.email} className="w-full h-full" textClassName="text-2xl font-black" />
+                            )}
+                          </div>
+
+                          <p className="text-sm font-black text-white text-center tracking-tight">
+                            {lookupProfile?.display_name}
+                          </p>
+                          <p className="text-[10px] text-blue-100/40 text-center font-mono mt-0.5 truncate max-w-xs">
+                            {lookupProfile?.email}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            Wachtwoord
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="••••••••••••"
+                            autoComplete="current-password"
+                            autoFocus
+                            value={authPassword}
+                            onChange={(e) => setAuthPassword(e.target.value)}
+                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={authLoading}
+                          className="w-full py-4 bg-white text-[#002f54] hover:bg-cyan-100 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-black/20"
+                        >
+                          {authLoading ? (
+                            <ThemedSpinner size="xs" color="#002f54" />
+                          ) : (
+                            'Inloggen'
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handlePasskeyLogin}
+                          disabled={authLoading}
+                          className="w-full py-4 bg-[#0a385c] hover:bg-cyan-950 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-300 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50 shadow-md"
+                        >
+                          <Fingerprint className="w-5 h-5 text-cyan-400 animate-pulse" />
+                          Inloggen met Passkey
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </form>
 
-                {(isRegisterMode || authStep === 'email') && (
-                  <div className="mt-6 text-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsRegisterMode(!isRegisterMode);
-                        setAuthError(null);
-                      }}
-                      className="text-xs text-cyan-400 hover:text-cyan-300 font-bold transition-colors uppercase tracking-wider cursor-pointer"
+                <AnimatePresence mode="wait" initial={false}>
+                  {(isRegisterMode || authStep === 'email') && (
+                    <motion.div
+                      key={isRegisterMode ? 'footer-reg' : 'footer-login'}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      className="mt-6 text-center"
                     >
-                      {isRegisterMode
-                        ? 'Heb je al een account? Log hier in'
-                        : 'Nog geen account? Registreer hier'}
-                    </button>
-                  </div>
-                )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRegisterMode(!isRegisterMode);
+                          setAuthError(null);
+                        }}
+                        className="text-xs text-cyan-400 hover:text-cyan-300 font-bold transition-colors uppercase tracking-wider cursor-pointer"
+                      >
+                        {isRegisterMode
+                          ? 'Heb je al een account? Log hier in'
+                          : 'Nog geen account? Registreer hier'}
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             </motion.div>
           )}
@@ -10712,7 +10813,7 @@ export default function App() {
                     Voorwaarden & Privacy Update
                   </h2>
                   <p className="text-xs text-zinc-400 uppercase tracking-widest font-mono">
-                    FTJM Enterprise Platform v2.5.0
+                    FTJM Enterprise Platform {APP_VERSION}
                   </p>
                 </div>
 

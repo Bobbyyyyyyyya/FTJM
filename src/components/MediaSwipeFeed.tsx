@@ -28,7 +28,10 @@ import {
 } from 'lucide-react';
 import { formatDate, getMediaShareUrl, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
 import { t } from '../utils/translations';
+import { LetterAvatar } from './UserAvatar';
 
 interface Comment {
   id: string;
@@ -486,7 +489,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                 onError={handleImageError}
               />
             ) : (
-               <UserIcon className="w-6 h-6 m-auto text-white/50" />
+               <LetterAvatar name={currentMedia.author_name} className="w-full h-full" />
             )}
           </button>
         </div>
@@ -582,11 +585,8 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
           <span className="text-base sm:text-lg font-black text-white drop-shadow-lg shadow-black group-hover/author:text-cyan-400 transition-colors truncate">
             {nicknames[currentMedia.user_id] || currentMedia.author_name}
           </span>
-          {isVerified && (
-            <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 shadow-lg" title="Geverifieerd Account">
-              <Check className="w-2.5 h-2.5 stroke-[4]" />
-            </span>
-          )}
+          <VerifiedBadge user={authorProfile || authorProfile?.email} size="sm" />
+          <DeveloperBadge user={authorProfile || authorProfile?.email} size="sm" />
           {isBeta && (
             <span className="inline-flex items-center justify-center bg-amber-500/20 border border-amber-500/40 text-amber-400 p-0.5 rounded shrink-0 shadow-lg" title="Beta Tester">
               <FlaskConical className="w-3 h-3 text-amber-400 stroke-[2.5]" />
@@ -670,9 +670,7 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                             onError={handleImageError}
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-400">
-                            <UserIcon className="w-4 h-4" />
-                          </div>
+                          <LetterAvatar name={commentDisplayName} className="w-full h-full" textClassName="text-[9px]" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -681,7 +679,8 @@ export const MediaSwipeFeed: React.FC<MediaSwipeFeedProps> = ({
                             <span className="text-xs font-black text-white/90 truncate">
                               {commentDisplayName}
                             </span>
-                            {isCVerified && <Check className="w-3 h-3 text-cyan-400" />}
+                            <VerifiedBadge user={cAuthorProfile || cAuthorProfile?.email} size="xs" />
+                            <DeveloperBadge user={cAuthorProfile || cAuthorProfile?.email} size="xs" />
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-[10px] font-mono text-zinc-500">

@@ -439,6 +439,7 @@ export const convertEmoticons = (text: string): string => {
     ':-P': '😛',
     ':-p': '😛',
     '<3': '❤️',
+    '</3': '💔',
     'B)': '😎',
     'B-)': '😎',
     ':/': '😕',
@@ -454,8 +455,18 @@ export const convertEmoticons = (text: string): string => {
     ':|': '😐',
     ':-$': '😳',
     ':$': '😳',
+    '^^': '😊',
+    '^_^': '😊',
+    ':3': '😺',
     '(y)': '👍',
     '(n)': '👎',
+    ':fire:': '🔥',
+    ':100:': '💯',
+    ':star:': '⭐',
+    ':tada:': '🎉',
+    ':eyes:': '👀',
+    ':skull:': '💀',
+    ':rocket:': '🚀'
   };
 
   let newText = text;
@@ -602,8 +613,76 @@ export const isValidEmail = (email: string | null | undefined): boolean => {
 
 export const VERIFIED_EMAILS = [
   'markohoksen@gmail.com',
+  'hamzaaljaradsyria963@gmail.com',
   'zwedenguy@gmail.com'
 ];
+
+export interface VerifiedBadgeConfig {
+  isVerified: boolean;
+  bgClass: string;
+  glowClass: string;
+  title: string;
+  badgeType: 'marko' | 'hamza' | 'default';
+  iconClass: string;
+}
+
+export const getVerifiedBadgeConfig = (
+  emailOrProfile?: string | { email?: string | null; is_verified?: boolean | null } | null,
+  isVerifiedCol?: boolean | null
+): VerifiedBadgeConfig => {
+  const verified = isVerifiedEmail(emailOrProfile, isVerifiedCol);
+  if (!verified) {
+    return {
+      isVerified: false,
+      bgClass: '',
+      glowClass: '',
+      title: '',
+      badgeType: 'default',
+      iconClass: ''
+    };
+  }
+
+  let email = '';
+  if (typeof emailOrProfile === 'string') {
+    email = emailOrProfile.toLowerCase().trim();
+  } else if (emailOrProfile && typeof emailOrProfile === 'object' && emailOrProfile.email) {
+    email = emailOrProfile.email.toLowerCase().trim();
+  }
+
+  // Hamza: custom verified badge with a distinct radiant gold/amber color
+  if (email === 'hamzaaljaradsyria963@gmail.com') {
+    return {
+      isVerified: true,
+      bgClass: 'bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 font-black shadow-[0_0_10px_rgba(245,158,11,0.65)] border border-amber-300/40',
+      glowClass: '',
+      title: 'Geverifieerd Account (Hamza)',
+      badgeType: 'hamza',
+      iconClass: 'text-slate-950'
+    };
+  }
+
+  // Marko: creator/admin cyan badge
+  if (email === 'markohoksen@gmail.com') {
+    return {
+      isVerified: true,
+      bgClass: 'bg-cyan-500 text-white shadow-[0_0_8px_rgba(6,182,212,0.6)]',
+      glowClass: '',
+      title: 'Geverifieerd Account (Marko)',
+      badgeType: 'marko',
+      iconClass: 'text-white'
+    };
+  }
+
+  // Default verified badge (Cyan)
+  return {
+    isVerified: true,
+    bgClass: 'bg-cyan-500 text-white shadow-[0_0_8px_rgba(6,182,212,0.5)]',
+    glowClass: '',
+    title: 'Geverifieerd Account',
+    badgeType: 'default',
+    iconClass: 'text-white'
+  };
+};
 
 export const BETA_TESTER_EMAILS = [
   'samleeuw803@gmail.com'
@@ -623,6 +702,30 @@ export const isVerifiedEmail = (
   }
   if (isVerifiedCol === true) return true;
   return VERIFIED_EMAILS.includes(emailOrProfile.toLowerCase().trim());
+};
+
+export const DEVELOPER_EMAILS = [
+  'markohoksen@gmail.com'
+];
+
+export const isDeveloper = (
+  userOrEmail?: string | { email?: string | null; role?: string | null; display_name?: string | null; username?: string | null } | null
+): boolean => {
+  if (!userOrEmail) return false;
+  if (typeof userOrEmail === 'object') {
+    if (userOrEmail.email && DEVELOPER_EMAILS.includes(userOrEmail.email.toLowerCase().trim())) {
+      return true;
+    }
+    const name = (userOrEmail.display_name || (userOrEmail as any).name || (userOrEmail as any).username || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+    if (name === 'markohoksen') {
+      return true;
+    }
+    return false;
+  }
+  const str = userOrEmail.toLowerCase().trim();
+  if (DEVELOPER_EMAILS.includes(str)) return true;
+  if (str.replace(/[^a-z0-9]/g, '') === 'markohoksen') return true;
+  return false;
 };
 
 export const isBetaTester = (
@@ -822,15 +925,32 @@ export const isTestUser = (
 };
 
 /**
- * Generates a public share URL pointing to the production preview (ais-pre-) instead of dev (ais-dev-)
+ * Gets the public production origin, converting development (ais-dev-) URLs to shared preview (ais-pre-)
  */
-export const getMediaShareUrl = (mediaIdOrUrl: string): string => {
+export const getPublicProductionOrigin = (): string => {
   if (typeof window === 'undefined') return '';
   let origin = window.location.origin;
   if (origin.includes('ais-dev-')) {
     origin = origin.replace('ais-dev-', 'ais-pre-');
   }
-  const pathname = window.location.pathname || '';
+  return origin;
+};
+
+/**
+ * Generates a public profile share URL pointing to the production preview (ais-pre-) instead of dev (ais-dev-)
+ */
+export const getProfileShareUrl = (userId: string): string => {
+  const origin = getPublicProductionOrigin();
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  return `${origin}${pathname}?profile=${encodeURIComponent(userId)}`;
+};
+
+/**
+ * Generates a public share URL pointing to the production preview (ais-pre-) instead of dev (ais-dev-)
+ */
+export const getMediaShareUrl = (mediaIdOrUrl: string): string => {
+  const origin = getPublicProductionOrigin();
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
   return `${origin}${pathname}?media=${encodeURIComponent(mediaIdOrUrl)}`;
 };
 
@@ -1035,11 +1155,14 @@ export const uploadImageToImgBB = async (
   try {
     let base64String = '';
     let mimeType = 'image/jpeg';
+    let fileOrBlob: Blob | null = null;
+
     if (typeof fileOrBlobOrDataUrl === 'string') {
       base64String = fileOrBlobOrDataUrl;
       const match = fileOrBlobOrDataUrl.match(/^data:([^;]+);base64,/);
       if (match) mimeType = match[1];
     } else {
+      fileOrBlob = fileOrBlobOrDataUrl;
       mimeType = fileOrBlobOrDataUrl.type || 'image/jpeg';
       base64String = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -1049,6 +1172,55 @@ export const uploadImageToImgBB = async (
       });
     }
 
+    // 1. First attempt: Direct browser upload to ImgBB API (uses client residential IP, bypassing datacenter IP bans)
+    try {
+      let apiKey = '2bf9df1a0115e215fae223f666bb4740';
+      try {
+        const keyRes = await fetch('/api/imgbb-key');
+        if (keyRes.ok) {
+          const keyJson = await keyRes.json();
+          if (keyJson.key) apiKey = keyJson.key;
+        }
+      } catch {}
+
+      if (apiKey) {
+        const formData = new FormData();
+        if (fileOrBlob) {
+          formData.append('image', fileOrBlob);
+        } else {
+          // Strip data URI scheme if present
+          let cleanBase64 = base64String;
+          if (cleanBase64.includes('base64,')) {
+            cleanBase64 = cleanBase64.split('base64,')[1];
+          }
+          formData.append('image', cleanBase64);
+        }
+        if (fileName) {
+          formData.append('name', fileName);
+        }
+
+        const directRes = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(apiKey.trim())}`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (directRes.ok) {
+          const directJson = await directRes.json();
+          if (directJson.success && (directJson.data?.url || directJson.data?.display_url || directJson.data?.image?.url)) {
+            const finalUrl = directJson.data.image?.url || directJson.data.display_url || directJson.data.url;
+            return {
+              url: finalUrl,
+              thumb: directJson.data.thumb?.url || finalUrl,
+              display_url: directJson.data.display_url || finalUrl,
+            };
+          }
+        }
+      }
+    } catch (clientImgbbErr) {
+      console.warn('[uploadImageToImgBB] Direct client ImgBB upload bypassed, falling back to server route:', clientImgbbErr);
+    }
+
+    // 2. Fallback: Server-side route with persistent /uploads/ storage fallback
     const res = await fetch('/api/upload-image', {
       method: 'POST',
       headers: {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PhoneOff, Mic, MicOff, User, Volume2, VolumeX, Users, Video, VideoOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GroupCallState, GroupParticipant } from '../hooks/useGroupVoiceCall';
+import { getSafeImageUrl, handleImageError } from '../utils/helpers';
 
 interface GroupVoiceCallUIProps {
   state: GroupCallState;
@@ -188,7 +189,7 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
                       {user.photoURL ? (
-                        <img src={user.photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={getSafeImageUrl(user.photoURL)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <User className="w-5 h-5 text-white/40" />
@@ -223,7 +224,7 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
                         {p.photo_url?.trim() ? (
-                          <img src={p.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <img src={getSafeImageUrl(p.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <User className="w-5 h-5 text-white/40" />
@@ -368,7 +369,7 @@ const ParticipantCard = ({
       {/* Profile Ring Overlay */}
       <div className="relative z-10 w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden mb-4 ring-4 ring-white/5 group-hover:ring-white/10 transition-all shadow-2xl shrink-0">
         {photo_url?.trim() ? (
-          <img src={photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          <img src={getSafeImageUrl(photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-white/5">
             <User className="w-12 h-12 text-white/20" />

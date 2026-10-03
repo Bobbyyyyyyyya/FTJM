@@ -21,6 +21,9 @@ import {
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
+import { LetterAvatar } from './UserAvatar';
 import { t } from '../utils/translations';
 import { createSupabaseClient } from '../utils/supabase';
 import { ThemedLoadingScreen } from './ThemedLoadingScreen';
@@ -371,9 +374,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
                   {mediaItem.author_photo?.trim() ? (
                     <img src={mediaItem.author_photo} alt="" className="w-full h-full rounded-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-white">
-                      <UserIcon className="w-4 h-4" />
-                    </div>
+                    <LetterAvatar name={mediaItem.author_name} className="w-full h-full rounded-full" />
                   )}
                 </div>
                 <div className="min-w-0">
@@ -381,11 +382,8 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
                     <span className="text-xs font-black text-white truncate max-w-[150px]">
                       {mediaItem.author_name || 'Anoniem'}
                     </span>
-                    {isVerified && (
-                      <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0" title="Geverifieerd">
-                        <Check className="w-2 h-2 stroke-[4]" />
-                      </span>
-                    )}
+                    <VerifiedBadge user={authorProfile || authorProfile?.email} size="xs" />
+                    <DeveloperBadge user={authorProfile || authorProfile?.email} size="xs" />
                     {isBeta && (
                       <span className="inline-flex items-center justify-center text-amber-400 p-0.5 rounded shrink-0" title="Beta">
                         <FlaskConical className="w-2.5 h-2.5 stroke-[2.5]" />
@@ -484,7 +482,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
                 Wil je swipen, liken & reageren?
               </span>
             </div>
-            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.3.1</span>
+            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.7.5</span>
           </div>
 
           <button

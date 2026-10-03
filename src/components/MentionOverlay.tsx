@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { User as UserIcon } from 'lucide-react';
 import { UserProfile } from '../types';
+import { LetterAvatar } from './UserAvatar';
 
 interface MentionOverlayProps {
   show: boolean;
@@ -49,9 +49,7 @@ export const MentionOverlay: React.FC<MentionOverlayProps> = ({
                   {user.photo_url?.trim() ? (
                     <img src={user.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <UserIcon className="w-4 h-4 text-app-muted" />
-                    </div>
+                    <LetterAvatar name={user.display_name} className="w-full h-full" textClassName="text-xs" />
                   )}
                 </div>
                 <div className="min-w-0">

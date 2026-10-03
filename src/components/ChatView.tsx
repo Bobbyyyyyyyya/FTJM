@@ -393,12 +393,12 @@ export const ChatView: React.FC<ChatViewProps> = React.memo((props) => {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.92 }}
               disabled={sending || (!postInput.trim() && !selectedFile) || cooldownRemaining > 0 || uploading}
-              className="px-3 sm:px-4 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center min-w-[40px] sm:min-w-[50px] shadow-sm"
+              className="px-3 sm:px-4 h-full bg-app-ink text-app-ink-contrast rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center min-w-[40px] sm:min-w-[50px] shadow-sm cursor-pointer"
             >
               {sending ? (
                 <ThemedSpinner size="xs" color="currentColor" />
               ) : (
-                <AnimatedSendIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                <AnimatedSendIcon className="w-4 h-4 sm:w-5 sm:h-5 text-app-ink-contrast" />
               )}
             </motion.button>
           </div>
@@ -447,10 +447,10 @@ export const ChatView: React.FC<ChatViewProps> = React.memo((props) => {
           onClick={() => {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className="fixed bottom-8 right-8 p-3 bg-app-ink text-app-bg rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all z-40 border border-app-border/20"
+          className="fixed bottom-8 right-8 p-3 bg-app-ink text-app-ink-contrast rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all z-40 border border-app-border/20 cursor-pointer"
           title="Terug naar boven"
         >
-          <ChevronLeft className="w-5 h-5 rotate-90" />
+          <ChevronLeft className="w-5 h-5 rotate-90 text-app-ink-contrast" />
         </button>
       )}
 

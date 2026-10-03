@@ -33,6 +33,7 @@ import {
   resetLocalModernUI
 } from '../utils/modernUICustom';
 import { toast } from 'sonner';
+import { uploadImageToImgBB, compressImageToBlob, compressImage } from '../utils/helpers';
 
 interface ModernUICustomizerModalProps {
   isOpen: boolean;
@@ -419,6 +420,67 @@ export const ModernUICustomizerModal: React.FC<ModernUICustomizerModalProps> = (
                     </div>
                   </button>
                 </div>
+
+                {/* Achtergrond Wallpaper (ImgBB) Section */}
+                {customTheme && setCustomTheme && (
+                  <div className="p-4 rounded-2xl bg-app-card border border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-app-ink">Achtergrond Wallpaper (ImgBB)</div>
+                        <div className="text-[11px] text-app-muted">Upload een achtergrondafbeelding die direct op de pagina verschijnt.</div>
+                      </div>
+                      {customTheme.wallpaper && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomTheme({ ...customTheme, wallpaper: '' });
+                            toast.success("Achtergrond gewist.");
+                          }}
+                          className="text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors"
+                        >
+                          Wissen
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={customTheme.wallpaper || ''}
+                        onChange={(e) => setCustomTheme({ ...customTheme, wallpaper: e.target.value })}
+                        placeholder="https://i.ibb.co/... of upload een foto"
+                        className="flex-1 bg-app-accent/50 px-3 py-2 rounded-xl border border-white/15 text-xs text-app-ink placeholder:text-app-muted"
+                      />
+                      <label className="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Upload</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            toast.promise(
+                              (async () => {
+                                const blob = await compressImageToBlob(file, 1920, 1080, 0.85, 'image/webp');
+                                const res = await uploadImageToImgBB(blob, `wallpaper_${Date.now()}`);
+                                const finalUrl = res?.url || (await compressImage(file, 1280, 720, 0.70));
+                                setCustomTheme({ ...customTheme, wallpaper: finalUrl });
+                                return res?.url ? "Achtergrond geüpload naar ImgBB!" : "Achtergrond ingesteld!";
+                              })(),
+                              {
+                                loading: "Achtergrond uploaden naar ImgBB...",
+                                success: (m) => m,
+                                error: "Kon achtergrond niet uploaden."
+                              }
+                            );
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

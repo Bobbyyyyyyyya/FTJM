@@ -8,6 +8,7 @@
   
   --color-app-bg: var(--bg);
   --color-app-ink: var(--ink);
+  --color-app-ink-contrast: var(--ink-contrast);
   --color-app-card: var(--card-bg);
   --color-app-border: var(--card-border);
   --color-app-muted: var(--muted);
@@ -17,6 +18,7 @@
 :root {
   --bg: #ffffff;
   --ink: #18181b;
+  --ink-contrast: #ffffff;
   --accent: #f4f4f5;
   --card-bg: #ffffff;
   --card-border: #e4e4e7;
@@ -39,6 +41,7 @@
   color-scheme: dark;
   --bg: #09090b;
   --ink: #fafafa;
+  --ink-contrast: #09090b;
   --accent: #27272a;
   --card-bg: #18181b;
   --card-border: #27272a;
@@ -49,6 +52,7 @@
   color-scheme: dark;
   --bg: #0a0502;
   --ink: #ffffff;
+  --ink-contrast: #0a0502;
   --accent: #ff4e00;
   --card-bg: rgba(255, 255, 255, 0.05);
   --card-border: rgba(255, 255, 255, 0.1);
@@ -59,11 +63,18 @@
 [data-custom-theme='true'] {
   --bg: var(--custom-body-bg, #f4f4f5);
   --ink: var(--custom-text, #18181b);
+  --ink-contrast: var(--custom-text-contrast, #ffffff);
   --accent: var(--custom-accent-bg, rgba(24, 24, 27, 0.08));
   --card-bg: var(--custom-card-bg, #ffffff);
   --card-border: var(--custom-card-border, #e4e4e7);
   --muted: var(--custom-muted, #71717a);
   --font-sans: var(--custom-font, "Inter", sans-serif);
+}
+
+/* Guard: Ensure text-app-bg is always high contrast and never transparent */
+.text-app-bg,
+[class*="text-app-bg"] {
+  color: var(--ink-contrast, #ffffff);
 }
 
 .rounded-3xl {

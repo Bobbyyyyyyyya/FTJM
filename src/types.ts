@@ -245,3 +245,23 @@ export interface SupabaseErrorInfo {
     email?: string | null;
   }
 }
+
+export interface NewsItem {
+  id: number;
+  title: string;
+  content: string;
+  date: string;
+  category: string;
+  version?: string;
+  readTime?: string;
+  author?: string;
+  image?: string;
+  highlights?: string[];
+  details?: {
+    overview?: string;
+    features?: string[];
+    improvements?: string[];
+    fixes?: string[];
+    security?: string[];
+  };
+}

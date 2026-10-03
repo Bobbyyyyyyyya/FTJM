@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Mail, Layout, Film, Newspaper, Settings, Gamepad2, Users, User as UserIcon, ShieldCheck, ChevronRight, Search, X, LogOut, Sliders } from 'lucide-react';
+import { 
+  MessageSquare, Mail, Layout, Film, Newspaper, Settings, Gamepad2, Users, 
+  User as UserIcon, ShieldCheck, ChevronRight, Search, X, LogOut, Sliders,
+  Bell, Trash2, CheckCheck, Heart, AtSign, UserPlus 
+} from 'lucide-react';
 import { 
   AnimatedMailIcon, 
   AnimatedChatIcon, 
@@ -8,14 +12,18 @@ import {
   AnimatedMediaIcon, 
   AnimatedForumIcon, 
   AnimatedNewsIcon, 
-  AnimatedArcadeIcon 
+  AnimatedArcadeIcon,
+  AnimatedBellIcon 
 } from './AnimatedIcons';
 import { t } from '../utils/translations';
-import { UserProfile, ModernUICustomization, CustomTheme } from '../types';
+import { UserProfile, ModernUICustomization, CustomTheme, AppNotification } from '../types';
 import { isTestUser } from '../constants';
-import { getSafeImageUrl, handleImageError } from '../utils/helpers';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
+import { getSafeImageUrl, handleImageError, formatDate } from '../utils/helpers';
 import { Logo } from './Logo';
 import { getAccentHex, getGlassEffectClasses, getRadiusValue } from '../utils/modernUICustom';
+import { LetterAvatar } from './UserAvatar';
 
 interface ModernSidebarProps {
   view: string;
@@ -32,6 +40,12 @@ interface ModernSidebarProps {
   modernCustom?: ModernUICustomization;
   customTheme?: CustomTheme;
   onOpenCustomizer?: () => void;
+  notifications?: AppNotification[];
+  onNotificationClick?: (notif: AppNotification) => void;
+  onClearAllNotifications?: () => void;
+  onDeleteNotification?: (e: React.MouseEvent, notifId: string) => void;
+  onMarkAllNotificationsAsRead?: () => void;
+  nicknames?: Record<string, string>;
 }
 
 export const ModernSidebar: React.FC<ModernSidebarProps> = ({
@@ -48,11 +62,37 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
   onLogout,
   modernCustom,
   customTheme,
-  onOpenCustomizer
+  onOpenCustomizer,
+  notifications = [],
+  onNotificationClick,
+  onClearAllNotifications,
+  onDeleteNotification,
+  onMarkAllNotificationsAsRead,
+  nicknames = {}
 }) => {
   const [hoveredUser, setHoveredUser] = useState<UserProfile | null>(null);
   const [showFullFlyout, setShowFullFlyout] = useState(false);
+  const [showNotificationsFlyout, setShowNotificationsFlyout] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const hasUnread = unreadCount > 0;
+
+  const toggleNotifications = () => {
+    setShowNotificationsFlyout(prev => {
+      const next = !prev;
+      if (next) setShowFullFlyout(false);
+      return next;
+    });
+  };
+
+  const toggleFullFlyout = () => {
+    setShowFullFlyout(prev => {
+      const next = !prev;
+      if (next) setShowNotificationsFlyout(false);
+      return next;
+    });
+  };
 
   const activeAccent = getAccentHex(modernCustom, customTheme);
   const sidebarPosition = modernCustom?.sidebar_position || 'left';
@@ -85,84 +125,307 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
     !searchQuery.trim() || u.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const renderNotificationsContent = () => (
+    <>
+      <div className="p-3.5 border-b border-white/10 flex items-center justify-between bg-app-accent/30 shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <AnimatedBellIcon hasUnread={hasUnread} isActive={true} className="w-5 h-5 text-app-ink" />
+            {hasUnread && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <h4 className="font-extrabold text-sm text-app-ink">Meldingen</h4>
+            {notifications.length > 0 && (
+              <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-app-accent text-app-muted border border-app-border/60">
+                {notifications.length}
+              </span>
+            )}
+            {hasUnread && (
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-500 border border-red-500/25 animate-pulse">
+                {unreadCount} nieuw
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {hasUnread && onMarkAllNotificationsAsRead && (
+            <button 
+              type="button"
+              onClick={onMarkAllNotificationsAsRead}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all cursor-pointer"
+              title="Markeer alle meldingen als gelezen"
+            >
+              <CheckCheck className="w-3 h-3" />
+              <span>Gelezen</span>
+            </button>
+          )}
+          {notifications.length > 0 && onClearAllNotifications && (
+            <button 
+              type="button"
+              onClick={onClearAllNotifications}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-red-500 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+              title="Wis al je meldingen definitief"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Wissen</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowNotificationsFlyout(false)}
+            className="p-1 rounded-lg hover:bg-app-accent text-app-muted hover:text-app-ink transition-all cursor-pointer"
+            title="Sluiten"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-white/5">
+        {notifications.length === 0 ? (
+          <div className="p-8 text-center flex flex-col items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-app-accent/50 flex items-center justify-center mb-2.5 text-app-muted/40">
+              <Bell className="w-6 h-6" />
+            </div>
+            <p className="text-xs font-bold text-app-ink mb-0.5">Geen meldingen</p>
+            <p className="text-[11px] text-app-muted font-medium">Je bent helemaal bij!</p>
+          </div>
+        ) : (
+          notifications.map(notif => {
+            const isUnread = !notif.is_read;
+            const actorDisplayName = (nicknames && nicknames[notif.actor_id]) || notif.actor_name || 'Iemand';
+            
+            let actionLabel = 'stuurde een melding';
+            let typeBadge = <Bell className="w-2.5 h-2.5" />;
+            let badgeBg = 'bg-app-accent text-app-muted';
+
+            if (notif.type === 'mention') {
+              actionLabel = 'heeft je genoemd';
+              typeBadge = <AtSign className="w-2.5 h-2.5 text-violet-400" />;
+              badgeBg = 'bg-violet-500/10 text-violet-400 border border-violet-500/20';
+            } else if (notif.type === 'dm') {
+              actionLabel = 'stuurde je een bericht';
+              typeBadge = <Mail className="w-2.5 h-2.5 text-blue-400" />;
+              badgeBg = 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+            } else if (notif.type === 'reply') {
+              actionLabel = 'reageerde op je bericht';
+              typeBadge = <MessageSquare className="w-2.5 h-2.5 text-emerald-400" />;
+              badgeBg = 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+            } else if (notif.type === 'like') {
+              actionLabel = 'vond je bericht leuk ❤️';
+              typeBadge = <Heart className="w-2.5 h-2.5 text-rose-400" />;
+              badgeBg = 'bg-rose-500/10 text-rose-400 border border-rose-500/20';
+            } else if (notif.type === 'comment') {
+              actionLabel = 'heeft gereageerd 💬';
+              typeBadge = <MessageSquare className="w-2.5 h-2.5 text-cyan-400" />;
+              badgeBg = 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20';
+            } else if (notif.type === 'follow') {
+              actionLabel = 'is je gaan volgen';
+              typeBadge = <UserPlus className="w-2.5 h-2.5 text-emerald-400" />;
+              badgeBg = 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+            }
+
+            return (
+              <div
+                key={notif.id}
+                onClick={() => {
+                  onNotificationClick?.(notif);
+                  setShowNotificationsFlyout(false);
+                }}
+                className={`w-full p-3 text-left hover:bg-app-accent/40 transition-colors flex items-start gap-3 group relative cursor-pointer select-none ${
+                  isUnread ? 'bg-red-500/[0.04] border-l-2 border-red-500' : ''
+                }`}
+              >
+                <div className="relative w-8 h-8 rounded-xl overflow-hidden bg-app-accent flex-shrink-0 mt-0.5 border border-white/10">
+                  {notif.actor_photo?.trim() ? (
+                    <img 
+                      src={getSafeImageUrl(notif.actor_photo)} 
+                      alt="" 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer" 
+                      onError={handleImageError}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-app-muted">
+                      {actorDisplayName[0] || 'M'}
+                    </div>
+                  )}
+                  <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center ${badgeBg}`}>
+                    {typeBadge}
+                  </span>
+                </div>
+
+                <div className="min-w-0 flex-1 pr-6">
+                  <p className="text-xs text-app-ink font-medium leading-snug">
+                    <span className="font-bold">{actorDisplayName}</span>{' '}
+                    <span className="text-app-muted">{actionLabel}</span>
+                  </p>
+                  {notif.content && (
+                    <p className="text-[10px] text-app-muted truncate mt-0.5 italic">
+                      "{notif.content}"
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[8px] text-app-muted/70 uppercase font-bold tracking-widest">
+                      {formatDate(notif.created_at)}
+                    </span>
+                    {isUnread && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    )}
+                  </div>
+                </div>
+
+                {onDeleteNotification && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteNotification(e, notif.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-500/10 text-app-muted hover:text-red-500 rounded-lg absolute right-2.5 top-2.5 cursor-pointer"
+                    title="Melding verwijderen"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+
   // FLOATING BOTTOM DOCK MODE
   if (sidebarPosition === 'bottom_dock') {
     return (
-      <div 
-        className={`hidden sm:flex fixed bottom-5 left-1/2 -translate-x-1/2 h-18 px-5 py-2 flex-row items-center gap-3 z-[100] transition-all duration-300 ${glassClasses}`}
-        style={{ borderRadius: radius }}
-      >
-        <div className="w-10 h-10 bg-app-accent/50 rounded-2xl flex items-center justify-center overflow-hidden shadow-inner shrink-0 relative border border-app-border/40">
-          <Logo className="w-full h-full object-cover rounded-xl p-0.5" fallbackTextSize="text-[9px] font-black tracking-tighter" />
-        </div>
+      <>
+        <div 
+          className={`hidden sm:flex fixed bottom-5 left-1/2 -translate-x-1/2 h-18 px-5 py-2 flex-row items-center gap-3 z-[100] transition-all duration-300 ${glassClasses}`}
+          style={{ borderRadius: radius }}
+        >
+          {/* Logo with Unread / Missed Notification Badge */}
+          <div className="relative shrink-0">
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.94 }}
+              onClick={toggleNotifications}
+              className={`w-10 h-10 bg-app-accent/50 rounded-2xl flex items-center justify-center overflow-hidden shadow-inner relative border transition-all duration-300 cursor-pointer ${
+                showNotificationsFlyout 
+                  ? 'ring-2 ring-app-ink/40 border-app-ink/50 shadow-md' 
+                  : hasUnread 
+                    ? 'border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.35)] ring-2 ring-red-500/25 hover:border-red-500' 
+                    : 'border-app-border/40 hover:border-app-border'
+              }`}
+              title={hasUnread ? `${unreadCount} ongelezen melding(en) • Klik om te bekijken` : 'Meldingen bekijken'}
+            >
+              <Logo className="w-full h-full object-cover rounded-xl p-0.5" fallbackTextSize="text-[9px] font-black tracking-tighter" />
+            </motion.button>
 
-        <div className="h-7 w-px bg-white/10 shrink-0" />
+            {/* Red notification indicator badge at the logo */}
+            {hasUnread && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center pointer-events-none z-20">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full text-[9px] font-black text-white bg-red-600 shadow-[0_2px_8px_rgba(239,68,68,0.7)] border-2 border-app-card">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              </span>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2">
-          {navItems.map((item) => {
-            const isActive = view === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setView(item.id)}
-                className={`group relative w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 ${
-                  isActive 
-                    ? 'bg-app-ink text-app-bg shadow-lg scale-110' 
-                    : 'text-app-muted hover:bg-app-accent hover:text-app-ink hover:scale-105'
-                }`}
-                title={t(item.label)}
-                style={isActive && modernCustom?.glow_active_items ? {
-                  boxShadow: `0 0 16px ${activeAccent}80`,
-                  backgroundColor: activeAccent,
-                  color: '#ffffff'
-                } : undefined}
-              >
-                <item.Icon isActive={isActive} className="w-5 h-5" />
-                {isActive && (
-                  <motion.div 
-                    layoutId="modern-dock-active" 
-                    className="absolute inset-0 border-2 rounded-2xl" 
-                    style={{ borderColor: activeAccent }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
+          <div className="h-7 w-px bg-white/10 shrink-0" />
 
-        <div className="h-7 w-px bg-white/10 shrink-0" />
+          <div className="flex items-center gap-2">
+            {navItems.map((item) => {
+              const isActive = view === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setView(item.id)}
+                  className={`group relative w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+                    isActive 
+                      ? 'bg-app-ink text-app-bg shadow-lg scale-110' 
+                      : 'text-app-muted hover:bg-app-accent hover:text-app-ink hover:scale-105'
+                  }`}
+                  title={t(item.label)}
+                  style={isActive && modernCustom?.glow_active_items ? {
+                    boxShadow: `0 0 16px ${activeAccent}80`,
+                    backgroundColor: activeAccent,
+                    color: '#ffffff'
+                  } : undefined}
+                >
+                  <item.Icon isActive={isActive} className="w-5 h-5" />
+                  {isActive && (
+                    <motion.div 
+                      layoutId="modern-dock-active" 
+                      className="absolute inset-0 border-2 rounded-2xl" 
+                      style={{ borderColor: activeAccent }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-            onClick={() => setView('settings')}
-            className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
-              view === 'settings' 
-                ? 'bg-app-ink text-app-bg shadow-md' 
-                : 'text-app-muted hover:bg-app-accent hover:text-app-ink'
-            }`}
-            title="Instellingen"
-          >
-            <Settings className="w-4 h-4" />
-          </motion.button>
+          <div className="h-7 w-px bg-white/10 shrink-0" />
 
-          {onLogout && (
+          <div className="flex items-center gap-1.5 shrink-0">
             <motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-              onClick={onLogout}
-              className="w-10 h-10 rounded-2xl flex items-center justify-center text-app-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
-              title="Uitloggen"
+              onClick={() => setView('settings')}
+              className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
+                view === 'settings' 
+                  ? 'bg-app-ink text-app-bg shadow-md' 
+                  : 'text-app-muted hover:bg-app-accent hover:text-app-ink'
+              }`}
+              title="Instellingen"
             >
-              <LogOut className="w-4 h-4" />
+              <Settings className="w-4 h-4" />
             </motion.button>
-          )}
+
+            {onLogout && (
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                onClick={onLogout}
+                className="w-10 h-10 rounded-2xl flex items-center justify-center text-app-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                title="Uitloggen"
+              >
+                <LogOut className="w-4 h-4" />
+              </motion.button>
+            )}
+          </div>
         </div>
-      </div>
+
+        {/* Notifications Flyout for Bottom Dock */}
+        <AnimatePresence>
+          {showNotificationsFlyout && (
+            <>
+              <div 
+                className="fixed inset-0 z-[155]" 
+                onClick={() => setShowNotificationsFlyout(false)} 
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 350, damping: 26 }}
+                className="fixed bottom-24 left-1/2 -translate-x-1/2 w-80 sm:w-96 max-h-[min(560px,calc(100vh-8rem))] bg-app-card/95 backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl z-[160] flex flex-col overflow-hidden pointer-events-auto text-left"
+              >
+                {renderNotificationsContent()}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      </>
     );
   }
 
@@ -176,16 +439,42 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
   const sidebarWidthClass = isCompact ? 'w-16 py-4' : 'w-20 py-6';
 
   return (
-    <div 
-      className={`hidden sm:flex fixed ${sidebarPosClasses} ${sidebarWidthClass} flex-col items-center z-[100] transition-all duration-300 ${glassClasses}`}
-      style={{ borderRadius: radius }}
-    >
-      {/* Logo */}
-      <div className={`${isCompact ? 'w-10 h-10 mb-4' : 'w-12 h-12 mb-6'} bg-app-accent/50 rounded-2xl flex items-center justify-center overflow-hidden shadow-inner shrink-0 relative border border-app-border/40`}>
-        <Logo className="w-full h-full object-cover rounded-xl p-0.5" fallbackTextSize="text-[10px] font-black tracking-tighter" />
-      </div>
+    <>
+      <div 
+        className={`hidden sm:flex fixed ${sidebarPosClasses} ${sidebarWidthClass} flex-col items-center z-[100] transition-all duration-300 ${glassClasses}`}
+        style={{ borderRadius: radius }}
+      >
+        {/* Logo with Unread / Missed Notification Badge */}
+        <div className={`relative ${isCompact ? 'mb-4' : 'mb-6'} shrink-0`}>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.94 }}
+            onClick={toggleNotifications}
+            className={`${isCompact ? 'w-10 h-10' : 'w-12 h-12'} bg-app-accent/50 rounded-2xl flex items-center justify-center overflow-hidden shadow-inner relative border transition-all duration-300 cursor-pointer ${
+              showNotificationsFlyout 
+                ? 'ring-2 ring-app-ink/40 border-app-ink/50 shadow-md' 
+                : hasUnread 
+                  ? 'border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.35)] ring-2 ring-red-500/25 hover:border-red-500' 
+                  : 'border-app-border/40 hover:border-app-border'
+            }`}
+            title={hasUnread ? `${unreadCount} ongelezen melding(en) • Klik om te bekijken` : 'Meldingen bekijken'}
+          >
+            <Logo className="w-full h-full object-cover rounded-xl p-0.5" fallbackTextSize="text-[10px] font-black tracking-tighter" />
+          </motion.button>
 
-      {/* Navigation Icons */}
+          {/* Red notification indicator badge at the logo */}
+          {hasUnread && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center pointer-events-none z-20">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full text-[9px] font-black text-white bg-red-600 shadow-[0_2px_8px_rgba(239,68,68,0.7)] border-2 border-app-card">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {/* Navigation Icons */}
       <div className="w-full flex flex-col items-center gap-3 shrink-0">
         {navItems.map((item) => {
           const isActive = view === item.id;
@@ -262,7 +551,7 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                       onError={handleImageError}
                     />
                   ) : (
-                    <UserIcon className="w-4 h-4 text-app-muted" />
+                    <LetterAvatar name={u.display_name} className="w-full h-full" />
                   )}
                   {/* Glowing Green Online Status Dot */}
                   <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-app-card shadow-sm animate-pulse" />
@@ -288,13 +577,15 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                               onError={handleImageError}
                             />
                           ) : (
-                            <UserIcon className="w-5 h-5 text-app-muted m-2" />
+                            <LetterAvatar name={u.display_name} className="w-full h-full" />
                           )}
                           <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-app-card animate-pulse" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1">
                             <p className="text-xs font-bold text-app-ink truncate">{u.display_name}</p>
+                            <VerifiedBadge user={u} size="xs" />
+                            <DeveloperBadge user={u} size="xs" />
                             {u.role === 'admin' && <ShieldCheck className="w-3 h-3 text-red-500 shrink-0" />}
                           </div>
                           <div className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold border border-emerald-500/20">
@@ -360,7 +651,7 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                       onError={handleImageError}
                     />
                   ) : (
-                    <UserIcon className="w-4 h-4 text-app-muted" />
+                    <LetterAvatar name={u.display_name} className="w-full h-full" />
                   )}
                   {/* Subtle Gray Offline Status Dot */}
                   <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-zinc-400 dark:bg-zinc-600 rounded-full ring-2 ring-app-card" />
@@ -386,13 +677,15 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                               onError={handleImageError}
                             />
                           ) : (
-                            <UserIcon className="w-5 h-5 text-app-muted m-2" />
+                            <LetterAvatar name={u.display_name} className="w-full h-full" />
                           )}
                           <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-zinc-400 dark:bg-zinc-600 rounded-full ring-2 ring-app-card" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1">
                             <p className="text-xs font-bold text-app-ink truncate">{u.display_name}</p>
+                            <VerifiedBadge user={u} size="xs" />
+                            <DeveloperBadge user={u} size="xs" />
                             {u.role === 'admin' && <ShieldCheck className="w-3 h-3 text-red-500 shrink-0" />}
                           </div>
                           <div className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-zinc-500/10 text-app-muted text-[10px] font-bold border border-zinc-500/20">
@@ -504,13 +797,15 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                                       onError={handleImageError}
                                     />
                                   ) : (
-                                    <UserIcon className="w-4 h-4 text-app-muted m-2" />
+                                    <LetterAvatar name={u.display_name} className="w-full h-full" />
                                   )}
                                   <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-app-card animate-pulse" />
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1">
                                     <span className="text-xs font-bold text-app-ink truncate">{u.display_name}</span>
+                                    <VerifiedBadge user={u} size="xs" />
+                                    <DeveloperBadge user={u} size="xs" />
                                     {u.role === 'admin' && <ShieldCheck className="w-3 h-3 text-red-500 shrink-0" />}
                                   </div>
                                   <span className="text-[10px] text-emerald-500 font-medium">Online</span>
@@ -565,13 +860,15 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
                                       onError={handleImageError}
                                     />
                                   ) : (
-                                    <UserIcon className="w-4 h-4 text-app-muted m-2" />
+                                    <LetterAvatar name={u.display_name} className="w-full h-full" />
                                   )}
                                   <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-zinc-400 dark:bg-zinc-600 rounded-full ring-2 ring-app-card" />
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1">
                                     <span className="text-xs font-bold text-app-ink truncate">{u.display_name}</span>
+                                    <VerifiedBadge user={u} size="xs" />
+                                    <DeveloperBadge user={u} size="xs" />
                                     {u.role === 'admin' && <ShieldCheck className="w-3 h-3 text-red-500 shrink-0" />}
                                   </div>
                                   <span className="text-[10px] text-app-muted font-medium">Offline</span>
@@ -637,6 +934,28 @@ export const ModernSidebar: React.FC<ModernSidebarProps> = ({
         )}
       </div>
     </div>
+
+    {/* Notifications Flyout for Vertical Sidebar */}
+    <AnimatePresence>
+      {showNotificationsFlyout && (
+        <>
+          <div 
+            className="fixed inset-0 z-[155]" 
+            onClick={() => setShowNotificationsFlyout(false)} 
+          />
+          <motion.div
+            initial={isRight ? { opacity: 0, x: 20, scale: 0.95 } : { opacity: 0, x: -20, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={isRight ? { opacity: 0, x: 20, scale: 0.95 } : { opacity: 0, x: -20, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 26 }}
+            className={`fixed ${isRight ? (isCompact ? 'right-20' : 'right-24') : (isCompact ? 'left-20' : 'left-24')} top-4 w-80 sm:w-96 max-h-[min(650px,calc(100vh-2rem))] bg-app-card/95 backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl z-[160] flex flex-col overflow-hidden pointer-events-auto text-left`}
+          >
+            {renderNotificationsContent()}
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  </>
   );
 };
 

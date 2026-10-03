@@ -16,6 +16,29 @@ const LEGACY_CHAT_ENCRYPTION_KEY = 'app-chat-secret-key-2024';
 const STORAGE_ENCRYPTION_KEY = 'app-secure-storage-key-token-2026';
 
 /**
+ * Helper to convert CryptoJS WordArray to Uint8Array safely for UTF-8 TextDecoder
+ */
+const wordArrayToUint8Array = (wordArray: CryptoJS.lib.WordArray): Uint8Array => {
+  const l = wordArray.sigBytes;
+  const words = wordArray.words;
+  const result = new Uint8Array(l);
+  let i = 0;
+  let j = 0;
+  while (true) {
+    if (i === l) break;
+    const w = words[j++];
+    result[i++] = (w >> 24) & 0xff;
+    if (i === l) break;
+    result[i++] = (w >> 16) & 0xff;
+    if (i === l) break;
+    result[i++] = (w >> 8) & 0xff;
+    if (i === l) break;
+    result[i++] = w & 0xff;
+  }
+  return result;
+};
+
+/**
  * Encrypts a string message for general chat
  */
 export const encryptGeneralChat = (text: string): string => {
@@ -30,7 +53,8 @@ export const encryptGeneralChat = (text: string): string => {
 };
 
 /**
- * Decrypts an encrypted message for general chat
+ * Decrypts an encrypted message for general chat or direct messages.
+ * Robust against URL-encoded spaces, missing prefixes, and malformed binary noise.
  */
 export const decryptGeneralChat = (cipherText: string): string => {
   try {
@@ -41,59 +65,77 @@ export const decryptGeneralChat = (cipherText: string): string => {
     let cleanText = cipherText.trim();
     
     // Support removing possible extra wrapping quotes or escapes from some serialization/JSON layers
-    if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
-      cleanText = cleanText.substring(1, cleanText.length - 1).trim();
-    }
-    if (cleanText.startsWith("'") && cleanText.endsWith("'")) {
+    if ((cleanText.startsWith('"') && cleanText.endsWith('"')) || (cleanText.startsWith("'") && cleanText.endsWith("'"))) {
       cleanText = cleanText.substring(1, cleanText.length - 1).trim();
     }
     if (cleanText.startsWith('\\"') && cleanText.endsWith('\\"')) {
       cleanText = cleanText.substring(2, cleanText.length - 2).trim();
     }
 
+    const hasGcPrefix = cleanText.startsWith('gc:');
     let actualCipher = cleanText;
     while (actualCipher.startsWith('gc:')) {
       actualCipher = actualCipher.substring(3).trim();
     }
-    
-    // 1. Attempt decryption with primary key
-    try {
-      const bytes = CryptoJS.AES.decrypt(actualCipher, CHAT_ENCRYPTION_KEY);
-      const originalText = bytes.toString(CryptoJS.enc.Utf8);
-      
-      // If we got a valid non-empty utf8 string, return it!
-      if (originalText && originalText.trim().length > 0) {
-        return originalText;
-      }
-      
-      // Try Latin1 fallback in case of emojis or special character encoding
-      const latinText = bytes.toString(CryptoJS.enc.Latin1);
-      if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
-        return latinText;
-      }
-    } catch (e) {
-      // ignore and try legacy
+
+    // If the text does not have the 'gc:' prefix and does not begin with OpenSSL Salted Base64 'U2FsdGVkX1',
+    // it is already clear plain text. Return it directly to prevent corrupting regular text!
+    const looksLikeCipher = hasGcPrefix || actualCipher.startsWith('U2FsdGVkX1');
+    if (!looksLikeCipher) {
+      return cleanText;
     }
 
-    // 2. Try legacy fallback key for old messages
-    try {
-      const bytes = CryptoJS.AES.decrypt(actualCipher, LEGACY_CHAT_ENCRYPTION_KEY);
-      const originalText = bytes.toString(CryptoJS.enc.Utf8);
-      
-      if (originalText && originalText.trim().length > 0) {
-        return originalText;
+    // In transport, real-time broadcasts or URL decoding, '+' characters in Base64 can turn into spaces.
+    // We normalize spaces back to '+' for standard Base64 decoding.
+    const normalizedCipher = actualCipher.replace(/ /g, '+');
+    const ciphersToTry = [normalizedCipher];
+    if (normalizedCipher !== actualCipher) {
+      ciphersToTry.push(actualCipher);
+    }
+
+    const keysToTry = [
+      CHAT_ENCRYPTION_KEY,
+      LEGACY_CHAT_ENCRYPTION_KEY
+    ];
+
+    for (const key of keysToTry) {
+      for (const cipher of ciphersToTry) {
+        try {
+          const bytes = CryptoJS.AES.decrypt(cipher, key);
+          if (!bytes || bytes.sigBytes <= 0) continue;
+
+          // 1. Standard UTF-8 decoding
+          try {
+            const originalText = bytes.toString(CryptoJS.enc.Utf8);
+            if (originalText && originalText.trim().length > 0) {
+              return originalText;
+            }
+          } catch (e) {
+            // ignore UTF-8 decode error and try TextDecoder fallback
+          }
+
+          // 2. Resilient TextDecoder UTF-8 fallback
+          try {
+            if (typeof TextDecoder !== 'undefined') {
+              const u8 = wordArrayToUint8Array(bytes);
+              const decoder = new TextDecoder('utf-8', { fatal: false });
+              const decoded = decoder.decode(u8);
+              // Ensure it does not contain unprintable binary control garbage
+              if (decoded && decoded.trim().length > 0 && !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(decoded)) {
+                return decoded;
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        } catch (e) {
+          // ignore decrypt failure on this key/cipher attempt
+        }
       }
-      
-      const latinText = bytes.toString(CryptoJS.enc.Latin1);
-      if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
-        return latinText;
-      }
-    } catch (e) {
-      // ignore and return original
     }
     
-    // If decryption fails, return actualCipher if cleanText had gc: prefix, or cipherText
-    return cleanText.startsWith('gc:') ? actualCipher : cipherText;
+    // If decryption completely failed, return the text without binary gibberish
+    return hasGcPrefix ? cleanText : cipherText;
   } catch (error) {
     console.error('Decryption failed for:', cipherText, error);
     return typeof cipherText === 'string' ? cipherText : '';

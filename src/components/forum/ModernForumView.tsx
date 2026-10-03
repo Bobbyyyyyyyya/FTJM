@@ -36,11 +36,14 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ForumThread, ForumComment, UserProfile } from '../../types';
-import { formatDate } from '../../utils/helpers';
+import { formatDate, getPublicProductionOrigin } from '../../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../../constants';
+import { VerifiedBadge } from '../VerifiedBadge';
+import { DeveloperBadge } from '../DeveloperBadge';
 import { decryptGeneralChat } from '../../utils/encryption';
 import { RichContent } from '../RichContent';
 import { ThemedSpinner } from '../ThemedLoadingScreen';
+import { LetterAvatar } from '../UserAvatar';
 import { 
   FORUM_CATEGORIES, 
   FORUM_REACTIONS, 
@@ -163,7 +166,11 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
   };
 
   const handleShareThread = (thread: ForumThread) => {
-    const url = window.location.href;
+    let url = window.location.href;
+    const origin = getPublicProductionOrigin();
+    if (window.location.origin && origin) {
+      url = url.replace(window.location.origin, origin);
+    }
     if (navigator.clipboard) {
       navigator.clipboard.writeText(url);
       toast.success('Topic link gekopieerd!');
@@ -260,10 +267,10 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                   setIsCreatingThread(true);
                   setShowCreatePreview(false);
                 }}
-                className="px-6 py-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-app-ink font-black text-sm rounded-2xl shadow-[0_0_25px_rgba(6,182,212,0.4)] hover:shadow-[0_0_35px_rgba(6,182,212,0.6)] active:scale-95 transition-all flex items-center justify-center gap-2.5 cursor-pointer shrink-0"
+                className="px-6 py-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-black text-sm rounded-2xl shadow-[0_0_25px_rgba(6,182,212,0.4)] hover:shadow-[0_0_35px_rgba(6,182,212,0.6)] active:scale-95 transition-all flex items-center justify-center gap-2.5 cursor-pointer shrink-0"
               >
-                <Plus className="w-5 h-5 stroke-[3]" />
-                <span>Nieuw Topic</span>
+                <Plus className="w-5 h-5 stroke-[3] text-white" />
+                <span className="text-white">Nieuw Topic</span>
               </button>
             )}
           </div>
@@ -297,7 +304,7 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                 onClick={() => setSortFilter('trending')}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
                   sortFilter === 'trending'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-app-ink shadow-sm'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-sm'
                     : 'text-app-muted hover:text-app-ink'
                 }`}
               >
@@ -309,7 +316,7 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                 onClick={() => setSortFilter('newest')}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
                   sortFilter === 'newest'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-app-ink shadow-sm'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-sm'
                     : 'text-app-muted hover:text-app-ink'
                 }`}
               >
@@ -321,7 +328,7 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                 onClick={() => setSortFilter('discussed')}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
                   sortFilter === 'discussed'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-app-ink shadow-sm'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-sm'
                     : 'text-app-muted hover:text-app-ink'
                 }`}
               >
@@ -428,9 +435,7 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                           referrerPolicy="no-referrer" 
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-xl bg-app-accent flex items-center justify-center border border-app-border">
-                          <UserIcon className="w-5 h-5 text-app-muted" />
-                        </div>
+                        <LetterAvatar name={authorName} className="w-10 h-10 rounded-xl" />
                       )}
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-zinc-900 absolute -bottom-0.5 -right-0.5" />
                     </div>
@@ -438,11 +443,8 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                     <div className="flex flex-col text-left">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-sm font-black text-app-ink">{authorName}</span>
-                        {isVerified && (
-                          <span className="inline-flex items-center justify-center bg-cyan-500 text-app-ink rounded-full p-0.5 shadow-[0_0_8px_rgba(6,182,212,0.6)]" title="Geverifieerd">
-                            <Check className="w-2.5 h-2.5 stroke-[4]" />
-                          </span>
-                        )}
+                        <VerifiedBadge user={activeAuthorProfile || activeAuthorProfile?.email} size="sm" />
+                        <DeveloperBadge user={activeAuthorProfile || activeAuthorProfile?.email} size="sm" />
                         {isBeta && (
                           <span className="inline-flex items-center justify-center bg-amber-500/20 border border-amber-500/40 text-amber-400 p-0.5 rounded shadow-[0_0_8px_rgba(245,158,11,0.3)]" title="Beta Tester">
                             <FlaskConical className="w-3 h-3 stroke-[2.5]" />
@@ -480,7 +482,7 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                           onClick={() => handleReact(activeThread.id, r.emoji)}
                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                             hasReacted
-                              ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-app-ink shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-105'
+                              ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-105'
                               : 'bg-app-card/80 border border-app-border text-app-ink/80 hover:text-app-ink hover:border-cyan-500/40'
                           }`}
                           title={r.label}
@@ -569,10 +571,10 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                   whileTap={{ scale: 0.96 }}
                   onClick={() => handleCreateComment(activeThread.id)}
                   disabled={sending || !commentInput.trim() || uploading}
-                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-app-ink rounded-xl font-black text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl font-black text-xs transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                 >
-                  {sending ? <ThemedSpinner size="xs" color="#ffffff" /> : <Send className="w-4 h-4" />}
-                  <span>Plaatsen</span>
+                  {sending ? <ThemedSpinner size="xs" color="#ffffff" /> : <Send className="w-4 h-4 text-white" />}
+                  <span className="text-white">Plaatsen</span>
                 </motion.button>
               </div>
             </div>
@@ -635,20 +637,15 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                               referrerPolicy="no-referrer"
                             />
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-app-accent flex items-center justify-center border border-app-border">
-                              <UserIcon className="w-4 h-4 text-app-muted" />
-                            </div>
+                            <LetterAvatar name={commentAuthorName} className="w-8 h-8 rounded-full" />
                           )}
 
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-black text-app-ink group-hover:text-cyan-300 transition-colors">
                               {commentAuthorName}
                             </span>
-                            {isVerified && (
-                              <span className="inline-flex items-center justify-center bg-cyan-500 text-app-ink rounded-full p-0.5" title="Geverifieerd">
-                                <Check className="w-2 h-2 stroke-[4]" />
-                              </span>
-                            )}
+                            <VerifiedBadge user={commentAuthor || commentAuthor?.email} size="xs" />
+                            <DeveloperBadge user={commentAuthor || commentAuthor?.email} size="xs" />
                             {isBeta && (
                               <span className="inline-flex items-center justify-center bg-amber-500/20 border border-amber-500/40 text-amber-400 p-0.5 rounded" title="Beta Tester">
                                 <FlaskConical className="w-2.5 h-2.5" />
@@ -759,7 +756,7 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                   onClick={() => setSelectedCategory(cat.id)}
                   className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black whitespace-nowrap transition-all border shrink-0 cursor-pointer backdrop-blur-xl ${
                     isActive
-                      ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/50 text-app-ink shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+                      ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/50 text-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.3)]'
                       : 'bg-app-card/60 border-app-border text-app-muted hover:text-app-ink hover:border-white/20'
                   }`}
                 >
@@ -937,10 +934,10 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                             handleCreateThread();
                           }}
                           disabled={sending || !threadTitleInput.trim() || !threadContentInput.trim()}
-                          className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-app-ink rounded-xl font-black text-xs transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] disabled:opacity-50 flex items-center gap-2 cursor-pointer active:scale-95"
+                          className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl font-black text-xs transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] disabled:opacity-50 flex items-center gap-2 cursor-pointer active:scale-95"
                         >
-                          {sending ? <ThemedSpinner size="xs" color="#ffffff" /> : <Plus className="w-4 h-4 stroke-[3]" />}
-                          <span>Topic Publiceren</span>
+                          {sending ? <ThemedSpinner size="xs" color="#ffffff" /> : <Plus className="w-4 h-4 stroke-[3] text-white" />}
+                          <span className="text-white">Topic Publiceren</span>
                         </button>
                       </div>
                     </div>
@@ -966,10 +963,10 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                   if (selectedCategory !== 'all') setSelectedCategory('all');
                   setIsCreatingThread(true);
                 }}
-                className="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-app-ink font-black text-xs rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.4)] cursor-pointer inline-flex items-center gap-2"
+                className="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-xs rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.4)] cursor-pointer inline-flex items-center gap-2"
               >
-                <Plus className="w-4 h-4 stroke-[3]" />
-                <span>Start het eerste topic</span>
+                <Plus className="w-4 h-4 stroke-[3] text-white" />
+                <span className="text-white">Start het eerste topic</span>
               </button>
             </div>
           ) : (
@@ -1005,11 +1002,8 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
 
                           <span className="font-bold text-app-ink flex items-center gap-1">
                             {threadAuthorName}
-                            {isVerified && (
-                              <span className="inline-flex items-center justify-center bg-cyan-500 text-app-ink rounded-full p-0.5 shadow-[0_0_6px_rgba(6,182,212,0.6)]" title="Geverifieerd">
-                                <Check className="w-2 h-2 stroke-[4]" />
-                              </span>
-                            )}
+                            <VerifiedBadge user={threadAuthor || threadAuthor?.email} size="xs" />
+                            <DeveloperBadge user={threadAuthor || threadAuthor?.email} size="xs" />
                             {isBeta && (
                               <span className="inline-flex items-center justify-center bg-amber-500/20 border border-amber-500/40 text-amber-400 p-0.5 rounded" title="Beta Tester">
                                 <FlaskConical className="w-2 h-2" />
@@ -1066,7 +1060,7 @@ export const ModernForumView: React.FC<ModernForumViewProps> = React.memo((props
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
-                        <div className="hidden sm:flex p-3 rounded-2xl bg-app-ink/5 text-app-muted group-hover:bg-cyan-500 group-hover:text-app-ink transition-all shadow-sm">
+                        <div className="hidden sm:flex p-3 rounded-2xl bg-app-ink/5 text-app-muted group-hover:bg-cyan-500 group-hover:text-white transition-all shadow-sm">
                           <ChevronLeft className="w-4 h-4 rotate-180 stroke-[3]" />
                         </div>
                       </div>

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserCog, Bell, Palette, Shield, User as UserIcon, Users, Camera, Save, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical, Download, ExternalLink, ChevronDown, ChevronUp, RefreshCw, HardDrive, Smartphone, Globe, MessageSquare, PanelLeft, PanelRight, LayoutList, LogOut, Sliders, Compass } from 'lucide-react';
+import { UserCog, Bell, Palette, Shield, User as UserIcon, Users, Camera, Save, Sparkles, Volume2, Upload, Play, Trash2, ShieldCheck, UserPlus, AlertTriangle, X, Plus, Flag, Layout, Activity, Check, Lock as LockIcon, Zap, Moon, Type, Monitor, ShieldAlert, UserMinus, Search, Leaf, Clock, Sun, Link, Info, Fingerprint, Key, Eye, EyeOff, FlaskConical, Download, ExternalLink, ChevronDown, ChevronUp, RefreshCw, HardDrive, Smartphone, Globe, MessageSquare, PanelLeft, PanelRight, LayoutList, LogOut, Sliders, Compass, Share2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { rateLimiter } from '../utils/rateLimiter';
 import CryptoJS from 'crypto-js';
 import { UserProfile, CustomTheme, NotificationSettings, User, Report, Conversation, ModernUICustomization } from '../types';
-import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, isVerifiedEmail, isBetaTester } from '../constants';
-import { formatDate, convertEmoticons, maskEmail, parseAdminNotes, getDeviceOSInfo, uploadImageToImgBB, compressImageToBlob, getSafeImageUrl, handleImageError } from '../utils/helpers';
+import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, isVerifiedEmail, isBetaTester, APP_VERSION } from '../constants';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
+import { formatDate, convertEmoticons, maskEmail, parseAdminNotes, getDeviceOSInfo, uploadImageToImgBB, compressImageToBlob, getSafeImageUrl, handleImageError, getProfileShareUrl } from '../utils/helpers';
 import { AudioLogsView } from './AudioLogsView';
 import { getLocalArchiveStats, clearLocalArchive } from '../utils/localMessageArchive';
 import { runAutoBase64Migration } from '../utils/base64Migration';
@@ -16,6 +18,7 @@ import { CustomFontManagerModal } from './CustomFontManagerModal';
 import { DatabaseSecurityShield } from './DatabaseSecurityShield';
 import { useLocalModernUI, getAccentHex } from '../utils/modernUICustom';
 import { ModernUICustomizerModal } from './ModernUICustomizerModal';
+import { LetterAvatar } from './UserAvatar';
 import { 
   AnimatedMailIcon, 
   AnimatedChatIcon, 
@@ -1086,10 +1089,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="w-16 h-16 bg-app-accent rounded-2xl flex items-center justify-center">
                   <UserCog className="w-8 h-8 text-app-ink" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-2xl font-bold text-app-ink uppercase tracking-tight">Profiel Instellingen</h3>
                   <p className="text-app-muted text-sm font-medium">Beheer hoe anderen je zien op het forum.</p>
                 </div>
+              </div>
+
+              {/* Public Profile Sharing Card */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-5 bg-cyan-500/10 border border-cyan-500/25 rounded-3xl">
+                <div className="flex items-start sm:items-center gap-3.5">
+                  <div className="p-3 bg-cyan-500/20 text-cyan-400 rounded-2xl shrink-0">
+                    <Share2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-app-ink flex items-center gap-2">
+                      <span>Mijn Profiellink Delen</span>
+                      <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded-md text-[10px] uppercase font-black tracking-wider">Openbaar</span>
+                    </h4>
+                    <p className="text-xs text-app-muted mt-0.5">
+                      Deel je profiel met vrienden of online. Niet-ingelogde bezoekers kunnen je profiel alleen bekijken en niet volgen/berichten sturen.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shareUrl = getProfileShareUrl(user.uid);
+                    if (navigator.share) {
+                      navigator.share({
+                        title: `${profile?.display_name || 'Mijn Profiel'} op het Forum`,
+                        text: `Bekijk mijn profiel op het Forum!`,
+                        url: shareUrl,
+                      }).catch(() => {});
+                    } else {
+                      navigator.clipboard.writeText(shareUrl).then(() => {
+                        toast.success(t("Profiellink gekopieerd naar klembord!"));
+                      }).catch(() => {
+                        const textArea = document.createElement('textarea');
+                        textArea.value = shareUrl;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        toast.success(t("Profiellink gekopieerd naar klembord!"));
+                      });
+                    }
+                  }}
+                  className="w-full sm:w-auto px-5 py-3 bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Kopieer Link</span>
+                </button>
               </div>
 
               <div className="space-y-6">
@@ -1104,9 +1154,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         onError={handleImageError}
                       />
                     ) : (
-                      <div className="w-24 h-24 rounded-3xl bg-app-accent flex items-center justify-center border-4 border-app-bg shadow-xl">
-                        <UserIcon className="w-10 h-10 text-app-muted" />
-                      </div>
+                      <LetterAvatar 
+                        name={profile?.display_name || user.displayName || user.email} 
+                        className="w-24 h-24 rounded-3xl border-4 border-app-bg shadow-xl" 
+                        textClassName="text-3xl font-black"
+                      />
                     )}
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                       <Camera className="w-8 h-8 text-white drop-shadow-lg" />
@@ -1459,7 +1511,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               onError={handleImageError}
                             />
                           ) : (
-                            <UserIcon className="w-6 h-6 text-app-muted" />
+                            <LetterAvatar name={profile?.display_name || user.displayName || user.email} className="w-full h-full" />
                           )}
                         </div>
                       </div>
@@ -1859,7 +1911,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-bold text-app-ink uppercase tracking-wide">Modern UI Concept</h4>
                         <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono text-[10px] font-bold border border-cyan-500/25">
-                          v2.5.5
+                          {APP_VERSION}
                         </span>
                       </div>
                       <p className="text-xs text-app-muted">Transformeer de layout naar een futuristisch 'Glass & Float' design met een supersmalle navigatiebar en flexibele profielenlijst.</p>
@@ -2417,14 +2469,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <input 
                                 type="text"
                                 value={customTheme.wallpaper || ''}
-                                onChange={(e) => setCustomTheme({...customTheme, wallpaper: e.target.value})}
-                                placeholder="Direct Image URL (png/jpg/webp) of upload..."
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  const updated = { ...customTheme, wallpaper: val };
+                                  setCustomTheme(updated);
+                                  if (val) setUseCustomTheme(true);
+                                }}
+                                placeholder="Directe Afbeeldings-URL (https://i.ibb.co/... of upload)..."
                                 className="w-full pl-4 pr-10 py-3 bg-app-card border border-app-border rounded-xl focus:ring-2 focus:ring-app-ink transition-all text-sm text-app-ink"
                               />
                               {customTheme.wallpaper && (
                                 <button
                                   type="button"
-                                  onClick={() => setCustomTheme({ ...customTheme, wallpaper: '' })}
+                                  onClick={async () => {
+                                    const updatedTheme = { ...customTheme, wallpaper: '' };
+                                    setCustomTheme(updatedTheme);
+                                    if (user?.uid) {
+                                      try {
+                                        await supabase.from('profiles').update({
+                                          custom_theme: updatedTheme,
+                                          updated_at: new Date().toISOString()
+                                        }).eq('id', user.uid);
+                                        const cached = localStorage.getItem('cached_profile');
+                                        if (cached) {
+                                          const parsed = JSON.parse(cached);
+                                          localStorage.setItem('cached_profile', JSON.stringify({ ...parsed, custom_theme: updatedTheme }));
+                                        }
+                                      } catch (err) {
+                                        console.error('Failed to clear wallpaper in profile:', err);
+                                      }
+                                    }
+                                    toast.success("Achtergrond verwijderd.");
+                                  }}
                                   className="absolute right-3 top-1/2 -translate-y-1/2 text-app-muted hover:text-red-500 transition-colors"
                                   title="Achtergrond wissen"
                                 >
@@ -2444,20 +2520,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   if (!file) return;
                                   toast.promise(
                                     (async () => {
-                                      const blob = await compressImageToBlob(file, 1280, 720, 0.75, 'image/webp');
-                                      const uploadRes = await uploadImageToImgBB(blob, `wallpaper_${user.uid}`);
-                                      if (uploadRes?.url) {
-                                        setCustomTheme({ ...customTheme, wallpaper: uploadRes.url });
-                                        return "Achtergrond direct gemigreerd naar CDN!";
+                                      const blob = await compressImageToBlob(file, 1920, 1080, 0.85, 'image/webp');
+                                      const uploadRes = await uploadImageToImgBB(blob, `wallpaper_${user?.uid || 'user'}_${Date.now()}`);
+                                      const finalUrl = uploadRes?.url || (await compressImage(file, 1280, 720, 0.70));
+                                      
+                                      const updatedTheme = {
+                                        ...customTheme,
+                                        wallpaper: finalUrl,
+                                        wallpaper_x: customTheme.wallpaper_x ?? 50,
+                                        wallpaper_y: customTheme.wallpaper_y ?? 50,
+                                        opacity: customTheme.opacity ?? 100,
+                                        blur_amount: customTheme.blur_amount ?? 0
+                                      };
+
+                                      setCustomTheme(updatedTheme);
+                                      setUseCustomTheme(true);
+
+                                      // Save immediately to Supabase
+                                      if (user?.uid) {
+                                        try {
+                                          await supabase.from('profiles').update({
+                                            custom_theme: updatedTheme,
+                                            use_custom_theme: true,
+                                            updated_at: new Date().toISOString()
+                                          }).eq('id', user.uid);
+
+                                          const cached = localStorage.getItem('cached_profile');
+                                          if (cached) {
+                                            const parsed = JSON.parse(cached);
+                                            localStorage.setItem('cached_profile', JSON.stringify({
+                                              ...parsed,
+                                              custom_theme: updatedTheme,
+                                              use_custom_theme: true
+                                            }));
+                                          }
+                                        } catch (err) {
+                                          console.error('Failed to auto-save wallpaper to profile:', err);
+                                        }
                                       }
-                                      const fallback = await compressImage(file, 1024, 576, 0.60);
-                                      setCustomTheme({ ...customTheme, wallpaper: fallback });
-                                      return "Achtergrond geoptimaliseerd en geladen!";
+
+                                      return uploadRes?.url 
+                                        ? "Achtergrond geüpload naar ImgBB en direct toegepast!" 
+                                        : "Achtergrond geoptimaliseerd en direct toegepast!";
                                     })(),
                                     {
-                                      loading: "Achtergrond uploaden & migreren naar ImgBB CDN...",
+                                      loading: "Achtergrond uploaden naar ImgBB CDN & instellen...",
                                       success: (msg) => msg,
-                                      error: "Kon achtergrond niet verwerken."
+                                      error: "Kon achtergrond niet uploaden."
                                     }
                                   );
                                 }}
@@ -2772,7 +2881,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       conv.is_group ? (
                                         <Users className="w-5 h-5 text-app-muted" />
                                       ) : (
-                                        <UserIcon className="w-5 h-5 text-app-muted" />
+                                        <LetterAvatar name={name} className="w-full h-full" />
                                       )
                                     )}
                                   </div>
@@ -2968,7 +3077,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-bold text-app-ink">Desktop App</span>
                           <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono text-[10px] font-bold border border-cyan-500/25">
-                            v1.3.1 Release
+                            v1.7.5 Release
                           </span>
                         </div>
                         <p className="text-xs text-app-muted mb-4 leading-relaxed">
@@ -2976,7 +3085,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         </p>
                       </div>
                       <a
-                        href="https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.3.1"
+                        href="https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.7.5"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full py-2.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-2 shadow-sm"
@@ -3116,7 +3225,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                     <div className="p-3 bg-app-card rounded-xl border border-app-border text-center">
                       <p className="text-[10px] uppercase font-bold text-app-muted tracking-wider">Versie</p>
-                      <p className="text-sm font-bold text-app-ink mt-0.5">v2.5.0</p>
+                      <p className="text-sm font-bold text-app-ink mt-0.5">{APP_VERSION}</p>
                     </div>
                     <div className="p-3 bg-app-card rounded-xl border border-app-border text-center">
                       <p className="text-[10px] uppercase font-bold text-app-muted tracking-wider">Platform</p>
@@ -4074,11 +4183,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   <div className="min-w-0">
                                     <div className="text-xs font-bold text-app-ink uppercase tracking-tight truncate flex flex-wrap items-center gap-1.5">
                                       <span>{u.display_name}</span>
-                                      {isVerifiedEmail(u) && (
-                                        <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_6px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
-                                          <Check className="w-2 h-2 stroke-[4]" />
-                                        </span>
-                                      )}
+                                      <VerifiedBadge user={u} size="xs" />
+                                      <DeveloperBadge user={u} size="xs" />
                                       {isBetaTester(u) && (
                                         <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_6px_rgba(245,158,11,0.25)]" title="Beta Tester">
                                           <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />

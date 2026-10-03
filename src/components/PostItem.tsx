@@ -4,8 +4,11 @@ import { User as UserIcon, MessageSquare, Flag, Pencil, Trash2, Mail, Check, X, 
 import { Post, UserProfile } from '../types';
 import { formatDate, formatTime, hexToRgba } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
 import { RichContent } from './RichContent';
 import { ThemedSpinner } from './ThemedLoadingScreen';
+import { LetterAvatar } from './UserAvatar';
 
 interface PostItemProps {
   post: Post;
@@ -98,9 +101,9 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
         ) : (
           <button 
             onClick={() => onOpenProfile(post.author_id)}
-            className="w-full h-full rounded-full bg-app-accent flex items-center justify-center border border-app-border hover:ring-2 hover:ring-app-ink transition-all"
+            className="w-full h-full rounded-full overflow-hidden border border-app-border hover:ring-2 hover:ring-app-ink transition-all cursor-pointer"
           >
-            <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-app-muted" />
+            <LetterAvatar name={displayName} className="w-full h-full rounded-full" />
           </button>
         )}
       </div>
@@ -138,11 +141,8 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
                 className="font-bold text-sm sm:text-base text-app-ink hover:underline text-left inline-flex items-center gap-1.5 max-w-full"
               >
                 <span className="truncate max-w-[130px] sm:max-w-[200px] md:max-w-xs">{nicknames[post.author_id] || displayName}</span>
-                {isVerifiedEmail(authorProfile || authorProfile?.email) && (
-                  <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_8px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">
-                    <Check className="w-2.5 h-2.5 stroke-[4]" />
-                  </span>
-                )}
+                <VerifiedBadge user={authorProfile || authorProfile?.email} size="sm" />
+                <DeveloperBadge user={authorProfile || authorProfile?.email} size="sm" />
                 {isBetaTester(authorProfile || authorProfile?.email) && (
                   <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
                     <FlaskConical className="w-3 h-3 text-amber-400 stroke-[2.5]" />
@@ -229,9 +229,9 @@ export const PostItem: React.FC<PostItemProps> = React.memo(({
               whileTap={{ scale: 0.95 }}
               onClick={() => onUpdatePost(post.id)}
               disabled={saving || !editPostInput.trim()}
-              className="p-2 sm:p-3 bg-app-ink text-app-bg rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
+              className="p-2 sm:p-3 bg-app-ink text-app-ink-contrast rounded-lg sm:rounded-xl hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer"
             >
-              {saving ? <ThemedSpinner size="xs" color="currentColor" /> : <Check className="w-4 h-4 sm:w-5 sm:h-5" />}
+              {saving ? <ThemedSpinner size="xs" color="currentColor" /> : <Check className="w-4 h-4 sm:w-5 sm:h-5 text-app-ink-contrast" />}
             </motion.button>
             <motion.button 
               whileHover={{ scale: 1.05 }}

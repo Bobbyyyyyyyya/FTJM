@@ -149,6 +149,18 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
             color: 'border-purple-500 bg-purple-950/25 text-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_25px_rgba(168,85,247,0.3)]',
             accent: 'bg-purple-500/10 text-purple-400 border-purple-500/20'
           };
+        case 'catclicker':
+          return {
+            name: 'Katten Clicker (Cat Empire) 🐱',
+            color: 'border-amber-400 bg-amber-950/25 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.15)] hover:shadow-[0_0_25px_rgba(251,191,36,0.3)]',
+            accent: 'bg-amber-400/10 text-amber-300 border-amber-400/20'
+          };
+        case 'parkour3d':
+          return {
+            name: 'Cyber Parkour 3D 🏃‍♂️',
+            color: 'border-cyan-400 bg-cyan-950/25 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.3)]',
+            accent: 'bg-cyan-400/10 text-cyan-300 border-cyan-400/20'
+          };
         case 'conquest':
           return {
             name: 'Wereld Heerschappij (Conquest) ⚔️',
@@ -331,7 +343,8 @@ export const RichContent: React.FC<RichContentProps> = React.memo(({ content, se
         if (charCount + part.length > maxChars) {
           const remainingBudget = maxChars - charCount;
           if (remainingBudget > 0) {
-            const truncatedText = part.substring(0, remainingBudget) + '...';
+            const codePoints = Array.from(part);
+            const truncatedText = codePoints.slice(0, remainingBudget).join('') + '...';
             result.push(<React.Fragment key={i}>{highlightMatch(truncatedText, searchQuery)}</React.Fragment>);
           } else if (result.length === 0 || !truncated) {
             result.push(<span key={i}>...</span>);

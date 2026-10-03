@@ -3,7 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Heart, MessageSquare, Send, User as UserIcon, Trash2, ShieldCheck, Check, FlaskConical, Share2, Volume2, VolumeX, ShieldAlert, Ban } from 'lucide-react';
 import { formatDate, getMediaShareUrl, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { isVerifiedEmail, isBetaTester } from '../constants';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
 import { t } from '../utils/translations';
+import { LetterAvatar } from './UserAvatar';
 
 interface Comment {
   id: string;
@@ -140,9 +143,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
                 onError={handleImageError}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <UserIcon className="w-4 h-4 text-app-muted" />
-              </div>
+              <LetterAvatar name={nicknames[media.user_id] || media.author_name} className="w-full h-full" />
             )}
           </div>
           <div className="min-w-0 flex-1">
@@ -150,11 +151,8 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
               <p className="text-xs font-black text-app-ink group-hover/author:text-cyan-500 transition-colors truncate max-w-[130px] sm:max-w-xs">
                 {nicknames[media.user_id] || media.author_name}
               </p>
-              {isVerified && (
-                <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_8px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">
-                  <Check className="w-2 h-2 stroke-[4]" />
-                </span>
-              )}
+              <VerifiedBadge user={authorProfile || authorProfile?.email} size="sm" />
+              <DeveloperBadge user={authorProfile || authorProfile?.email} size="sm" />
               {isBeta && (
                 <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_8px_rgba(245,158,11,0.25)]" title="Beta Tester">
                   <FlaskConical className="w-2.5 h-2.5 text-amber-400 stroke-[2.5]" />
@@ -360,9 +358,7 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
                             onError={handleImageError}
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <UserIcon className="w-2.5 h-2.5 text-app-muted" />
-                          </div>
+                          <LetterAvatar name={commentDisplayName} className="w-full h-full" textClassName="text-[8px]" />
                         )}
                       </div>
                       <div className="flex-1 bg-app-accent/30 rounded-2xl px-3 py-1.5 border border-app-border/40 min-w-0">
@@ -371,11 +367,8 @@ export const MediaFeedCard: React.FC<MediaFeedCardProps> = React.memo(({
                             <span className="text-[10px] font-black text-app-ink truncate max-w-[110px] sm:max-w-[160px]">
                               {commentDisplayName}
                             </span>
-                            {isCommentVerified && (
-                              <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_6px_rgba(6,182,212,0.5)]" title="Geverifieerd Account">
-                                <Check className="w-1.5 h-1.5 stroke-[4]" />
-                              </span>
-                            )}
+                            <VerifiedBadge user={commentAuthorProfile || commentAuthorProfile?.email} size="xs" />
+                            <DeveloperBadge user={commentAuthorProfile || commentAuthorProfile?.email} size="xs" />
                             {isCommentBeta && (
                               <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_6px_rgba(245,158,11,0.25)]" title="Beta Tester">
                                 <FlaskConical className="w-2 h-2 text-amber-400 stroke-[2.5]" />

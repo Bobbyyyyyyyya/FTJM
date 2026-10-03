@@ -8,6 +8,7 @@ import { RichContent } from '../RichContent';
 import { VideoTrimmerModal } from '../VideoTrimmerModal';
 import { ThemedSpinner } from '../ThemedLoadingScreen';
 import { AnimatedSendIcon } from '../AnimatedIcons';
+import { LetterAvatar } from '../UserAvatar';
 
 export interface NormalMessagesViewProps {
   user: any;
@@ -256,10 +257,10 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
 
   const getParticipantPhoto = (uid: string, fallbackPhotos: Record<string, string> = {}) => {
     if (uid === user.uid) {
-      return profile?.photo_url || user.photoURL || fallbackPhotos[uid] || null;
+      return getSafeImageUrl(profile?.photo_url || user.photoURL || fallbackPhotos[uid] || null);
     }
     const found = profiles?.find(p => p.id === uid);
-    return found?.photo_url || fallbackPhotos[uid] || null;
+    return getSafeImageUrl(found?.photo_url || fallbackPhotos[uid] || null);
   };
 
   const getParticipantName = (uid: string, fallbackNames: Record<string, string> = {}) => {
@@ -294,9 +295,9 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
           </div>
           <button 
             onClick={() => setShowUserSearch(true)}
-            className="w-10 h-10 bg-app-ink text-app-bg rounded-2xl flex items-center justify-center hover:scale-105 transition-all active:scale-95 shadow-lg shadow-app-ink/20 group"
+            className="w-10 h-10 bg-app-ink text-app-ink-contrast rounded-2xl flex items-center justify-center hover:scale-105 transition-all active:scale-95 shadow-lg shadow-app-ink/20 group cursor-pointer"
           >
-            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300 text-app-ink-contrast" />
           </button>
         </div>
         
@@ -352,7 +353,7 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                                   {photo ? (
                                     <img src={getSafeImageUrl(photo)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                                   ) : (
-                                    <UserIcon className="w-2 h-2 text-app-muted" />
+                                    <LetterAvatar name={getParticipantName(uid, conv.participant_names)} className="w-full h-full" textClassName="text-[8px]" />
                                   )}
                                 </div>
                               );
@@ -366,10 +367,11 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                             src={getParticipantPhoto(otherParticipantUid || '', conv.participant_photos)!} 
                             alt="" 
                             className="w-full h-full object-cover" 
-                            referrerPolicy="no-referrer" 
+                            referrerPolicy="no-referrer"
+                            onError={handleImageError}
                           />
                         ) : (
-                          <UserIcon className={`w-7 h-7 ${isActive ? 'text-app-bg' : 'text-app-muted'}`} />
+                          <LetterAvatar name={getParticipantName(otherParticipantUid || '', conv.participant_names)} className="w-full h-full" />
                         )}
                       </div>
                       {isOnline && (
@@ -480,7 +482,7 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                               {photo ? (
                                 <img src={getSafeImageUrl(photo)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                               ) : (
-                                <UserIcon className="w-2 h-2 text-app-muted" />
+                                <LetterAvatar name={getParticipantName(uid, activeConversation.participant_names)} className="w-full h-full" textClassName="text-[8px]" />
                               )}
                             </div>
                           );
@@ -493,7 +495,7 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                       return photo ? (
                         <img src={getSafeImageUrl(photo)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                       ) : (
-                        <UserIcon className="w-6 h-6 text-app-muted m-auto h-full" />
+                        <LetterAvatar name={otherUid ? getParticipantName(otherUid, activeConversation.participant_names) : 'Onbekend'} className="w-full h-full" />
                       );
                     })()}
                   </div>
@@ -736,7 +738,8 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                                 src={getParticipantPhoto(msg.sender_id, activeConversation.participant_photos)!} 
                                 alt="" 
                                 className="w-full h-full object-cover" 
-                                referrerPolicy="no-referrer" 
+                                referrerPolicy="no-referrer"
+                                onError={handleImageError}
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-app-muted">
@@ -745,17 +748,17 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                             )}
                           </div>
                         )}
-                        <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                        <div className={`flex flex-col max-w-[80%] sm:max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
                           {activeConversation.is_group && !isMe && (
                             <span className="text-[10px] font-black text-app-muted uppercase tracking-widest mb-1.5 ml-1 truncate block max-w-full">
                               {getParticipantName(msg.sender_id, activeConversation.participant_names) || 'Onbekend'}
                             </span>
                           )}
-                          <div className={`flex items-center gap-2 group/msg ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                          <div className={`flex items-center gap-2 max-w-full group/msg ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                             <div className={`
-                                px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative font-medium
+                                min-w-0 break-words px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-sm transition-all duration-300 relative font-medium
                                 ${isMe 
-                                  ? 'bg-app-ink text-app-bg rounded-br-none hover:shadow-xl' 
+                                  ? 'bg-app-ink text-app-ink-contrast rounded-br-none hover:shadow-xl' 
                                   : 'bg-app-card text-app-ink border border-app-border rounded-bl-none hover:border-app-border'}
                                 ${!isMe && useCustomTheme && customTheme.glass_effect ? 'custom-glass-chat' : ''}
                               `}
@@ -771,7 +774,7 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                                   <input 
                                     value={editInput}
                                     onChange={(e) => setEditInput(e.target.value)}
-                                    className="w-full bg-app-bg/10 border-none focus:ring-2 focus:ring-app-bg/30 text-app-bg text-sm p-2 rounded-xl"
+                                    className="w-full bg-white/10 border-none focus:ring-2 focus:ring-white/30 text-app-ink-contrast text-sm p-2 rounded-xl"
                                     autoFocus
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
@@ -785,7 +788,7 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                                   <div className="flex justify-end gap-3">
                                     <button 
                                       onClick={() => setEditingMessageId(null)} 
-                                      className="p-1.5 hover:bg-app-bg/20 rounded-lg transition-colors"
+                                      className="p-1.5 hover:bg-white/20 rounded-lg transition-colors text-app-ink-contrast cursor-pointer"
                                     >
                                       <X size={16} />
                                     </button>
@@ -794,7 +797,7 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                                         onEditMessage?.(msg.id, editInput);
                                         setEditingMessageId(null);
                                       }} 
-                                      className="p-1.5 bg-app-bg/20 hover:bg-app-bg/30 rounded-lg transition-colors"
+                                      className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-app-ink-contrast cursor-pointer"
                                     >
                                       <Check size={16} />
                                     </button>
@@ -985,9 +988,9 @@ export const NormalMessagesView: React.FC<NormalMessagesViewProps> = React.memo(
                   <button 
                     type="submit"
                     disabled={sending || (!messageInput.trim() && !selectedFile)}
-                    className="px-2.5 sm:px-6 h-full bg-app-ink text-app-bg rounded-lg sm:rounded-2xl hover:opacity-90 disabled:opacity-30 active:scale-95 transition-all shadow-lg flex items-center justify-center min-w-[36px] sm:min-w-[80px] cursor-pointer"
+                    className="px-2.5 sm:px-6 h-full bg-app-ink text-app-ink-contrast rounded-lg sm:rounded-2xl hover:opacity-90 disabled:opacity-30 active:scale-95 transition-all shadow-lg flex items-center justify-center min-w-[36px] sm:min-w-[80px] cursor-pointer"
                   >
-                    {sending ? <ThemedSpinner size="xs" color="currentColor" /> : <AnimatedSendIcon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />}
+                    {sending ? <ThemedSpinner size="xs" color="currentColor" /> : <AnimatedSendIcon className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-app-ink-contrast" />}
                   </button>
                 </div>
               </form>

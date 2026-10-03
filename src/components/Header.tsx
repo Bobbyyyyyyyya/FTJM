@@ -4,6 +4,7 @@ import { UserProfile, CustomTheme, User } from '../types';
 import { t } from '../utils/translations';
 import { hexToRgba, getSafeImageUrl, handleImageError } from '../utils/helpers';
 import { Logo } from './Logo';
+import { LetterAvatar } from './UserAvatar';
 
 interface HeaderProps {
   user: User;
@@ -59,7 +60,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
                     onError={handleImageError}
                   />
                 ) : (
-                  <UserIcon className="w-5 h-5 sm:w-6 sm:h-6 text-app-muted" />
+                  <LetterAvatar name={profile?.display_name || user.displayName || user.email} className="w-full h-full" />
                 )}
               </div>
               {isAdmin && (

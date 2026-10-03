@@ -100,6 +100,26 @@ async function startServer() {
     }
   };
 
+  const wordArrayToUint8Array = (wordArray: any): Uint8Array => {
+    const l = wordArray.sigBytes;
+    const words = wordArray.words;
+    const result = new Uint8Array(l);
+    let i = 0;
+    let j = 0;
+    while (true) {
+      if (i === l) break;
+      const w = words[j++];
+      result[i++] = (w >> 24) & 0xff;
+      if (i === l) break;
+      result[i++] = (w >> 16) & 0xff;
+      if (i === l) break;
+      result[i++] = (w >> 8) & 0xff;
+      if (i === l) break;
+      result[i++] = w & 0xff;
+    }
+    return result;
+  };
+
   const decryptGeneralChat = (cipherText: string): string => {
     try {
       if (!cipherText || typeof cipherText !== 'string') {
@@ -108,48 +128,63 @@ async function startServer() {
       
       let cleanText = cipherText.trim();
       
-      if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
-        cleanText = cleanText.substring(1, cleanText.length - 1).trim();
-      }
-      if (cleanText.startsWith("'") && cleanText.endsWith("'")) {
+      if ((cleanText.startsWith('"') && cleanText.endsWith('"')) || (cleanText.startsWith("'") && cleanText.endsWith("'"))) {
         cleanText = cleanText.substring(1, cleanText.length - 1).trim();
       }
       if (cleanText.startsWith('\\"') && cleanText.endsWith('\\"')) {
         cleanText = cleanText.substring(2, cleanText.length - 2).trim();
       }
 
+      const hasGcPrefix = cleanText.startsWith('gc:');
       let actualCipher = cleanText;
       while (actualCipher.startsWith('gc:')) {
         actualCipher = actualCipher.substring(3).trim();
       }
-      
-      // 1. Primary key decrypt
-      try {
-        const bytes = CryptoJS.AES.decrypt(actualCipher, CHAT_ENCRYPTION_KEY);
-        const originalText = bytes.toString(CryptoJS.enc.Utf8);
-        if (originalText && originalText.trim().length > 0) {
-          return originalText;
-        }
-        const latinText = bytes.toString(CryptoJS.enc.Latin1);
-        if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
-          return latinText;
-        }
-      } catch (e) {}
 
-      // 2. Legacy key decrypt
-      try {
-        const bytes = CryptoJS.AES.decrypt(actualCipher, LEGACY_CHAT_ENCRYPTION_KEY);
-        const originalText = bytes.toString(CryptoJS.enc.Utf8);
-        if (originalText && originalText.trim().length > 0) {
-          return originalText;
+      const looksLikeCipher = hasGcPrefix || actualCipher.startsWith('U2FsdGVkX1');
+      if (!looksLikeCipher) {
+        return cleanText;
+      }
+
+      const normalizedCipher = actualCipher.replace(/ /g, '+');
+      const ciphersToTry = [normalizedCipher];
+      if (normalizedCipher !== actualCipher) {
+        ciphersToTry.push(actualCipher);
+      }
+
+      const keysToTry = [
+        CHAT_ENCRYPTION_KEY,
+        LEGACY_CHAT_ENCRYPTION_KEY
+      ];
+
+      for (const key of keysToTry) {
+        for (const cipher of ciphersToTry) {
+          try {
+            const bytes = CryptoJS.AES.decrypt(cipher, key);
+            if (!bytes || bytes.sigBytes <= 0) continue;
+
+            try {
+              const originalText = bytes.toString(CryptoJS.enc.Utf8);
+              if (originalText && originalText.trim().length > 0) {
+                return originalText;
+              }
+            } catch (e) {}
+
+            try {
+              if (typeof TextDecoder !== 'undefined') {
+                const u8 = wordArrayToUint8Array(bytes);
+                const decoder = new TextDecoder('utf-8', { fatal: false });
+                const decoded = decoder.decode(u8);
+                if (decoded && decoded.trim().length > 0 && !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(decoded)) {
+                  return decoded;
+                }
+              }
+            } catch (e) {}
+          } catch (e) {}
         }
-        const latinText = bytes.toString(CryptoJS.enc.Latin1);
-        if (latinText && !latinText.includes('\ufffd') && latinText.trim().length > 0) {
-          return latinText;
-        }
-      } catch (e) {}
+      }
       
-      return cleanText.startsWith('gc:') ? actualCipher : cipherText;
+      return hasGcPrefix ? cleanText : cipherText;
     } catch (error) {
       console.error('Decryption failed for:', cipherText, error);
       return typeof cipherText === 'string' ? cipherText : '';
@@ -167,6 +202,12 @@ async function startServer() {
   // Security Shield Stats & Incident Audit Log Endpoint
   app.get('/api/security/stats', (req, res) => {
     res.json({ success: true, ...getSecurityStats() });
+  });
+
+  // ImgBB Public Client Key Endpoint for direct browser uploads (avoids datacenter IP blocks)
+  app.get('/api/imgbb-key', (req, res) => {
+    const key = (process.env.IMGBB_API_KEY || '2bf9df1a0115e215fae223f666bb4740').trim();
+    res.json({ success: true, key });
   });
 
   // Image & Media Upload Endpoint (ImgBB with local persistent /uploads/ fallback)

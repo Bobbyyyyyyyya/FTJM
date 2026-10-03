@@ -2,7 +2,8 @@ import React from 'react';
 import { Mail, Plus, User as UserIcon, PanelLeft, PanelRight, LayoutList, Users, LogOut, Sliders } from 'lucide-react';
 import { Conversation, UserProfile, CustomTheme, User, ModernUICustomization } from '../types';
 import { getAccentHex, getGlassEffectClasses, getRadiusValue } from '../utils/modernUICustom';
-import { hexToRgba } from '../utils/helpers';
+import { hexToRgba, getSafeImageUrl, handleImageError } from '../utils/helpers';
+import { LetterAvatar } from './UserAvatar';
 
 interface ModernTopDMBarProps {
   user: User;
@@ -147,7 +148,7 @@ export const ModernTopDMBar: React.FC<ModernTopDMBarProps> = React.memo(({
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    <UserIcon className="w-3 h-3 text-app-muted" />
+                    <LetterAvatar name={info.name} className="w-full h-full" textClassName="text-[9px]" />
                   )}
                   {info.isOnline && (
                     <span className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-emerald-500 rounded-full ring-1 ring-app-card animate-pulse" />
@@ -231,15 +232,14 @@ export const ModernTopDMBar: React.FC<ModernTopDMBarProps> = React.memo(({
         >
           {(profile?.photo_url?.trim() || user.photoURL?.trim()) ? (
             <img
-              src={profile?.photo_url || user.photoURL || undefined}
+              src={getSafeImageUrl(profile?.photo_url || user.photoURL)}
               alt=""
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
+              onError={handleImageError}
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <UserIcon className="w-3.5 h-3.5 text-app-muted" />
-            </div>
+            <LetterAvatar name={profile?.display_name || user.displayName || user.email} className="w-full h-full" textClassName="text-[10px]" />
           )}
         </button>
 

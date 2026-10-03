@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Monitor, Download, Globe, X, Sparkles, ExternalLink, CheckCircle2, ShieldCheck, Laptop } from 'lucide-react';
 import { getDeviceOSInfo } from '../utils/helpers';
 
-export const DESKTOP_DOWNLOAD_URL = 'https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.3.1';
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.7.5';
 
 export function getDesktopOperatingSystem(): 'macOS' | 'Windows' | 'Linux' | null {
   if (typeof window === 'undefined') return null;
@@ -148,7 +148,7 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
                   {currentOS} Gedetecteerd
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700 font-mono">
-                  v1.3.1
+                  v1.7.5
                 </span>
               </div>
               <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white">
@@ -192,7 +192,7 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
               className="w-full flex items-center justify-center gap-2.5 py-3.5 px-5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/25 transition-all transform active:scale-[0.98]"
             >
               <Download className="w-4 h-4" />
-              <span>Desktop App Downloaden (v1.3.1)</span>
+              <span>Desktop App Downloaden (v1.7.5)</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-80" />
             </button>
 
@@ -217,7 +217,7 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
               />
               <span>Onthoud mijn keuze (niet meer vragen)</span>
             </label>
-            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.3.1</span>
+            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.7.5</span>
           </div>
         </motion.div>
       </motion.div>

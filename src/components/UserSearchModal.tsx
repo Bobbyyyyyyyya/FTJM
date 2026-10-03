@@ -3,7 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, User as UserIcon, Users, Mail, Check, ShieldCheck, FlaskConical } from 'lucide-react';
 import { UserProfile } from '../types';
 import { isVerifiedEmail, isBetaTester, isTestUser } from '../constants';
+import { VerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge } from './DeveloperBadge';
 import { getSafeImageUrl, handleImageError } from '../utils/helpers';
+import { LetterAvatar } from './UserAvatar';
 
 interface UserSearchModalProps {
   show: boolean;
@@ -177,7 +180,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                                 onError={handleImageError}
                               />
                             ) : (
-                              <UserIcon className={`w-6 h-6 ${isSelected ? 'text-app-bg' : 'text-app-muted'}`} />
+                              <LetterAvatar name={u.display_name} className="w-full h-full rounded-2xl" textClassName="text-base" />
                             )}
                           </div>
                           {onlineUsers.has(u.id) && (
@@ -187,11 +190,8 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <p className={`font-bold truncate ${isSelected ? 'text-app-ink' : 'text-app-ink'}`}>{u.display_name || 'Anoniem'}</p>
-                            {isVerifiedEmail(u) && (
-                              <span className="inline-flex items-center justify-center bg-cyan-500 text-white rounded-full p-0.5 shrink-0 select-none shadow-[0_0_6px_rgba(6,182,212,0.4)]" title="Geverifieerd Account">
-                                <Check className="w-2.5 h-2.5 stroke-[4]" />
-                              </span>
-                            )}
+                            <VerifiedBadge user={u} size="sm" />
+                            <DeveloperBadge user={u} size="sm" />
                             {isBetaTester(u) && (
                               <span className="inline-flex items-center justify-center bg-amber-500/15 border border-amber-500/30 text-amber-400 p-0.5 rounded shrink-0 select-none shadow-[0_0_6px_rgba(245,158,11,0.25)]" title="Beta Tester">
                                 <FlaskConical className="w-2.5 h-2.5 stroke-[2.5]" />

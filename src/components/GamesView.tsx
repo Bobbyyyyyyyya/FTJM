@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Gamepad2, Trophy, RotateCcw, ArrowLeft, ArrowUp, ArrowDown, Bot, Play, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { HamsterGame } from './HamsterGame';
+import { CatClickerGame } from './CatClickerGame';
+import { Parkour3DGame } from './Parkour3DGame';
 import { supabase } from '../utils/supabase';
 
 // Helper to play synthesized retro sound effects using Web Audio API
@@ -78,23 +80,48 @@ interface GameProps {
   onBack: () => void;
   isFullscreen?: boolean;
   userProfile?: any;
-  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => Promise<void>;
-  onShareHighScoreOpen?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => void;
+  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout' | 'catclicker' | 'parkour3d', score: number) => Promise<void>;
+  onShareHighScoreOpen?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout' | 'catclicker' | 'parkour3d', score: number) => void;
 }
 
 interface GamesViewProps {
   userProfile?: any;
   conversations?: any[];
-  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number) => Promise<void>;
-  onShareHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout', score: number, targetType: 'general' | 'dm', conversationId?: string) => Promise<void>;
+  onSaveHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout' | 'catclicker' | 'parkour3d', score: number) => Promise<void>;
+  onShareHighScore?: (gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout' | 'catclicker' | 'parkour3d', score: number, targetType: 'general' | 'dm', conversationId?: string) => Promise<void>;
+}
+
+export function formatLeaderboardScore(score: number, gameId?: string): string {
+  if (typeof score !== 'number' || isNaN(score)) return '0';
+  if (gameId !== 'catclicker' && score < 1_000_000) {
+    return score.toLocaleString('nl-NL');
+  }
+  const rounded = Math.floor(score);
+  if (rounded < 1_000_000) {
+    return rounded.toLocaleString('nl-NL');
+  } else if (rounded < 1_000_000_000) {
+    return (rounded / 1_000_000).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' Miljoen';
+  } else if (rounded < 1_000_000_000_000) {
+    return (rounded / 1_000_000_000).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' Miljard (Billion)';
+  } else if (rounded < 1_000_000_000_000_000) {
+    return (rounded / 1_000_000_000_000).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' Biljoen (Trillion)';
+  } else if (rounded < 1e18) {
+    return (rounded / 1e15).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' Biljard (Quadrillion)';
+  } else if (rounded < 1e21) {
+    return (rounded / 1e18).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' Triljoen (Quintillion)';
+  } else if (rounded < 1e24) {
+    return (rounded / 1e21).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' Triljard (Sextillion)';
+  } else {
+    return (rounded / 1e24).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' Quadriljoen (Septillion)';
+  }
 }
 
 export function GamesView({ userProfile, conversations = [], onSaveHighScore, onShareHighScore }: GamesViewProps) {
-  const [selectedGame, setSelectedGame] = useState<'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster' | 'breakout'>('lobby');
+  const [selectedGame, setSelectedGame] = useState<'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster' | 'breakout' | 'catclicker' | 'parkour3d'>('lobby');
   const [isGameFullscreen, setIsGameFullscreen] = useState(false);
   const gameWrapperRef = useRef<HTMLDivElement>(null);
 
-  const [activeShareModal, setActiveShareModal] = useState<{ gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout'; score: number } | null>(null);
+  const [activeShareModal, setActiveShareModal] = useState<{ gameId: 'snake' | 'flappy' | 'sysadmin' | 'hamster' | 'conquest' | 'geometry' | 'breakout' | 'catclicker' | 'parkour3d'; score: number } | null>(null);
   const [shareDestination, setShareDestination] = useState<'general' | 'dm'>('general');
   const [selectedConversationId, setSelectedConversationId] = useState<string>('');
 
@@ -129,7 +156,8 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
             flappy: [],
             sysadmin: [],
             hamster: [],
-            breakout: []
+            breakout: [],
+            catclicker: []
           };
           
           data.forEach((p: any) => {
@@ -168,7 +196,18 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
     fetchLeaderboards();
   }, [selectedGame]);
 
-  const selectGame = (game: 'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster' | 'breakout') => {
+  const GAME_NAMES: Record<string, string> = {
+    catclicker: 'Katten Clicker',
+    parkour3d: 'Cyber Parkour 3D',
+    snake: 'FTJM Slang (Snake)',
+    ttt: 'Boter Kaas & Eieren',
+    flappy: 'Flappy FTJM',
+    sysadmin: 'FTJM SysAdmin Simulator',
+    hamster: 'Hamster Kombat FTJM',
+    breakout: 'Retro Breakout'
+  };
+
+  const selectGame = (game: 'lobby' | 'snake' | 'ttt' | 'flappy' | 'sysadmin' | 'hamster' | 'breakout' | 'catclicker' | 'parkour3d') => {
     playRetroSound('click');
     setSelectedGame(game);
   };
@@ -231,38 +270,117 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
   }, [isGameFullscreen]);
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 sm:p-8 h-[calc(100vh-8rem)] flex flex-col font-primary">
+    <div className={`w-full p-1 sm:p-2 h-full min-h-0 flex flex-col font-primary ${selectedGame === 'lobby' ? 'overflow-y-auto custom-scrollbar' : 'overflow-hidden'}`}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-8 pb-4 border-b border-app-border">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-1 text-app-ink flex items-center gap-2">
-            <Gamepad2 className="w-8 h-8 text-cyan-500 animate-[bounce_2s_infinite]" />
-            FTJM Geheim Arcade
-          </h2>
-          <p className="text-app-muted font-medium text-sm">Een geheime verzameling grappige retro games easter eggs!</p>
+      {selectedGame === 'lobby' ? (
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-app-border shrink-0">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-0.5 text-app-ink flex items-center gap-2">
+              <Gamepad2 className="w-7 h-7 sm:w-8 sm:h-8 text-cyan-500 animate-[bounce_2s_infinite]" />
+              FTJM Geheim Arcade
+            </h2>
+            <p className="text-app-muted font-medium text-xs sm:text-sm">Een geheime verzameling grappige retro games easter eggs!</p>
+          </div>
         </div>
-        {selectedGame !== 'lobby' && (
-          <div className="flex gap-2">
+      ) : (
+        <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-app-border shrink-0">
+          <div className="flex items-center gap-2">
+            <Gamepad2 className="w-4 h-4 text-cyan-500" />
+            <span className="text-xs font-bold text-app-muted uppercase tracking-wider font-mono">
+              Arcade &rsaquo; <span className="text-app-ink font-black">{GAME_NAMES[selectedGame] || selectedGame}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <button
               onClick={toggleFullscreen}
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white h-10 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-sm cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg font-bold text-[11px] uppercase tracking-wide transition-all shadow-sm cursor-pointer"
             >
-              {isGameFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              {isGameFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">{isGameFullscreen ? 'Krimpen' : 'Volledig Scherm'}</span>
             </button>
             <button
               onClick={() => { selectGame('lobby'); setIsGameFullscreen(false); }}
-              className="flex items-center gap-1.5 px-4 py-2 bg-app-accent hover:bg-app-accent/80 text-app-ink h-10 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-sm cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1 bg-app-accent hover:bg-app-accent/80 text-app-ink rounded-lg font-bold text-[11px] uppercase tracking-wide transition-all shadow-sm cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" /> Lobby
+              <ArrowLeft className="w-3.5 h-3.5" /> Lobby
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="flex-1 flex flex-col justify-center">
+      <div className={`flex-1 min-h-0 flex flex-col ${selectedGame === 'lobby' ? 'overflow-visible pb-28 sm:pb-36' : 'overflow-hidden'}`}>
         {selectedGame === 'lobby' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* FEATURED: KATTEN CLICKER (COOKIE CLICKER) CARD - ALTIJD ALS EERSTE */}
+            <motion.div
+              whileHover={{ y: -6, scale: 1.02 }}
+              onClick={() => selectGame('catclicker')}
+              className="bg-app-card border-2 border-amber-500/40 rounded-[2rem] p-6 shadow-md hover:shadow-xl cursor-pointer transition-all flex flex-col justify-between text-left relative overflow-hidden group ring-1 ring-amber-500/20"
+              id="game_card_catclicker"
+            >
+              <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/15 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform duration-500" />
+              <div className="space-y-4 relative z-10">
+                <div className="flex items-center justify-between">
+                  <div className="w-14 h-14 bg-gradient-to-tr from-amber-400 via-orange-500 to-amber-600 rounded-2xl flex items-center justify-center text-white font-extrabold shadow-lg shadow-amber-500/20 text-2xl group-hover:scale-110 transition-transform">
+                    🐱
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-500 font-mono text-[10px] font-black border border-amber-500/30 flex items-center gap-1">
+                    <span>🔥</span> POPULAIR
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-black text-app-ink uppercase tracking-tight">Katten Clicker</h3>
+                    <span className="text-xl animate-bounce">🍪</span>
+                  </div>
+                  <p className="text-xs text-app-muted mt-2 leading-relaxed">
+                    De ultieme Cookie Clicker met katten! Klik op de kat voor brokjes, koop speelse kittens, vloggers, tempels en ontgrendel gouden bollen wol!
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 pt-4 border-t border-app-border/40 flex items-center justify-between relative z-10">
+                <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest bg-amber-500/10 px-2.5 py-1 rounded-full font-mono">Cookie Clicker</span>
+                <span className="text-xs font-black text-app-ink flex items-center gap-1.5 font-primary group-hover:text-amber-500 transition-colors">
+                  Klik Nu <Play className="w-3.5 h-3.5 fill-current" />
+                </span>
+              </div>
+            </motion.div>
+
+            {/* FEATURED: CYBER PARKOUR 3D CARD */}
+            <motion.div
+              whileHover={{ y: -6, scale: 1.02 }}
+              onClick={() => selectGame('parkour3d')}
+              className="bg-app-card border-2 border-cyan-500/40 rounded-[2rem] p-6 shadow-md hover:shadow-xl cursor-pointer transition-all flex flex-col justify-between text-left relative overflow-hidden group ring-1 ring-cyan-500/20"
+              id="game_card_parkour3d"
+            >
+              <div className="absolute top-0 right-0 w-36 h-36 bg-cyan-500/15 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform duration-500" />
+              <div className="space-y-4 relative z-10">
+                <div className="flex items-center justify-between">
+                  <div className="w-14 h-14 bg-gradient-to-tr from-cyan-400 via-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-extrabold shadow-lg shadow-cyan-500/20 text-2xl group-hover:scale-110 transition-transform">
+                    🏃‍♂️
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-400 font-mono text-[10px] font-black border border-cyan-500/30 flex items-center gap-1">
+                    <span>✨</span> NIEUW 3D
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-black text-app-ink uppercase tracking-tight">Cyber Parkour 3D</h3>
+                    <span className="text-xl animate-bounce">🏙️</span>
+                  </div>
+                  <p className="text-xs text-app-muted mt-2 leading-relaxed">
+                    Echte 3D parkour actie! Ren over neon daken, ontwijk lasers, lanceer jezelf met bounce pads en sprint door uitdagende levels in 1st of 3rd person!
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 pt-4 border-t border-app-border/40 flex items-center justify-between relative z-10">
+                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest bg-cyan-500/10 px-2.5 py-1 rounded-full font-mono">3D Parkour</span>
+                <span className="text-xs font-black text-app-ink flex items-center gap-1.5 font-primary group-hover:text-cyan-400 transition-colors">
+                  Speel Nu <Play className="w-3.5 h-3.5 fill-current" />
+                </span>
+              </div>
+            </motion.div>
+
             {/* SNAKE CARD */}
             <motion.div
               whileHover={{ y: -6, scale: 1.02 }}
@@ -429,8 +547,9 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 {[
+                  { id: 'catclicker', name: '🐱 Katten Clicker', color: 'border-amber-500/30 text-amber-400' },
                   { id: 'snake', name: '🐍 Snake', color: 'border-cyan-500/30 text-cyan-400' },
                   { id: 'flappy', name: '🚀 Flappy', color: 'border-emerald-500/30 text-emerald-400' },
                   { id: 'sysadmin', name: '🔥 SysAdmin', color: 'border-rose-500/30 text-rose-400' },
@@ -460,7 +579,12 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
                                   )}
                                   <span className="text-white font-semibold truncate">{item.name}</span>
                                 </span>
-                                <span className="font-bold text-yellow-500">{item.score}</span>
+                                <span
+                                  className="font-bold text-yellow-500 text-right ml-1.5 shrink-0 text-[11px]"
+                                  title={`${item.score.toLocaleString('nl-NL')} ${game.id === 'catclicker' ? 'brokjes' : 'punten'}`}
+                                >
+                                  {formatLeaderboardScore(item.score, game.id)}
+                                </span>
                               </div>
                             ))}
                           </div>
@@ -480,7 +604,7 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
         {selectedGame !== 'lobby' && (
           <div 
             ref={gameWrapperRef} 
-            className={isGameFullscreen ? "fixed inset-0 z-[100] bg-[#070614] flex flex-col items-center justify-center p-4 overflow-y-auto" : "relative w-full"}
+            className={isGameFullscreen ? "fixed inset-0 z-[100] bg-[#070614] flex flex-col items-center justify-center p-4 overflow-y-auto" : "relative w-full h-full flex-1 min-h-0 flex flex-col"}
           >
             {isGameFullscreen && (
               <div className="absolute top-4 right-4 z-[110]">
@@ -538,6 +662,24 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
                 onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
               />
             )}
+            {selectedGame === 'catclicker' && (
+              <CatClickerGame 
+                onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} 
+                isFullscreen={isGameFullscreen} 
+                userProfile={userProfile}
+                onSaveHighScore={onSaveHighScore}
+                onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
+              />
+            )}
+            {selectedGame === 'parkour3d' && (
+              <Parkour3DGame 
+                onBack={() => { setSelectedGame('lobby'); if (isGameFullscreen) toggleFullscreen(); }} 
+                isFullscreen={isGameFullscreen} 
+                userProfile={userProfile}
+                onSaveHighScore={onSaveHighScore}
+                onShareHighScoreOpen={(gameId, score) => setActiveShareModal({ gameId, score })}
+              />
+            )}
           </div>
         )}
 
@@ -574,11 +716,13 @@ export function GamesView({ userProfile, conversations = [], onSaveHighScore, on
                   <div>
                     <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block font-mono">GAME</span>
                     <span className="text-xs font-black text-rose-400 font-mono">
+                      {activeShareModal.gameId === 'parkour3d' && '🏃 Cyber Parkour 3D'}
                       {activeShareModal.gameId === 'snake' && '🐍 Snake'}
                       {activeShareModal.gameId === 'flappy' && '🚀 Flappy'}
                       {activeShareModal.gameId === 'sysadmin' && '🔥 SysAdmin'}
                       {activeShareModal.gameId === 'hamster' && '🐹 Hamster'}
                       {activeShareModal.gameId === 'breakout' && '🧱 Breakout'}
+                      {activeShareModal.gameId === 'catclicker' && '🐱 Katten Clicker'}
                     </span>
                   </div>
                   <div className="text-right">
