@@ -19,6 +19,8 @@ import { DatabaseSecurityShield } from './DatabaseSecurityShield';
 import { useLocalModernUI, getAccentHex } from '../utils/modernUICustom';
 import { ModernUICustomizerModal } from './ModernUICustomizerModal';
 import { LetterAvatar } from './UserAvatar';
+import { PremadeCharacterModal } from './PremadeCharacterModal';
+import { PREMADE_CHARACTERS } from '../data/premadeCharacters';
 import { 
   AnimatedMailIcon, 
   AnimatedChatIcon, 
@@ -655,6 +657,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  // Premade Character Avatar State
+  const [isCharacterModalOpen, setIsCharacterModalOpen] = React.useState(false);
+
+  const handleSelectPremadeCharacter = async (avatarUrl: string, characterName: string) => {
+    setPhotoURLInput(avatarUrl);
+    if (setProfile) {
+      setProfile((prev: any) => prev ? { ...prev, photo_url: avatarUrl } : null);
+    }
+    try {
+      await supabase
+        .from('profiles')
+        .update({ photo_url: avatarUrl, updated_at: new Date().toISOString() })
+        .eq('id', user.uid);
+
+      const cached = localStorage.getItem('cached_profile');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        localStorage.setItem('cached_profile', JSON.stringify({ ...parsed, photo_url: avatarUrl }));
+      }
+    } catch (err) {
+      console.warn('Error auto-saving selected premade character:', err);
+    }
+  };
+
   // Custom Font Management States
   const [isFontModalOpen, setIsFontModalOpen] = React.useState(false);
   const [localCustomFonts, setLocalCustomFonts] = React.useState<any[]>(() => getLocalCustomFonts());
@@ -1217,9 +1243,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             </button>
                           )}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsCharacterModalOpen(true)}
+                          className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold rounded-xl cursor-pointer transition-all shadow-md shadow-purple-600/20 text-xs sm:text-sm shrink-0 select-none active:scale-95"
+                          title="Open de Karakter Galerij met meer dan 30 kant-en-klare avatars"
+                        >
+                          <Sparkles className="w-4 h-4 text-cyan-200 animate-pulse" />
+                          <span>Kies Karakter 🎭</span>
+                        </button>
                         <label className="flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl cursor-pointer transition-all shadow-md text-xs sm:text-sm shrink-0 select-none">
                           <Upload className="w-4 h-4" />
-                          <span>Direct Bestand Uploaden</span>
+                          <span>Uploaden</span>
                           <input 
                             type="file" 
                             accept="image/*" 
@@ -1290,14 +1325,90 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           />
                         </label>
                       </div>
+
+                      {/* Quick Character Presets Bar */}
+                      <div className="mt-3 p-3 bg-app-accent/40 rounded-2xl border border-app-border/60">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-app-ink flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-cyan-500" /> Snelle Karakterkeuze
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsCharacterModalOpen(true)}
+                            className="text-[10px] font-bold text-cyan-500 hover:text-cyan-400 uppercase tracking-wider hover:underline"
+                          >
+                            Bekijk Alle {PREMADE_CHARACTERS.length} ➜
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+                          {PREMADE_CHARACTERS.slice(0, 8).map((char) => {
+                            const isCurrent = (photoURLInput === char.avatarUrl) || (profile?.photo_url === char.avatarUrl && !photoURLInput);
+                            return (
+                              <button
+                                key={char.id}
+                                type="button"
+                                onClick={() => handleSelectPremadeCharacter(char.avatarUrl, char.name)}
+                                title={`${char.name} (${char.tag})`}
+                                className={`relative w-10 h-10 rounded-xl overflow-hidden shrink-0 border transition-all hover:scale-110 active:scale-95 cursor-pointer ${
+                                  isCurrent
+                                    ? 'border-cyan-500 ring-2 ring-cyan-500/40 shadow-lg'
+                                    : 'border-app-border/80 hover:border-cyan-400/60 bg-app-bg'
+                                }`}
+                              >
+                                <img 
+                                  src={char.avatarUrl} 
+                                  alt={char.name}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                />
+                                {isCurrent && (
+                                  <div className="absolute inset-0 bg-cyan-500/30 flex items-center justify-center">
+                                    <Check className="w-3.5 h-3.5 text-white stroke-[3] drop-shadow" />
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
-                    <button 
-                      onClick={handleResetToGoogle}
-                      className="text-xs font-bold text-app-ink hover:underline flex items-center gap-2"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      Gebruik Google profielfoto
-                    </button>
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <button 
+                        onClick={handleResetToGoogle}
+                        className="text-xs font-bold text-app-ink hover:underline flex items-center gap-2"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Gebruik Google profielfoto
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          setPhotoURLInput('');
+                          if (setProfile) {
+                            setProfile((prev: any) => prev ? { ...prev, photo_url: null } : null);
+                          }
+                          try {
+                            await supabase
+                              .from('profiles')
+                              .update({ photo_url: null, updated_at: new Date().toISOString() })
+                              .eq('id', user.uid);
+                            const cached = localStorage.getItem('cached_profile');
+                            if (cached) {
+                              const parsed = JSON.parse(cached);
+                              localStorage.setItem('cached_profile', JSON.stringify({ ...parsed, photo_url: null }));
+                            }
+                            toast.success("Foto verwijderd. Je dynamische initiaal-logo is nu actief! 🔤");
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        className="text-xs font-bold text-app-muted hover:text-red-500 hover:underline flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Geen foto (gebruik initiaal)
+                      </button>
+                    </div>
                   </div>
                 </div>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -4898,6 +5009,13 @@ CREATE TRIGGER tr_secure_profile_updates
           onClose={() => setShowModernCustomizer(false)}
           customTheme={customTheme}
           setCustomTheme={setCustomTheme}
+        />
+
+        <PremadeCharacterModal
+          isOpen={isCharacterModalOpen}
+          onClose={() => setIsCharacterModalOpen(false)}
+          currentPhotoUrl={photoURLInput || profile?.photo_url || user.photoURL}
+          onSelectCharacter={handleSelectPremadeCharacter}
         />
       </div>
     </div>

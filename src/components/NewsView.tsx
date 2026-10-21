@@ -37,6 +37,7 @@ import { NEWS_ITEMS, APP_VERSION } from '../constants';
 import type { NewsItem } from '../types';
 import { t } from '../utils/translations';
 import { UpdateModal } from './UpdateModal';
+import { getPublicProductionOrigin } from '../utils/helpers';
 
 interface NewsViewProps {
   onNavigateToView?: (view: 'chat' | 'forum' | 'messages' | 'settings' | 'news' | 'audiologs' | 'arcade' | 'media_feed') => void;
@@ -185,7 +186,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
   const handleShare = async (item: NewsItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const shareUrl = `${window.location.origin}${window.location.pathname}#news-${item.id}`;
+    const shareUrl = `${getPublicProductionOrigin()}${window.location.pathname}#news-${item.id}`;
     if (navigator.share) {
       try {
         await navigator.share({

@@ -9,8 +9,8 @@ export const APP_VERSION_NAME = 'FTJM Enterprise v2.7';
 export const NEWS_ITEMS: NewsItem[] = [
   {
     id: 17,
-    title: "FTJM Dynamic Identity & Crystal Decrypt v2.7 💎",
-    content: "Welkom bij de baanbrekende FTJM v2.7 update! In deze versie introduceren we dynamische initialen-monogrammen voor alle gebruikers zonder profielfoto met levendige, gepersonaliseerde kleurgradiënten in plaats van het saaie standaard poppetje. Daarnaast hebben we de cryptografische AES-engine fundamenteel herbouwd met automatische Base64 spatie-normalisatie en pure UTF-8 fallback (geen 'Ⱦ' of binaire fouten meer!). Ook hebben we het Update & Release Notes Center volledig opnieuw ontworpen met interactieve categorieën, snelle navigatie en vloeiende animaties.",
+    title: "FTJM Dynamic Identity, Premade Karakters & Crystal Decrypt v2.7 💎",
+    content: "Welkom bij de baanbrekende FTJM v2.7 update! In deze versie introduceren we een uitgebreide galerij met meer dan 35+ kant-en-klare karakters (Sci-Fi, Katten, Gaming, Fantasy en FTJM Exclusief) zodat gebruikers moeiteloos een toffe profielfoto kunnen kiezen zonder zelf bestanden te uploaden. Daarnaast introduceren we dynamische initialen-monogrammen voor alle gebruikers zonder foto met gepersonaliseerde kleurgradiënten in plaats van het standaard poppetje. Verder hebben we de cryptografische AES-engine fundamenteel herbouwd met automatische Base64 spatie-normalisatie en fail-safe UTF-8 decoding (geen 'Ⱦ' of binaire storingen meer!). Ook is de Update & Release Notes modal compleet overhauld!",
     date: "2026-10-03",
     category: "Grote Update",
     version: "v2.7.0",
@@ -18,14 +18,15 @@ export const NEWS_ITEMS: NewsItem[] = [
     author: "FTJM Core Team",
     image: newsSecurityImg,
     highlights: [
+      "Premade Karakter Galerij: Kies direct uit 35+ stijlvolle personages zonder uploaden",
       "Dynamische Initiaal-Logo's (LetterAvatar) met levendige gepersonaliseerde gradiënten",
       "Fail-Safe Crystal AES Decryptie: Oplossing voor 'Ⱦ'-bug en Base64 spatie-corruptie",
-      "Compleet vernieuwd Update & Release Notes venster met interactieve tabs en filters",
-      "Verfijnde typografie en naadloze ondersteuning voor donkere en lichte thema's"
+      "Compleet vernieuwd Update & Release Notes venster met interactieve tabs en filters"
     ],
     details: {
-      overview: "Versie 2.7.0 markeert een grote sprong voorwaarts in visuele identiteit, platform-betrouwbaarheid en cryptografische stabiliteit. Geen grijze placeholder poppetjes meer en gegarandeerd zuivere berichtontcijfering.",
+      overview: "Versie 2.7.0 markeert een grote sprong voorwaarts in gebruikersgemak, visuele identiteit en cryptografische stabiliteit. Geen grijze placeholder poppetjes meer, een rijke karaktergalerij en gegarandeerd zuivere berichtontcijfering.",
       features: [
+        "Premade Karakter Galerij: Direct toegankelijk in het registratiescherm, instellingenmenu en op je profielkaart.",
         "Dynamische Initialen Avatars: Elk profiel zonder foto heeft nu een eigen herkenbaar monogram in de chat, sidebar, forum, media feed en overzichten.",
         "Crystal Decrypt Engine: Robuuste Base64 normalisatie en automatische herkenning van platte tekst versus AES-payloads.",
         "Overhauled Update Modal: Een modern pop-up dashboard met tabbladen voor hoogtepunten, gedetailleerde changelog en versiegeschiedenis."

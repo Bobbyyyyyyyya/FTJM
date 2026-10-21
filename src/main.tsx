@@ -5,6 +5,49 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 import { secureLocalStorage } from './utils/encryption';
 
+// Detect password recovery tokens in the URL immediately before any router or SDK strips the hash
+if (typeof window !== 'undefined') {
+  try {
+    const rawHash = window.location.hash || '';
+    const rawSearch = window.location.search || '';
+    const rawHref = window.location.href || '';
+
+    if (
+      rawHash.includes('type=recovery') || 
+      rawSearch.includes('type=recovery') || 
+      rawHref.includes('type=recovery') ||
+      rawSearch.includes('reset_password=true') ||
+      rawHash.includes('reset_password=true') ||
+      rawHref.includes('reset_password=true') ||
+      (rawHash.includes('access_token=') && rawHash.includes('recovery'))
+    ) {
+      sessionStorage.setItem('ftjm_pending_password_recovery', 'true');
+      (window as any).__FTJM_IS_RECOVERY__ = true;
+
+      // If opened standalone on an ais-dev URL from an older or fallback reset link, seamlessly redirect to ais-pre
+      if (window.self === window.top && window.location.origin) {
+        const orig = window.location.origin;
+        if (orig.includes('ais-dev-') || orig.includes('-dev.') || orig.includes('-dev-')) {
+          const preHref = window.location.href
+            .replace(/ais-dev-/g, 'ais-pre-')
+            .replace(/-dev\./g, '-pre.')
+            .replace(/-dev-/g, '-pre-');
+          if (preHref !== window.location.href) {
+            window.location.replace(preHref);
+          }
+        }
+      }
+    } else if (rawHash.includes('error=') || rawSearch.includes('error=')) {
+      const paramString = rawHash.startsWith('#') ? rawHash.substring(1) : (rawSearch.startsWith('?') ? rawSearch.substring(1) : '');
+      const params = new URLSearchParams(paramString);
+      const err = params.get('error_description') || params.get('error');
+      if (err) {
+        sessionStorage.setItem('ftjm_recovery_error', err);
+      }
+    }
+  } catch (e) {}
+}
+
 // Enforce app-wide client storage security proxy
 if (typeof window !== 'undefined') {
   const originalClear = window.localStorage.clear.bind(window.localStorage);

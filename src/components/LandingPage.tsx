@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { LogIn, ArrowRight, MessageSquare, Zap, Lock, Users, Globe, ChevronRight, FileText, Scale, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { Logo } from './Logo';
+import { MaintenanceView } from './MaintenanceView';
+import { OfflineView } from './OfflineView';
 
 interface LandingPageProps {
   onLogin: () => void;
@@ -14,6 +16,37 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, websiteStatus
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
 
   const [activeLegalTab, setActiveLegalTab] = useState<'tos' | 'privacy'>('tos');
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  if (isOffline) {
+    return (
+      <div className="min-h-screen bg-[#002f54] flex flex-col items-center justify-center relative overflow-hidden font-sans p-4">
+        <OfflineView onRetry={() => window.location.reload()} />
+      </div>
+    );
+  }
+
+  if (websiteStatus.toLowerCase() !== 'online') {
+    return (
+      <div className="min-h-screen bg-[#002f54] flex flex-col items-center justify-center relative overflow-hidden font-sans p-4">
+        <MaintenanceView
+          websiteStatus={websiteStatus}
+          onAdminLogin={onLogin}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#002f54] flex flex-col relative overflow-hidden font-sans selection:bg-white/20 selection:text-white scroll-smooth">

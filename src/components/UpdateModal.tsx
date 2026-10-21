@@ -55,6 +55,15 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
   const featureCards = [
     {
+      icon: Sparkles,
+      gradient: 'from-purple-500 via-indigo-600 to-cyan-500',
+      shadowColor: 'shadow-purple-500/20',
+      badge: 'Nieuwe Galerij',
+      badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+      title: "Premade Karakter Galerij 🎭",
+      description: "Gebruikers kunnen nu direct kiezen uit meer dan 35+ kant-en-klare karakters (Sci-Fi, Katten & Dieren, Gaming, Fantasy, Minimal & FTJM Exclusief). Geen gedoe met zelf uploaden!"
+    },
+    {
       icon: Palette,
       gradient: 'from-fuchsia-500 to-pink-600',
       shadowColor: 'shadow-pink-500/20',
@@ -73,7 +82,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
       description: "De end-to-end AES encryptie- en decryptie-engine is grondig herbouwd met automatische Base64 spatie-normalisatie en pure UTF-8 decoding. Binaire ruis en de 'Ⱦ'-fout zijn definitief verleden tijd."
     },
     {
-      icon: Sparkles,
+      icon: Layers,
       gradient: 'from-amber-400 to-orange-500',
       shadowColor: 'shadow-amber-500/20',
       badge: 'Interactief Design',
@@ -98,6 +107,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
       badge: 'Nieuw',
       color: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30',
       items: [
+        "Premade Karakter Galerij met 35+ stijlvolle personages in 6 categorieën (Katten, Gaming, Sci-Fi, Fantasy, Cool, FTJM Exclusief).",
+        "Direct karakter kiezen bij registratie, in het profielvenster en in het instellingenmenu.",
         "Dynamische Initiaal-Logo's (LetterAvatar) voor alle profielen in Chat, Sidebar, Forum, Media Feed en Modalen.",
         "Automatische kleurenhashing voor monogrammen: elke gebruiker heeft een unieke, consistente gradiënt.",
         "Overhauled Update Modal met tabbladen voor hoogtepunten, changelog en releasegeschiedenis."

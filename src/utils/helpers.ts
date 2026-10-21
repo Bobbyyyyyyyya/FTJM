@@ -925,15 +925,29 @@ export const isTestUser = (
 };
 
 /**
- * Gets the public production origin, converting development (ais-dev-) URLs to shared preview (ais-pre-)
+ * Gets the public production origin, ensuring development (ais-dev-) and localhost URLs are converted to shared preview (ais-pre-)
  */
+export const CANONICAL_PUBLIC_PRE_ORIGIN = 'https://ais-pre-3d4qy6xrtw5vtu4g3hs7yo-160997107127.europe-west3.run.app';
+
 export const getPublicProductionOrigin = (): string => {
-  if (typeof window === 'undefined') return '';
-  let origin = window.location.origin;
-  if (origin.includes('ais-dev-')) {
-    origin = origin.replace('ais-dev-', 'ais-pre-');
+  if (typeof window === 'undefined') return CANONICAL_PUBLIC_PRE_ORIGIN;
+  const origin = window.location.origin || '';
+  if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    return CANONICAL_PUBLIC_PRE_ORIGIN;
   }
-  return origin;
+  if (origin.includes('ais-dev-')) {
+    return origin.replace(/ais-dev-/g, 'ais-pre-');
+  }
+  if (origin.includes('-dev.')) {
+    return origin.replace(/-dev\./g, '-pre.');
+  }
+  if (origin.includes('-dev-')) {
+    return origin.replace(/-dev-/g, '-pre-');
+  }
+  if (origin.includes('ais-pre-')) {
+    return origin;
+  }
+  return CANONICAL_PUBLIC_PRE_ORIGIN;
 };
 
 /**

@@ -60,6 +60,48 @@
           }
         }
       });
+
+      // Synchronously capture password reset tokens/links before any JS SDK wipes hash/search
+      try {
+        var _h = window.location.hash || '';
+        var _s = window.location.search || '';
+        var _full = window.location.href || '';
+        if (
+          _h.indexOf('type=recovery') !== -1 ||
+          _s.indexOf('type=recovery') !== -1 ||
+          _full.indexOf('type=recovery') !== -1 ||
+          _s.indexOf('reset_password=true') !== -1 ||
+          _h.indexOf('reset_password=true') !== -1 ||
+          (_h.indexOf('access_token=') !== -1 && _h.indexOf('recovery') !== -1)
+        ) {
+          sessionStorage.setItem('ftjm_pending_password_recovery', 'true');
+          window.__FTJM_IS_RECOVERY__ = true;
+
+          // If opened in a standalone tab from an email containing ais-dev-, redirect to the public ais-pre- link
+          try {
+            if (window.self === window.top && window.location.origin) {
+              var _orig = window.location.origin;
+              if (_orig.indexOf('ais-dev-') !== -1 || _orig.indexOf('-dev.') !== -1 || _orig.indexOf('-dev-') !== -1) {
+                var _preHref = window.location.href
+                  .replace(/ais-dev-/g, 'ais-pre-')
+                  .replace(/-dev\./g, '-pre.')
+                  .replace(/-dev-/g, '-pre-');
+                if (_preHref !== window.location.href) {
+                  window.location.replace(_preHref);
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        if (_h.indexOf('error=') !== -1 || _s.indexOf('error=') !== -1) {
+          var _raw = _h.indexOf('error=') !== -1 ? _h.substring(1) : _s.substring(1);
+          var _params = new URLSearchParams(_raw);
+          var _err = _params.get('error_description') || _params.get('error');
+          if (_err) {
+            sessionStorage.setItem('ftjm_recovery_error', _err);
+          }
+        }
+      } catch (e) {}
     </script>
   </head>
   <body>

@@ -65,7 +65,12 @@ import {
   LayoutGrid,
   Smartphone,
   Share2,
-  Copy
+  Copy,
+  KeyRound,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  ExternalLink
 } from 'lucide-react';
 
 // Components
@@ -99,9 +104,11 @@ import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVe
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { DeveloperBadge } from './components/DeveloperBadge';
 import { LetterAvatar } from './components/UserAvatar';
-import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba, getSafeImageUrl, handleImageError, getProfileShareUrl } from './utils/helpers';
+import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba, getSafeImageUrl, handleImageError, getProfileShareUrl, getPublicProductionOrigin, maskEmail } from './utils/helpers';
 import { AntiNamePiracyModal } from './components/AntiNamePiracyModal';
 import { UpdateModal } from './components/UpdateModal';
+import { PremadeCharacterModal } from './components/PremadeCharacterModal';
+import { PREMADE_CHARACTERS } from './data/premadeCharacters';
 
 import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
 import { saveDMsBatchLocally, getLocalDMsForConversation, savePostsBatchLocally, getLocalPosts, deletePostLocally, deleteDMLocally } from './utils/localMessageArchive';
@@ -117,6 +124,9 @@ import { VideoTrimmerModal } from './components/VideoTrimmerModal';
 import { FeedSortDropdown } from './components/FeedSortDropdown';
 import { applyThemeFont } from './utils/fontManager';
 import { ThemedLoadingScreen, ThemedSpinner, ThemedInlineLoader } from './components/ThemedLoadingScreen';
+import { MaintenanceView } from './components/MaintenanceView';
+import { OfflineView } from './components/OfflineView';
+import { PhpSecurityIncidentOverlay } from './components/PhpSecurityIncidentOverlay';
 
 // Human Verification Challenge for Anti-DDoS bypass
 function HumanVerificationChallenge() {
@@ -1894,6 +1904,44 @@ export default function App() {
   const [maintenanceTimeLeft, setMaintenanceTimeLeft] = useState<number | null>(null);
   const playedMaintenanceTriggersRef = useRef<Set<string>>(new Set());
   const [reports, setReports] = useState<Report[]>([]); // Reports state remains but we don't fetch for admin UI anymore
+
+  // Network Offline Detection
+  const [isOffline, setIsOffline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? !navigator.onLine : false;
+  });
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      toast.success('Internetverbinding hersteld!', { id: 'network-status-toast' });
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      toast.error('Je bent offline. Controleer je internetverbinding.', { id: 'network-status-toast' });
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const checkLiveStatus = useCallback(async () => {
+    try {
+      const { data: statusRes } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'websiteStatus')
+        .maybeSingle();
+      if (statusRes && statusRes.value) {
+        const status = statusRes.value.status || 'Online';
+        setWebsiteStatus(status);
+        setStatusInput(status);
+        localStorage.setItem('cached_websiteStatus', status);
+      }
+    } catch {}
+  }, []);
   
   const hasFetchedConversations = useRef(false);
   const hasFetchedPosts = useRef(false);
@@ -2016,31 +2064,121 @@ export default function App() {
   const [newSoundName, setNewSoundName] = useState('');
   const [newSoundUrl, setNewSoundUrl] = useState('');
   const [supabaseClient, setSupabaseClient] = useState(supabase);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  // Robust recovery detector: verifies memory flags, sessionStorage, URL hash, and URL query params
+  const checkIsRecoveryActive = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+      if ((window as any).__FTJM_IS_RECOVERY__) return true;
+      if (sessionStorage.getItem('ftjm_pending_password_recovery') === 'true') return true;
+      const h = window.location.hash || '';
+      const s = window.location.search || '';
+      const f = window.location.href || '';
+      return (
+        h.includes('type=recovery') ||
+        s.includes('type=recovery') ||
+        f.includes('type=recovery') ||
+        s.includes('reset_password=true') ||
+        h.includes('reset_password=true') ||
+        f.includes('reset_password=true') ||
+        (h.includes('access_token=') && h.includes('recovery'))
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(() => checkIsRecoveryActive());
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authDisplayName, setAuthDisplayName] = useState('');
   const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [registerAvatar, setRegisterAvatar] = useState<string | null>(null);
+  const [showRegisterCharacterModal, setShowRegisterCharacterModal] = useState(false);
+  const [showCharacterModalFromProfile, setShowCharacterModalFromProfile] = useState(false);
   const [authAgreeTerms, setAuthAgreeTerms] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [devicePasskeys, setDevicePasskeys] = useState<any[]>([]);
-  const [authStep, setAuthStep] = useState<'email' | 'password'>('email');
+  const [authStep, setAuthStep] = useState<'email' | 'password' | 'forgot-password' | 'reset-sent' | 'new-password'>(() => checkIsRecoveryActive() ? 'new-password' : 'email');
   const [lookupProfile, setLookupProfile] = useState<{ display_name: string; email: string; photo_url: string | null } | null>(null);
   const [isSearchingProfile, setIsSearchingProfile] = useState(false);
+  const [resetSentEmail, setResetSentEmail] = useState('');
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [confirmResetPassword, setConfirmResetPassword] = useState('');
+  const [showNewResetPassword, setShowNewResetPassword] = useState(false);
+  const [resetCooldown, setResetCooldown] = useState(0);
 
   useEffect(() => {
-    if (!isAuthModalOpen) {
+    if (resetCooldown > 0) {
+      const timer = setTimeout(() => setResetCooldown(prev => prev - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resetCooldown]);
+
+  // Detect Supabase recovery hash, token or error in URL / sessionStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // 1. Check for expired or invalid recovery link errors
+    const rawHash = window.location.hash || '';
+    const rawSearch = window.location.search || '';
+    let recError = sessionStorage.getItem('ftjm_recovery_error');
+    if (!recError && (rawHash.includes('error=') || rawSearch.includes('error='))) {
+      const paramString = rawHash.startsWith('#') ? rawHash.substring(1) : (rawSearch.startsWith('?') ? rawSearch.substring(1) : '');
+      const p = new URLSearchParams(paramString);
+      recError = p.get('error_description') || p.get('error');
+    }
+
+    if (recError) {
+      sessionStorage.removeItem('ftjm_recovery_error');
+      sessionStorage.removeItem('ftjm_pending_password_recovery');
+      (window as any).__FTJM_IS_RECOVERY__ = false;
+      setIsAuthModalOpen(true);
+      setIsRegisterMode(false);
+      setAuthStep('forgot-password');
+      let friendly = 'Deze herstellink is helaas verlopen of al gebruikt. Vraag hieronder een nieuwe link aan.';
+      if (recError.toLowerCase().includes('expired')) {
+        friendly = 'Deze herstellink is helaas verlopen. Vraag direct een nieuwe link aan.';
+      }
+      setAuthError(friendly);
+      toast.error(friendly, { duration: 7000, id: 'recovery-err-toast' });
+      return;
+    }
+
+    // 2. Open new password dialog if recovery link active
+    if (checkIsRecoveryActive()) {
+      setIsAuthModalOpen(true);
+      setIsRegisterMode(false);
+      setAuthStep('new-password');
+      toast.info('Beveiligde herstelsessie actief! Kies hieronder je nieuwe wachtwoord.', {
+        duration: 9000,
+        id: 'recovery-active-toast'
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthModalOpen && !checkIsRecoveryActive()) {
       setAuthStep('email');
       setLookupProfile(null);
       setIsSearchingProfile(false);
+      setRegisterAvatar(null);
+      setNewResetPassword('');
+      setConfirmResetPassword('');
+      setResetSentEmail('');
+      setAuthError(null);
     }
   }, [isAuthModalOpen]);
 
   useEffect(() => {
-    setAuthStep('email');
-    setLookupProfile(null);
-    setIsSearchingProfile(false);
+    if (!checkIsRecoveryActive()) {
+      setAuthStep('email');
+      setLookupProfile(null);
+      setIsSearchingProfile(false);
+      setNewResetPassword('');
+      setConfirmResetPassword('');
+      setAuthError(null);
+    }
   }, [isRegisterMode]);
 
   useEffect(() => {
@@ -2129,6 +2267,28 @@ export default function App() {
     } catch (err: any) {
       console.error("Passkey login error:", err);
       setAuthError(err.message || "Passkey authenticatie mislukt.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResendResetCode = async () => {
+    const targetEmail = resetSentEmail || authEmail;
+    if (resetCooldown > 0 || !targetEmail || !isValidEmail(targetEmail)) return;
+    setAuthLoading(true);
+    try {
+      const redirectUrl = getPublicProductionOrigin();
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: redirectUrl,
+      });
+      if (error && error.message.toLowerCase().includes('rate limit')) {
+        toast.error('Wacht even voordat je opnieuw een herstellink aanvraagt.');
+      } else {
+        setResetCooldown(60);
+        toast.success('Nieuwe herstellink verzonden naar je e-mail!');
+      }
+    } catch (err: any) {
+      toast.error('Kon herstellink niet opnieuw verzenden.');
     } finally {
       setAuthLoading(false);
     }
@@ -2624,6 +2784,22 @@ export default function App() {
 
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
       console.log('Supabase auth state changed:', event, session?.user?.id);
+      if (event === 'PASSWORD_RECOVERY') {
+        sessionStorage.setItem('ftjm_pending_password_recovery', 'true');
+        if (typeof window !== 'undefined') (window as any).__FTJM_IS_RECOVERY__ = true;
+        setIsAuthModalOpen(true);
+        setIsRegisterMode(false);
+        setAuthStep('new-password');
+        toast.info('Beveiligde herstelsessie actief! Voer hieronder je nieuwe wachtwoord in.', {
+          duration: 9000,
+          id: 'recovery-active-toast'
+        });
+      } else if (event === 'SIGNED_IN' && checkIsRecoveryActive()) {
+        // Recovery token code exchange triggered SIGNED_IN - keep new-password modal active
+        setIsAuthModalOpen(true);
+        setIsRegisterMode(false);
+        setAuthStep('new-password');
+      }
       handleAuthUser(session?.user || null, session);
     });
 
@@ -4836,6 +5012,12 @@ export default function App() {
   };
 
   const handleLogin = async () => {
+    if (checkIsRecoveryActive()) {
+      setIsAuthModalOpen(true);
+      setIsRegisterMode(false);
+      setAuthStep('new-password');
+      return;
+    }
     setIsAuthModalOpen(true);
     setAuthError(null);
     setAuthStep('email');
@@ -7867,6 +8049,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative overflow-x-hidden">
+      {/* Temporary Emergency PHP Cybersecurity Leak & Patch Overlay */}
+      <PhpSecurityIncidentOverlay 
+        onAdminBypass={() => setIsAuthModalOpen(true)} 
+        isAdmin={isAdmin} 
+      />
+
       {(isBlocked || isTempBanned || isHardwareBanned) && (
         <div className="fixed inset-0 z-[1000] bg-zinc-950 flex items-center justify-center p-6 text-center">
           <motion.div 
@@ -8695,34 +8883,47 @@ export default function App() {
                 Uitloggen & Opnieuw Proberen
               </button>
             </motion.div>
+          ) : isOffline ? (
+            <motion.div
+              key="offline"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="w-full"
+            >
+              <OfflineView
+                onRetry={() => {
+                  if (typeof navigator !== 'undefined' && navigator.onLine) {
+                    setIsOffline(false);
+                  } else {
+                    window.location.reload();
+                  }
+                }}
+                onOpenLocalArchive={() => {
+                  setIsOffline(false);
+                  setView('chat');
+                }}
+                customTheme={customTheme}
+              />
+            </motion.div>
           ) : websiteStatus.toLowerCase() !== 'online' && !isAdmin ? (
             <motion.div 
               key="maintenance"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="max-w-md mx-auto text-center py-20 px-6"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="w-full"
             >
-              <div className="w-24 h-24 bg-amber-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-amber-100 shadow-xl shadow-amber-500/10">
-                <AlertCircle className="w-12 h-12 text-amber-500" />
-              </div>
-              <h1 className="text-4xl font-bold tracking-tight text-app-ink mb-4">Onderhoud</h1>
-              <div className="bg-app-card p-6 rounded-3xl border border-app-border shadow-sm mb-10">
-                <p className="text-app-muted leading-relaxed mb-4">
-                  Het forum is momenteel in <span className="font-bold text-app-ink">{websiteStatus}</span>.
-                </p>
-                <div className="flex items-center gap-2 justify-center p-3 bg-app-accent rounded-xl text-xs font-bold text-app-muted uppercase tracking-widest">
-                  <AlertCircle className="w-4 h-4" />
-                  We zijn zo terug
-                </div>
-              </div>
-              <button 
-                onClick={handleLogout}
-                className="w-full py-4 bg-app-ink text-app-bg rounded-2xl font-bold hover:opacity-90 transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-3"
-              >
-                <LogOut className="w-5 h-5" />
-                Uitloggen
-              </button>
+              <MaintenanceView
+                websiteStatus={websiteStatus}
+                maintenanceTimeLeft={maintenanceTimeLeft}
+                scheduledTargetTime={scheduledMaintenance.targetTime}
+                isAdmin={isAdmin}
+                onLogout={handleLogout}
+                onAdminLogin={() => setIsAuthModalOpen(true)}
+                onCheckStatus={checkLiveStatus}
+                customTheme={customTheme}
+              />
             </motion.div>
           ) : (
             <motion.div 
@@ -9316,7 +9517,7 @@ export default function App() {
                 
                 <div className="px-8 pb-8">
                   <div className="relative -mt-16 mb-6">
-                    <div className="w-32 h-32 rounded-[2rem] bg-app-card p-2 shadow-xl border border-app-border">
+                    <div className="w-32 h-32 rounded-[2rem] bg-app-card p-2 shadow-xl border border-app-border relative group">
                       <div className="w-full h-full rounded-[1.5rem] bg-app-accent flex items-center justify-center overflow-hidden border border-app-border">
                         {selectedUser.photo_url ? (
                           <img src={getSafeImageUrl(selectedUser.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
@@ -9324,11 +9525,32 @@ export default function App() {
                           <LetterAvatar name={selectedUser.display_name} className="w-full h-full" textClassName="text-4xl font-black" />
                         )}
                       </div>
+                      {user && selectedUser.id === user.uid && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCharacterModalFromProfile(true)}
+                          className="absolute inset-2 rounded-[1.5rem] bg-black/60 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white cursor-pointer z-10"
+                          title="Wijzig je karakter"
+                        >
+                          <Sparkles className="w-5 h-5 text-cyan-300 animate-pulse" />
+                          <span className="text-[10px] font-black uppercase tracking-wider">Kies Karakter</span>
+                        </button>
+                      )}
                     </div>
                     {(selectedUser.role === 'admin' || selectedUser.email?.toLowerCase() === 'markohoksen@gmail.com') && (
-                      <div className="absolute bottom-2 left-24 bg-red-500 text-white p-1.5 rounded-lg shadow-lg border-2 border-app-card" title="Administrator">
+                      <div className="absolute bottom-2 left-24 bg-red-500 text-white p-1.5 rounded-lg shadow-lg border-2 border-app-card z-20" title="Administrator">
                         <ShieldCheck className="w-4 h-4" />
                       </div>
+                    )}
+                    {user && selectedUser.id === user.uid && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCharacterModalFromProfile(true)}
+                        className="absolute bottom-1 -right-2 p-2 bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-500 hover:from-purple-500 hover:to-cyan-400 text-white rounded-xl shadow-lg border-2 border-app-card transition-all active:scale-95 cursor-pointer z-20"
+                        title="Kies een kant-en-klaar karakter 🎭"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-200" />
+                      </button>
                     )}
                   </div>
 
@@ -9434,35 +9656,60 @@ export default function App() {
                             )}
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const shareUrl = getProfileShareUrl(selectedUser.id);
-                              if (navigator.share) {
-                                navigator.share({
-                                  title: `${selectedUser.display_name} op het Forum`,
-                                  text: `Bekijk mijn profiel op het Forum!`,
-                                  url: shareUrl,
-                                }).catch(() => {});
-                              } else {
-                                navigator.clipboard.writeText(shareUrl).then(() => {
-                                  toast.success(t("Profiellink gekopieerd naar klembord!"));
-                                }).catch(() => {
-                                  const textArea = document.createElement('textarea');
-                                  textArea.value = shareUrl;
-                                  document.body.appendChild(textArea);
-                                  textArea.select();
-                                  document.execCommand('copy');
-                                  document.body.removeChild(textArea);
-                                  toast.success(t("Profiellink gekopieerd naar klembord!"));
-                                });
-                              }
-                            }}
-                            className="w-full py-3 sm:py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 border select-none bg-cyan-500/15 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/25"
-                          >
-                            <Share2 className="w-4 h-4" />
-                            <span>Mijn Profiellink Delen</span>
-                          </button>
+                          <div className="flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowCharacterModalFromProfile(true)}
+                              className="w-full py-3 sm:py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 select-none bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white shadow-purple-600/20 cursor-pointer"
+                            >
+                              <Sparkles className="w-4 h-4 text-cyan-200 animate-pulse" />
+                              <span>Kies Premade Karakter 🎭</span>
+                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const shareUrl = getProfileShareUrl(selectedUser.id);
+                                  if (navigator.share) {
+                                    navigator.share({
+                                      title: `${selectedUser.display_name} op het Forum`,
+                                      text: `Bekijk mijn profiel op het Forum!`,
+                                      url: shareUrl,
+                                    }).catch(() => {});
+                                  } else {
+                                    navigator.clipboard.writeText(shareUrl).then(() => {
+                                      toast.success(t("Profiellink gekopieerd naar klembord!"));
+                                    }).catch(() => {
+                                      const textArea = document.createElement('textarea');
+                                      textArea.value = shareUrl;
+                                      document.body.appendChild(textArea);
+                                      textArea.select();
+                                      document.execCommand('copy');
+                                      document.body.removeChild(textArea);
+                                      toast.success(t("Profiellink gekopieerd naar klembord!"));
+                                    });
+                                  }
+                                }}
+                                className="flex-1 py-2.5 rounded-xl font-bold text-xs tracking-wide transition-all active:scale-95 flex items-center justify-center gap-2 border select-none bg-cyan-500/15 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/25 cursor-pointer"
+                              >
+                                <Share2 className="w-3.5 h-3.5" />
+                                <span>Link Delen</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedUser(null);
+                                  setView('settings');
+                                  setSettingsTab('profile');
+                                }}
+                                className="px-4 py-2.5 rounded-xl font-bold text-xs tracking-wide transition-all active:scale-95 flex items-center justify-center gap-1.5 border select-none bg-app-accent hover:bg-app-accent/80 text-app-ink border-app-border cursor-pointer"
+                                title="Instellingen bewerken"
+                              >
+                                <Settings className="w-3.5 h-3.5" />
+                                <span>Instellingen</span>
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -10229,8 +10476,25 @@ export default function App() {
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[100px] bg-cyan-400/5 rounded-full blur-[80px] pointer-events-none" />
 
                 <button 
-                  onClick={() => setIsAuthModalOpen(false)}
-                  className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all border border-white/5"
+                  onClick={() => {
+                    setIsAuthModalOpen(false);
+                    sessionStorage.removeItem('ftjm_pending_password_recovery');
+                    sessionStorage.removeItem('ftjm_recovery_error');
+                    if (typeof window !== 'undefined') {
+                      (window as any).__FTJM_IS_RECOVERY__ = false;
+                      try {
+                        const cleanUrl = new URL(window.location.href);
+                        cleanUrl.searchParams.delete('type');
+                        cleanUrl.searchParams.delete('reset_password');
+                        cleanUrl.searchParams.delete('code');
+                        cleanUrl.searchParams.delete('error');
+                        cleanUrl.searchParams.delete('error_description');
+                        cleanUrl.hash = '';
+                        window.history.replaceState(null, '', cleanUrl.pathname + (cleanUrl.search ? cleanUrl.search : ''));
+                      } catch {}
+                    }
+                  }}
+                  className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all border border-white/5 cursor-pointer z-20"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -10243,7 +10507,7 @@ export default function App() {
                   </div>
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div
-                      key={isRegisterMode ? 'header-register' : authStep === 'password' ? 'header-password' : 'header-email'}
+                      key={isRegisterMode ? 'header-register' : `header-${authStep}`}
                       initial={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
                       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                       exit={{ opacity: 0, y: 8, filter: 'blur(3px)' }}
@@ -10253,16 +10517,28 @@ export default function App() {
                       <h3 className="text-3xl font-black text-white tracking-tighter text-center leading-none">
                         {isRegisterMode 
                           ? 'Account Registreren' 
-                          : authStep === 'password'
-                            ? 'Wachtwoord Invoeren'
-                            : 'Inloggen'}
+                          : authStep === 'forgot-password'
+                            ? 'Wachtwoord Vergeten'
+                            : authStep === 'reset-sent'
+                              ? 'Herstellink Verzonden'
+                              : authStep === 'new-password'
+                                ? 'Nieuw Wachtwoord'
+                                : authStep === 'password'
+                                  ? 'Wachtwoord Invoeren'
+                                  : 'Inloggen'}
                       </h3>
                       <p className="text-xs text-cyan-300 font-extrabold mt-1.5 uppercase tracking-widest text-center">
                         {isRegisterMode 
                           ? 'Sluit je aan bij FTJM Network' 
-                          : authStep === 'password'
-                            ? 'Beveiligde aanmelding verifiëren'
-                            : 'Toegang tot FTJM Enterprise'}
+                          : authStep === 'forgot-password'
+                            ? 'Veilig je account herstellen'
+                            : authStep === 'reset-sent'
+                              ? 'Klik op de link in je e-mail'
+                              : authStep === 'new-password'
+                                ? 'Kies een sterk nieuw wachtwoord'
+                                : authStep === 'password'
+                                  ? 'Beveiligde aanmelding verifiëren'
+                                  : 'Toegang tot FTJM Enterprise'}
                       </p>
                     </motion.div>
                   </AnimatePresence>
@@ -10271,6 +10547,122 @@ export default function App() {
                 <form onSubmit={async (e) => {
                   e.preventDefault();
                   setAuthError(null);
+
+                  // 1. Forgot password request (email link flow)
+                  if (!isRegisterMode && authStep === 'forgot-password') {
+                    const emailToReset = authEmail.trim();
+                    if (!emailToReset) {
+                      setAuthError('E-mailadres is verplicht.');
+                      return;
+                    }
+                    if (!isValidEmail(emailToReset)) {
+                      setAuthError('Voer een geldig e-mailadres in (bijv. naam@domein.nl).');
+                      return;
+                    }
+                    if (resetCooldown > 0) {
+                      setAuthError(`Wacht nog ${resetCooldown} seconden voor een nieuwe herstelaanvraag.`);
+                      return;
+                    }
+                    setAuthLoading(true);
+                    try {
+                      const redirectUrl = getPublicProductionOrigin();
+                      const { error: resetErr } = await supabaseClient.auth.resetPasswordForEmail(emailToReset, {
+                        redirectTo: redirectUrl,
+                      });
+                      if (resetErr && resetErr.message.toLowerCase().includes('rate limit')) {
+                        throw new Error('Teveel herstelaanvragen verzonden. Wacht even voordat je het opnieuw probeert.');
+                      }
+                      setResetSentEmail(emailToReset);
+                      setResetCooldown(60);
+                      setAuthStep('reset-sent');
+                      toast.success('Herstellink is verzonden naar je e-mail!');
+                    } catch (err: any) {
+                      console.error('Password reset error:', err);
+                      setAuthError(err.message || 'Kon herstelaanvraag niet versturen.');
+                    } finally {
+                      setAuthLoading(false);
+                    }
+                    return;
+                  }
+
+                  // 2. New Password Saving
+                  if (!isRegisterMode && authStep === 'new-password') {
+                    const newPass = newResetPassword;
+                    const confirmPass = confirmResetPassword;
+                    if (!newPass) {
+                      setAuthError('Voer een nieuw wachtwoord in.');
+                      return;
+                    }
+                    if (newPass.length < 6) {
+                      setAuthError('Het wachtwoord moet minimaal 6 tekens bevatten.');
+                      return;
+                    }
+                    if (newPass !== confirmPass) {
+                      setAuthError('De ingevoerde wachtwoorden komen niet overeen.');
+                      return;
+                    }
+                    setAuthLoading(true);
+                    try {
+                      const { error: updateErr } = await supabaseClient.auth.updateUser({
+                        password: newPass,
+                      });
+                      if (updateErr) throw updateErr;
+
+                      // Synchronize local passkeys on this device if any exist
+                      try {
+                        const rawKeys = localStorage.getItem('ftjm_device_passkeys');
+                        if (rawKeys) {
+                          const list = JSON.parse(rawKeys);
+                          const userEmail = resetSentEmail || authEmail;
+                          const updated = list.map((pk: any) => {
+                            if (!userEmail || pk.email?.toLowerCase() === userEmail.toLowerCase()) {
+                              const secretKey = pk.credentialId + "_secure_passkey";
+                              const newEncryptedPayload = CryptoJS.AES.encrypt(
+                                JSON.stringify({ email: pk.email, password: newPass }),
+                                secretKey
+                              ).toString();
+                              return { ...pk, payload: newEncryptedPayload, updatedAt: new Date().toISOString() };
+                            }
+                            return pk;
+                          });
+                          localStorage.setItem('ftjm_device_passkeys', JSON.stringify(updated));
+                          setDevicePasskeys(updated);
+                        }
+                      } catch (e) {}
+
+                      if (typeof window !== 'undefined') {
+                        (window as any).__FTJM_IS_RECOVERY__ = false;
+                        sessionStorage.removeItem('ftjm_pending_password_recovery');
+                        sessionStorage.removeItem('ftjm_recovery_error');
+                        try {
+                          const cleanUrl = new URL(window.location.href);
+                          cleanUrl.searchParams.delete('type');
+                          cleanUrl.searchParams.delete('reset_password');
+                          cleanUrl.searchParams.delete('code');
+                          cleanUrl.searchParams.delete('error');
+                          cleanUrl.searchParams.delete('error_description');
+                          cleanUrl.hash = '';
+                          window.history.replaceState(null, '', cleanUrl.pathname + (cleanUrl.search ? cleanUrl.search : ''));
+                        } catch {}
+                      }
+
+                      toast.success('Wachtwoord succesvol gewijzigd! Je bent nu veilig ingelogd.');
+                      setIsAuthModalOpen(false);
+                      setAuthStep('email');
+                      setAuthEmail('');
+                      setAuthPassword('');
+                      setNewResetPassword('');
+                      setConfirmResetPassword('');
+                      setResetSentEmail('');
+                      setLookupProfile(null);
+                    } catch (err: any) {
+                      console.error('Update password error:', err);
+                      setAuthError(err.message || 'Kon wachtwoord niet opslaan.');
+                    } finally {
+                      setAuthLoading(false);
+                    }
+                    return;
+                  }
 
                   const email = authEmail.trim();
 
@@ -10441,6 +10833,7 @@ export default function App() {
                         options: {
                           data: {
                             display_name: displayName,
+                            photo_url: registerAvatar || undefined,
                           }
                         }
                       });
@@ -10458,12 +10851,20 @@ export default function App() {
                         toast.success('Account succesvol geregistreerd! Log nu in.');
                         setIsRegisterMode(false);
                       } else {
+                        // Persist chosen avatar in profiles table
+                        if (registerAvatar && signInData?.user?.id) {
+                          await supabaseClient
+                            .from('profiles')
+                            .update({ photo_url: registerAvatar, updated_at: new Date().toISOString() })
+                            .eq('id', signInData.user.id);
+                        }
                         toast.success('Account succesvol geregistreerd en ingelogd!');
                         setIsAuthModalOpen(false);
                         // Reset form fields
                         setAuthEmail('');
                         setAuthPassword('');
                         setAuthDisplayName('');
+                        setRegisterAvatar(null);
                       }
                     } else {
                       // Check if a passkey is active for this email on this device
@@ -10607,6 +11008,89 @@ export default function App() {
                           />
                         </div>
 
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5 ml-1">
+                            <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider">
+                              Kies je Karakter (optioneel)
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setShowRegisterCharacterModal(true)}
+                              className="text-[10px] font-bold text-cyan-300 hover:text-white uppercase tracking-wider hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <Sparkles className="w-3 h-3 text-cyan-400" />
+                              <span>Alle {PREMADE_CHARACTERS.length} Karakters ➜</span>
+                            </button>
+                          </div>
+                          
+                          <div className="p-2.5 bg-white/5 border border-white/10 rounded-2xl">
+                            <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+                              {/* Option 1: Monogram / Initials */}
+                              <button
+                                type="button"
+                                onClick={() => setRegisterAvatar(null)}
+                                className={`relative w-11 h-11 rounded-xl shrink-0 overflow-hidden border transition-all hover:scale-105 cursor-pointer ${
+                                  !registerAvatar
+                                    ? 'border-cyan-400 ring-2 ring-cyan-400/40 shadow-lg scale-105'
+                                    : 'border-white/10 opacity-70 hover:opacity-100 bg-white/5'
+                                }`}
+                                title="Dynamisch Initiaal-logo (LetterAvatar)"
+                              >
+                                <LetterAvatar name={authDisplayName || 'A'} className="w-full h-full rounded-xl" textClassName="text-sm font-black" />
+                                {!registerAvatar && (
+                                  <div className="absolute inset-0 bg-cyan-500/20 flex items-center justify-center">
+                                    <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                                  </div>
+                                )}
+                              </button>
+
+                              {/* Popular Premade Characters */}
+                              {PREMADE_CHARACTERS.slice(0, 8).map((char) => {
+                                const isSelected = registerAvatar === char.avatarUrl;
+                                return (
+                                  <button
+                                    key={char.id}
+                                    type="button"
+                                    onClick={() => setRegisterAvatar(char.avatarUrl)}
+                                    className={`relative w-11 h-11 rounded-xl shrink-0 overflow-hidden p-0.5 border transition-all hover:scale-105 cursor-pointer ${
+                                      isSelected
+                                        ? 'border-cyan-400 ring-2 ring-cyan-400/40 shadow-lg bg-cyan-950/40 scale-105'
+                                        : 'border-white/10 hover:border-white/30 bg-white/5 opacity-80 hover:opacity-100'
+                                    }`}
+                                    title={`${char.name} (${char.tag})`}
+                                  >
+                                    <img 
+                                      src={char.avatarUrl} 
+                                      alt={char.name} 
+                                      className="w-full h-full object-cover rounded-lg"
+                                      referrerPolicy="no-referrer" 
+                                    />
+                                    {isSelected && (
+                                      <div className="absolute inset-0 bg-cyan-500/30 flex items-center justify-center">
+                                        <Check className="w-3.5 h-3.5 text-white stroke-[3] drop-shadow" />
+                                      </div>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {registerAvatar && (
+                              <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-zinc-300">
+                                <span className="text-cyan-300 font-semibold truncate">
+                                  {PREMADE_CHARACTERS.find(c => c.avatarUrl === registerAvatar)?.name || 'Karakter geselecteerd'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setRegisterAvatar(null)}
+                                  className="text-[10px] text-zinc-400 hover:text-red-400 underline cursor-pointer"
+                                >
+                                  Gebruik letter-initiaal
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
                         <div className="flex items-start gap-2.5 mt-2 mb-2 px-1">
                           <input
                             id="auth-agree-terms-checkbox"
@@ -10655,6 +11139,18 @@ export default function App() {
                             onChange={(e) => setAuthEmail(e.target.value)}
                             className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
                           />
+                          <div className="flex justify-end mt-1.5 mr-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthError(null);
+                                setAuthStep('forgot-password');
+                              }}
+                              className="text-[11px] text-cyan-400/90 hover:text-cyan-300 font-bold transition-colors cursor-pointer hover:underline"
+                            >
+                              Wachtwoord vergeten?
+                            </button>
+                          </div>
                         </div>
 
                         <button
@@ -10669,7 +11165,7 @@ export default function App() {
                           )}
                         </button>
                       </motion.div>
-                    ) : (
+                    ) : authStep === 'password' ? (
                       <motion.div
                         key="view-login-password"
                         initial={{ opacity: 0, x: 14, filter: 'blur(3px)' }}
@@ -10716,9 +11212,21 @@ export default function App() {
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
-                            Wachtwoord
-                          </label>
+                          <div className="flex items-center justify-between mb-1.5 ml-1">
+                            <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider">
+                              Wachtwoord
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthError(null);
+                                setAuthStep('forgot-password');
+                              }}
+                              className="text-[11px] text-cyan-400 hover:text-cyan-300 font-bold transition-colors cursor-pointer hover:underline"
+                            >
+                              Wachtwoord vergeten?
+                            </button>
+                          </div>
                           <input
                             type="password"
                             required
@@ -10753,12 +11261,307 @@ export default function App() {
                           Inloggen met Passkey
                         </button>
                       </motion.div>
+                    ) : authStep === 'forgot-password' ? (
+                      <motion.div
+                        key="view-forgot-password"
+                        initial={{ opacity: 0, x: 14, filter: 'blur(3px)' }}
+                        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, x: -14, filter: 'blur(3px)' }}
+                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                        className="space-y-4"
+                      >
+                        {lookupProfile && (
+                          <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3 mb-2 backdrop-blur-sm">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden border border-cyan-400/50 bg-[#0a385c] shrink-0">
+                              {lookupProfile.photo_url ? (
+                                <img src={getSafeImageUrl(lookupProfile.photo_url)} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <LetterAvatar name={lookupProfile.display_name} className="w-full h-full" textClassName="text-base font-black" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-black text-white truncate">{lookupProfile.display_name}</p>
+                              <p className="text-[10px] text-blue-100/50 truncate font-mono">{lookupProfile.email}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            Geregistreerd E-mailadres
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="email"
+                              required
+                              placeholder="voorbeeld@adres.nl"
+                              autoComplete="email"
+                              value={authEmail}
+                              onChange={(e) => setAuthEmail(e.target.value)}
+                              className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all"
+                            />
+                            <Mail className="w-4 h-4 text-cyan-400/60 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          </div>
+                          <p className="text-[11px] text-blue-100/50 mt-1.5 ml-1 leading-relaxed">
+                            Voer je e-mailadres in. Je ontvangt direct een beveiligde herstellink om je wachtwoord te resetten.
+                          </p>
+                        </div>
+
+                        {devicePasskeys.some((pk: any) => pk.email?.toLowerCase() === authEmail.toLowerCase().trim()) && (
+                          <div className="p-3 bg-cyan-950/40 border border-cyan-500/30 rounded-xl flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Fingerprint className="w-5 h-5 text-cyan-400 shrink-0 animate-pulse" />
+                              <span className="text-xs text-cyan-200 font-medium truncate">Passkey gekoppeld aan dit apparaat!</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handlePasskeyLogin}
+                              className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] rounded-lg shrink-0 cursor-pointer shadow-sm active:scale-95 transition-all"
+                            >
+                              Inloggen met Passkey
+                            </button>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={authLoading || resetCooldown > 0}
+                          className="w-full py-4 bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 hover:from-cyan-300 hover:to-indigo-500 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/25 disabled:opacity-60"
+                        >
+                          {authLoading ? (
+                            <ThemedSpinner size="xs" color="#ffffff" />
+                          ) : resetCooldown > 0 ? (
+                            `Wacht ${resetCooldown}s voor opnieuw verzenden`
+                          ) : (
+                            <>
+                              <KeyRound className="w-4 h-4" />
+                              <span>Stuur Herstellink</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthError(null);
+                            setAuthStep(lookupProfile ? 'password' : 'email');
+                          }}
+                          className="w-full py-2.5 text-xs text-zinc-400 hover:text-white transition-colors flex items-center justify-center gap-1.5 font-bold cursor-pointer"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                          <span>Terug naar Inloggen</span>
+                        </button>
+                      </motion.div>
+                    ) : authStep === 'reset-sent' ? (
+                      <motion.div
+                        key="view-reset-sent"
+                        initial={{ opacity: 0, x: 14, filter: 'blur(3px)' }}
+                        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, x: -14, filter: 'blur(3px)' }}
+                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                        className="space-y-4"
+                      >
+                        {/* Primary Guidance Card: Email Link is Sent */}
+                        <div className="p-5 bg-gradient-to-b from-cyan-950/60 to-blue-950/40 border border-cyan-500/40 rounded-2xl relative overflow-hidden backdrop-blur-md shadow-lg shadow-cyan-950/30 text-left">
+                          <div className="flex items-start gap-3.5 mb-3">
+                            <div className="w-11 h-11 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/30 relative">
+                              <Mail className="w-5 h-5" />
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#00213b] animate-ping" />
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#00213b]" />
+                            </div>
+                            <div className="min-w-0 flex-1 text-xs text-blue-100/90 leading-relaxed">
+                              <p className="font-black text-white text-base mb-0.5 flex items-center gap-1.5">
+                                <span>Controleer je Inbox</span>
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">Verzonden</span>
+                              </p>
+                              <p className="text-white/80 text-xs">
+                                Er is een beveiligde herstellink gestuurd naar <strong className="text-cyan-300 font-mono">{maskEmail(resetSentEmail || authEmail)}</strong>.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-white/10 space-y-2.5 text-xs text-blue-100/80">
+                            <div className="flex items-start gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-cyan-400/20 text-cyan-300 font-black flex items-center justify-center text-[11px] shrink-0 mt-0.5">1</span>
+                              <span>Open je e-mail (Gmail, Outlook of schoolmail).</span>
+                            </div>
+                            <div className="flex items-start gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-cyan-400/20 text-cyan-300 font-black flex items-center justify-center text-[11px] shrink-0 mt-0.5">2</span>
+                              <span>Klik op de knop <strong className="text-white underline underline-offset-2">"Reset Password"</strong> in de ontvangen e-mail.</span>
+                            </div>
+                            <div className="flex items-start gap-2.5">
+                              <span className="w-5 h-5 rounded-full bg-emerald-400/20 text-emerald-300 font-black flex items-center justify-center text-[11px] shrink-0 mt-0.5">3</span>
+                              <span>De app herkent je herstellink automatisch en je kunt direct een nieuw wachtwoord instellen.</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAuthError(null);
+                              setAuthStep('forgot-password');
+                            }}
+                            className="text-xs text-zinc-400 hover:text-white transition-colors flex items-center gap-1 font-bold cursor-pointer"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            <span>Ander e-mailadres</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleResendResetCode}
+                            disabled={resetCooldown > 0 || authLoading}
+                            className="text-xs text-cyan-400 hover:text-cyan-300 font-bold transition-colors disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${authLoading ? 'animate-spin' : ''}`} />
+                            <span>{resetCooldown > 0 ? `Opnieuw over ${resetCooldown}s` : 'Link opnieuw sturen'}</span>
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthError(null);
+                            setAuthStep('email');
+                          }}
+                          className="w-full py-2.5 text-xs text-zinc-400 hover:text-white transition-colors flex items-center justify-center gap-1 font-bold cursor-pointer pt-2 border-t border-white/5"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                          <span>Terug naar Inloggen</span>
+                        </button>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="view-new-password"
+                        initial={{ opacity: 0, x: 14, filter: 'blur(3px)' }}
+                        animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, x: -14, filter: 'blur(3px)' }}
+                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                        className="space-y-4"
+                      >
+                        <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-200 backdrop-blur-sm shadow-md shadow-emerald-950/20">
+                          <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                          <div className="leading-relaxed">
+                            <p className="font-bold text-white text-xs">Beveiligde herstelsessie actief!</p>
+                            <p className="text-emerald-200/80 text-[11px] mt-0.5">Kies hieronder een nieuw wachtwoord om je account direct weer te beveiligen en in te loggen.</p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            Nieuw Wachtwoord
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showNewResetPassword ? 'text' : 'password'}
+                              required
+                              minLength={6}
+                              placeholder="Minimaal 6 tekens"
+                              autoComplete="new-password"
+                              autoFocus
+                              value={newResetPassword}
+                              onChange={(e) => setNewResetPassword(e.target.value)}
+                              className="w-full px-4 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowNewResetPassword(!showNewResetPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors cursor-pointer p-1"
+                              tabIndex={-1}
+                            >
+                              {showNewResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-blue-100/60 uppercase tracking-wider mb-1.5 ml-1">
+                            Bevestig Nieuw Wachtwoord
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showNewResetPassword ? 'text' : 'password'}
+                              required
+                              minLength={6}
+                              placeholder="Typ wachtwoord opnieuw"
+                              autoComplete="new-password"
+                              value={confirmResetPassword}
+                              onChange={(e) => setConfirmResetPassword(e.target.value)}
+                              className="w-full px-4 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/20 transition-all font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowNewResetPassword(!showNewResetPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors cursor-pointer p-1"
+                              tabIndex={-1}
+                            >
+                              {showNewResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Password strength meter */}
+                        {newResetPassword && (
+                          <div className="space-y-1.5 px-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-zinc-400">Wachtwoordsterkte:</span>
+                              <span className={
+                                newResetPassword.length < 6 
+                                  ? 'text-rose-400 font-bold' 
+                                  : newResetPassword.length < 10 
+                                    ? 'text-amber-400 font-bold' 
+                                    : 'text-emerald-400 font-bold'
+                              }>
+                                {newResetPassword.length < 6 
+                                  ? 'Te kort (min. 6)' 
+                                  : newResetPassword.length < 10 
+                                    ? 'Matig' 
+                                    : 'Sterk'}
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full transition-all duration-300 ${
+                                  newResetPassword.length < 6 
+                                    ? 'w-1/4 bg-rose-500' 
+                                    : newResetPassword.length < 10 
+                                      ? 'w-2/3 bg-amber-500' 
+                                      : 'w-full bg-emerald-500'
+                                }`} 
+                              />
+                            </div>
+                            {confirmResetPassword && (
+                              <p className={`text-[10px] font-semibold mt-1 ${newResetPassword === confirmResetPassword ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {newResetPassword === confirmResetPassword ? '✓ Wachtwoorden komen overeen' : '✗ Wachtwoorden komen niet overeen'}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={authLoading || !newResetPassword || newResetPassword !== confirmResetPassword || newResetPassword.length < 6}
+                          className="w-full py-4 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                        >
+                          {authLoading ? (
+                            <ThemedSpinner size="xs" color="#001E36" />
+                          ) : (
+                            <>
+                              <ShieldCheck className="w-4 h-4" />
+                              <span>Wachtwoord Opslaan & Inloggen</span>
+                            </>
+                          )}
+                        </button>
+                      </motion.div>
                     )}
                   </AnimatePresence>
                 </form>
 
                 <AnimatePresence mode="wait" initial={false}>
-                  {(isRegisterMode || authStep === 'email') && (
+                  {(isRegisterMode || authStep === 'email' || authStep === 'password') && (
                     <motion.div
                       key={isRegisterMode ? 'footer-reg' : 'footer-login'}
                       initial={{ opacity: 0, y: 6 }}
@@ -11039,6 +11842,41 @@ export default function App() {
                 console.error('Failed to save profile list position:', e);
               }
             }
+          }}
+        />
+
+        <PremadeCharacterModal
+          isOpen={showRegisterCharacterModal}
+          onClose={() => setShowRegisterCharacterModal(false)}
+          currentPhotoUrl={registerAvatar}
+          onSelectCharacter={(avatarUrl) => {
+            setRegisterAvatar(avatarUrl);
+            setShowRegisterCharacterModal(false);
+          }}
+        />
+
+        <PremadeCharacterModal
+          isOpen={showCharacterModalFromProfile}
+          onClose={() => setShowCharacterModalFromProfile(false)}
+          currentPhotoUrl={profile?.photo_url || user?.photoURL}
+          onSelectCharacter={async (avatarUrl, charName) => {
+            setProfile(prev => prev ? { ...prev, photo_url: avatarUrl } : null);
+            setSelectedUser(prev => prev && prev.id === user?.uid ? { ...prev, photo_url: avatarUrl } : prev);
+            if (user) {
+              try {
+                await supabaseClient.from('profiles').update({ photo_url: avatarUrl, updated_at: new Date().toISOString() }).eq('id', user.uid);
+                const cached = localStorage.getItem('cached_profile');
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  localStorage.setItem('cached_profile', JSON.stringify({ ...parsed, photo_url: avatarUrl }));
+                }
+                toast.success(`Karakter "${charName}" succesvol ingesteld! 🎉`);
+              } catch (e) {
+                console.error(e);
+                toast.error("Kon karakter niet opslaan.");
+              }
+            }
+            setShowCharacterModalFromProfile(false);
           }}
         />
 
