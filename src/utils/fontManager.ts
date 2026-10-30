@@ -274,6 +274,17 @@ const loadedFontUrls = new Set<string>();
  */
 export const injectGoogleFont = (url: string) => {
   if (!url || typeof document === 'undefined') return;
+
+  // Strict URL verification to prevent DOM XSS (#116)
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || parsed.hostname !== 'fonts.googleapis.com') {
+      return;
+    }
+  } catch {
+    return;
+  }
+
   if (loadedFontUrls.has(url)) return;
 
   const existing = document.querySelector(`link[data-custom-font-url="${encodeURIComponent(url)}"]`);
@@ -479,25 +490,29 @@ export const processUploadedFontFile = async (file: File): Promise<CustomFontIte
 export const createGoogleFontItem = (input: string): CustomFontItem => {
   let fontName = input.trim();
   let url = '';
+  let isGoogleFontsUrl = false;
 
-  if (input.includes('fonts.googleapis.com')) {
-    // Extract family from URL
-    try {
-      const parsedUrl = new URL(input);
+  // Strict URL hostname check to resolve CodeQL #98
+  try {
+    const parsedUrl = new URL(input);
+    if (parsedUrl.protocol === 'https:' && parsedUrl.hostname === 'fonts.googleapis.com') {
+      isGoogleFontsUrl = true;
       const familyParam = parsedUrl.searchParams.get('family');
       if (familyParam) {
         fontName = familyParam.split(':')[0].replace(/\+/g, ' ');
-        url = input;
-      } else {
-        url = input;
       }
-    } catch {
-      url = input;
+      url = parsedUrl.href;
     }
-  } else {
-    // Generate clean Google Fonts URL from name
-    const encoded = encodeURIComponent(fontName.replace(/\s+/g, '+'));
+  } catch {
+    isGoogleFontsUrl = false;
+  }
+
+  if (!isGoogleFontsUrl) {
+    // Generate clean Google Fonts URL from sanitized font name
+    const safeFontName = fontName.replace(/[^a-zA-Z0-9\s]/g, '').trim() || 'Roboto';
+    const encoded = encodeURIComponent(safeFontName.replace(/\s+/g, '+'));
     url = `https://fonts.googleapis.com/css2?family=${encoded}:wght@400;500;600;700;800&display=swap`;
+    fontName = safeFontName;
   }
 
   const cleanFamily = `"${fontName}", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;

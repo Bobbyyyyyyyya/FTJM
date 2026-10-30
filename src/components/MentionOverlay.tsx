@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../types';
 import { LetterAvatar } from './UserAvatar';
+import { getSafeImageUrl, handleImageError } from '../utils/helpers';
 
 interface MentionOverlayProps {
   show: boolean;
@@ -47,7 +48,13 @@ export const MentionOverlay: React.FC<MentionOverlayProps> = ({
               >
                 <div className="w-8 h-8 rounded-lg bg-app-bg border border-app-border overflow-hidden flex-shrink-0">
                   {user.photo_url?.trim() ? (
-                    <img src={user.photo_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    <img
+                      src={getSafeImageUrl(user.photo_url)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                      onError={handleImageError}
+                    />
                   ) : (
                     <LetterAvatar name={user.display_name} className="w-full h-full" textClassName="text-xs" />
                   )}

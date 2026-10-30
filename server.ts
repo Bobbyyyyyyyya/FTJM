@@ -159,17 +159,18 @@ async function startServer() {
     'base64'
   );
 
-  // Serve root-level uploaded images or return graceful file if found
-  app.get('/:filename', (req, res, next) => {
+  // Serve root-level uploaded images or return graceful file if found (satisfies CodeQL #130 & path safety)
+  app.get('/:filename', staticLimiter, (req, res, next) => {
     const filename = req.params.filename;
     if (filename && /\.(jpe?g|png|webp|gif|svg|avif|webm|mp3|wav|ogg)$/i.test(filename)) {
       setCacheControlHeaders(res);
-      const publicFile = path.join(PUBLIC_DIR, path.basename(filename));
-      if (fs.existsSync(publicFile)) {
+      const safeBase = path.basename(filename);
+      const publicFile = path.resolve(PUBLIC_DIR, safeBase);
+      if (publicFile.startsWith(PUBLIC_DIR) && fs.existsSync(publicFile)) {
         return res.sendFile(publicFile);
       }
-      const localFile = path.join(UPLOADS_DIR, path.basename(filename));
-      if (fs.existsSync(localFile)) {
+      const localFile = path.resolve(UPLOADS_DIR, safeBase);
+      if (localFile.startsWith(UPLOADS_DIR) && fs.existsSync(localFile)) {
         return res.sendFile(localFile);
       }
     }
@@ -339,7 +340,9 @@ async function startServer() {
       }
 
       const ext = detectedMime.includes('webp') ? 'webp' : detectedMime.includes('png') ? 'png' : detectedMime.includes('gif') ? 'gif' : detectedMime.includes('audio') ? 'webm' : 'jpg';
-      const cleanName = (name ? name.replace(/[^a-zA-Z0-9_-]/g, '_') : 'img') + `_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+      const safePrefix = name ? path.basename(name).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 32) : 'img';
+      const randToken = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '').substring(0, 12) : Date.now().toString(36);
+      const cleanName = `${safePrefix}_${Date.now()}_${randToken}.${ext}`;
 
       const isImgBBSupported = detectedMime.includes('image/') || detectedMime.includes('webp') || detectedMime.includes('png') || detectedMime.includes('jpg') || detectedMime.includes('jpeg') || detectedMime.includes('gif');
 
@@ -385,10 +388,14 @@ async function startServer() {
 
       // 2. Guaranteed local storage fallback (0% key dependency, 100% reliability for all users)
       const buffer = Buffer.from(base64Data, 'base64');
-      const filePath = path.join(UPLOADS_DIR, cleanName);
+      const safeFileName = path.basename(cleanName);
+      const filePath = path.resolve(UPLOADS_DIR, safeFileName);
+      if (!filePath.startsWith(UPLOADS_DIR)) {
+        return res.status(400).json({ success: false, error: 'Ongeldige bestandsnaam.' });
+      }
       await fs.promises.writeFile(filePath, buffer);
 
-      const publicUrl = `/uploads/${cleanName}`;
+      const publicUrl = `/uploads/${safeFileName}`;
       return res.json({
         success: true,
         url: publicUrl,
@@ -529,7 +536,8 @@ async function startServer() {
     }
 
     const ext = detectedMime.includes('webp') ? 'webp' : detectedMime.includes('png') ? 'png' : detectedMime.includes('gif') ? 'gif' : detectedMime.includes('audio') ? 'webm' : 'jpg';
-    const cleanName = `migrated_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const randToken = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '').substring(0, 12) : Date.now().toString(36);
+    const cleanName = `migrated_${Date.now()}_${randToken}.${ext}`;
 
     const apiKey = process.env.IMGBB_API_KEY;
     if (apiKey && apiKey.trim() !== '' && !detectedMime.includes('audio')) {
@@ -551,9 +559,11 @@ async function startServer() {
 
     // Save local with 1-year immutable cache header
     const buffer = Buffer.from(base64Data, 'base64');
-    const filePath = path.join(UPLOADS_DIR, cleanName);
+    const safeFileName = path.basename(cleanName);
+    const filePath = path.resolve(UPLOADS_DIR, safeFileName);
+    if (!filePath.startsWith(UPLOADS_DIR)) return null;
     await fs.promises.writeFile(filePath, buffer);
-    return `/uploads/${cleanName}`;
+    return `/uploads/${safeFileName}`;
   };
 
   const migrateStringPayload = async (str: string, label: string): Promise<{ text: string; changed: boolean }> => {

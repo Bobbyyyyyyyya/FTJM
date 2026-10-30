@@ -4,6 +4,25 @@ import { motion } from 'motion/react';
 import { compressVideo } from '../utils/videoCompressor';
 import { ThemedSpinner } from './ThemedLoadingScreen';
 
+const getSafeVideoUrl = (url?: string): string => {
+  if (!url || typeof url !== 'string') return '';
+  const clean = url.trim();
+  if (/^(?:javascript|vbscript):/i.test(clean)) return '';
+  if (clean.startsWith('blob:') || clean.startsWith('data:video/')) return clean;
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    try {
+      const parsed = new URL(clean);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return clean;
+      }
+    } catch {
+      return '';
+    }
+  }
+  if (clean.startsWith('/')) return clean;
+  return '';
+};
+
 interface VideoTrimmerModalProps {
   file: File;
   onTrimmed: (trimmedDataUrl: string) => void;
@@ -41,13 +60,14 @@ export const VideoTrimmerModal: React.FC<VideoTrimmerModalProps> = ({ file, onTr
 
   // Generate visual frame thumbnails across duration
   useEffect(() => {
-    if (!duration || duration <= 0 || !videoUrl) return;
+    const safeUrl = getSafeVideoUrl(videoUrl);
+    if (!duration || duration <= 0 || !safeUrl) return;
 
     let isMounted = true;
     setIsGeneratingThumbnails(true);
 
     const tempVideo = document.createElement('video');
-    tempVideo.src = videoUrl;
+    tempVideo.src = safeUrl;
     tempVideo.muted = true;
     tempVideo.playsInline = true;
 
@@ -263,10 +283,10 @@ export const VideoTrimmerModal: React.FC<VideoTrimmerModalProps> = ({ file, onTr
         <div className="p-6 space-y-6 overflow-y-auto">
           {/* Video Preview Frame */}
           <div className="relative rounded-3xl overflow-hidden bg-black aspect-video flex items-center justify-center group ring-1 ring-app-border/80 shadow-inner">
-            {videoUrl ? (
+            {getSafeVideoUrl(videoUrl) ? (
               <video 
                 ref={videoRef}
-                src={videoUrl}
+                src={getSafeVideoUrl(videoUrl)}
                 onLoadedMetadata={handleLoadedMetadata}
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={() => setIsPlaying(false)}

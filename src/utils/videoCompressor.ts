@@ -35,7 +35,29 @@ export const compressVideo = async (
     let videoSrc = '';
 
     if (typeof input === 'string') {
-      videoSrc = input;
+      const clean = input.trim();
+      if (/^(?:javascript|vbscript):/i.test(clean)) {
+        resolve('');
+        return;
+      }
+      if (clean.startsWith('blob:') || clean.startsWith('data:video/')) {
+        videoSrc = clean;
+      } else if (clean.startsWith('http://') || clean.startsWith('https://')) {
+        try {
+          const parsed = new URL(clean);
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            videoSrc = clean;
+          }
+        } catch {
+          resolve('');
+          return;
+        }
+      } else if (clean.startsWith('/')) {
+        videoSrc = clean;
+      } else {
+        resolve('');
+        return;
+      }
     } else {
       objectUrlToRevoke = URL.createObjectURL(input);
       videoSrc = objectUrlToRevoke;
