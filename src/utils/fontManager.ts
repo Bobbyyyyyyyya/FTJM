@@ -437,8 +437,9 @@ export const processUploadedFontFile = async (file: File): Promise<CustomFontIte
     reader.onload = async () => {
       try {
         const fontData = reader.result as string;
+        const randStr = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36);
         const fontItem: CustomFontItem = {
-          id: `upload_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          id: `upload_${Date.now()}_${randStr}`,
           name: cleanName,
           family: `"${cleanFamily}", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
           source: 'upload',

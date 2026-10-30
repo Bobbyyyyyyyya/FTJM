@@ -227,9 +227,16 @@ class AntiHardwareAbuseEngine {
     } catch (e) {}
 
     if (!deviceUuid) {
-      // Generate a robust hardware deterministic unique seed
-      const randomHex = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-      deviceUuid = `${randomHex()}${randomHex()}-${randomHex()}-${randomHex()}-${randomHex()}-${randomHex()}${randomHex()}${randomHex()}`;
+      // Generate a cryptographically secure hardware deterministic unique seed
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        deviceUuid = crypto.randomUUID();
+      } else if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const arr = new Uint8Array(16);
+        crypto.getRandomValues(arr);
+        deviceUuid = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+      } else {
+        deviceUuid = `device_${Date.now()}`;
+      }
       try {
         window.localStorage.setItem(STORAGE_KEY, deviceUuid);
       } catch (e) {}

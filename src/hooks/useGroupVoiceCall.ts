@@ -93,7 +93,8 @@ export function useGroupVoiceCall(user: any, profile: any, supabaseClient: any) 
   const sendSignalingMessage = async (roomId: string, event: string, payload: any) => {
     if (!channelRef.current) return;
     
-    const msgId = `${event}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const randSuffix = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36);
+    const msgId = `${event}_${Date.now()}_${randSuffix}`;
     
     await channelRef.current.send({
       type: 'broadcast',

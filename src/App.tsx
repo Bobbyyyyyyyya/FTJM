@@ -104,7 +104,7 @@ import { NEWS_ITEMS, SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, EMOJI_LIST, isVe
 import { VerifiedBadge } from './components/VerifiedBadge';
 import { DeveloperBadge } from './components/DeveloperBadge';
 import { LetterAvatar } from './components/UserAvatar';
-import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba, getSafeImageUrl, handleImageError, getProfileShareUrl, getPublicProductionOrigin, maskEmail } from './utils/helpers';
+import { playSound, formatDate, handleSupabaseError, audioCache, logAudioEvent, convertEmoticons, isDarkColor, parseAdminNotes, compressImage, compressImageToBlob, uploadBinaryToStorage, uploadImageToImgBB, compressVideo, sanitizeCustomTheme, autoCompressAllDataUrlsInText, hexToRgb, hexToRgba, getSafeImageUrl, handleImageError, getProfileShareUrl, getPublicProductionOrigin, maskEmail, generateSecureId } from './utils/helpers';
 import { AntiNamePiracyModal } from './components/AntiNamePiracyModal';
 import { UpdateModal } from './components/UpdateModal';
 import { PremadeCharacterModal } from './components/PremadeCharacterModal';
@@ -126,12 +126,25 @@ import { applyThemeFont } from './utils/fontManager';
 import { ThemedLoadingScreen, ThemedSpinner, ThemedInlineLoader } from './components/ThemedLoadingScreen';
 import { MaintenanceView } from './components/MaintenanceView';
 import { OfflineView } from './components/OfflineView';
-import { PhpSecurityIncidentOverlay } from './components/PhpSecurityIncidentOverlay';
 
 // Human Verification Challenge for Anti-DDoS bypass
 function HumanVerificationChallenge() {
-  const [num1] = useState(() => Math.floor(Math.random() * 8) + 2);
-  const [num2] = useState(() => Math.floor(Math.random() * 8) + 2);
+  const [num1] = useState(() => {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const arr = new Uint32Array(1);
+      crypto.getRandomValues(arr);
+      return 2 + (arr[0] % 8);
+    }
+    return 3;
+  });
+  const [num2] = useState(() => {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const arr = new Uint32Array(1);
+      crypto.getRandomValues(arr);
+      return 2 + (arr[0] % 8);
+    }
+    return 4;
+  });
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState(false);
 
@@ -494,7 +507,7 @@ export default function App() {
   const [replyingToComment, setReplyingToComment] = useState<ForumComment | null>(null);
   const [expandedNewsId, setExpandedNewsId] = useState<number | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(() => {
-    return localStorage.getItem('has_seen_whats_new_v2.7.0') !== 'true';
+    return localStorage.getItem('has_seen_whats_new_v2.8.0') !== 'true';
   });
   const [whatsNewStep, setWhatsNewStep] = useState(1);
   const [hasSeenNews, setHasSeenNews] = useState(() => {
@@ -843,7 +856,7 @@ export default function App() {
         const fileExt = isVid
           ? (fileBlob.type.includes('webm') ? 'webm' : fileBlob.type.includes('quicktime') ? 'mov' : 'mp4')
           : 'jpg';
-        const fileName = `${user.uid}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const fileName = `${user.uid}/${Date.now()}_${generateSecureId()}.${fileExt}`;
         const possibleBuckets = ['media', 'profile_media', 'videos', 'uploads', 'public', 'files', 'chat-attachments', 'avatars'];
         
         for (const bucket of possibleBuckets) {
@@ -6758,7 +6771,7 @@ export default function App() {
       const data = parseAdminNotes(oldAdminNotes, oldCustomTheme);
 
       const newWarning = {
-        id: 'warn_' + Math.random().toString(36).substring(2, 11),
+        id: generateSecureId('warn'),
         reason,
         details,
         admin_name: profile?.display_name || 'Admin',
@@ -8049,12 +8062,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative overflow-x-hidden">
-      {/* Temporary Emergency PHP Cybersecurity Leak & Patch Overlay */}
-      <PhpSecurityIncidentOverlay 
-        onAdminBypass={() => setIsAuthModalOpen(true)} 
-        isAdmin={isAdmin} 
-      />
-
       {(isBlocked || isTempBanned || isHardwareBanned) && (
         <div className="fixed inset-0 z-[1000] bg-zinc-950 flex items-center justify-center p-6 text-center">
           <motion.div 
@@ -10431,7 +10438,7 @@ export default function App() {
           isOpen={showWhatsNew}
           onClose={() => {
             setShowWhatsNew(false);
-            localStorage.setItem('has_seen_whats_new_v2.7.0', 'true');
+            localStorage.setItem('has_seen_whats_new_v2.8.0', 'true');
           }}
           onOpenNews={() => setView('news')}
           version={APP_VERSION}

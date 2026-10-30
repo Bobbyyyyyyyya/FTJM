@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+import { playTelephoneHangupSound } from '../utils/callSounds';
 
-export type CallState = 'idle' | 'calling' | 'ringing' | 'connected';
+export type CallState = 'idle' | 'calling' | 'ringing' | 'connected' | 'ending';
 
 export interface CallData {
   callerId: string;
@@ -18,6 +19,8 @@ export type CallLayout = 'compact' | 'large';
 
 export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
   const [callState, setCallState] = useState<CallState>('idle');
+  const [endingReason, setEndingReason] = useState<string>('Gesprek beëindigd');
+  const endingTimerRef = useRef<any>(null);
   const [activeCall, setActiveCall] = useState<CallData | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoMuted, setIsVideoMuted] = useState(false);
@@ -101,7 +104,13 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     };
   }, [profile?.notification_settings?.ringtone_url]);
 
-  const cleanupCall = (shouldPlayEndSound = true) => {
+  const cleanupCall = (shouldPlayEndSound = true, reason = 'Gesprek beëindigd', immediate = false) => {
+    if (endingTimerRef.current) {
+      clearTimeout(endingTimerRef.current);
+      endingTimerRef.current = null;
+    }
+    setEndingReason(reason);
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         track.stop();
@@ -140,9 +149,12 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       dialingSoundRef.current.currentTime = 0;
     }
 
-    if (shouldPlayEndSound && endCallSoundRef.current) {
-       endCallSoundRef.current.currentTime = 0;
-       endCallSoundRef.current.play().catch(() => {});
+    if (shouldPlayEndSound) {
+      if (endCallSoundRef.current) {
+        endCallSoundRef.current.currentTime = 0;
+        endCallSoundRef.current.play().catch(() => {});
+      }
+      playTelephoneHangupSound();
     }
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null;
@@ -171,9 +183,20 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     }
 
     callStartTimeRef.current = 0;
-    setCallState('idle');
-    setActiveCall(null);
-    setIsMuted(false);
+
+    if (immediate) {
+      setCallState('idle');
+      setActiveCall(null);
+      setIsMuted(false);
+    } else {
+      setCallState('ending');
+      endingTimerRef.current = setTimeout(() => {
+        setCallState('idle');
+        setActiveCall(null);
+        setIsMuted(false);
+        endingTimerRef.current = null;
+      }, 950);
+    }
   };
 
   const outboundChannelPromiseRef = useRef<Promise<any> | null>(null);
@@ -237,7 +260,8 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
 
   const sendSignalingMessage = async (targetId: string, event: string, payload: any, retryCount = 0) => {
     try {
-      const msgId = `${event}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const randSuffix = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36);
+      const msgId = `${event}_${Date.now()}_${randSuffix}`;
       const channel: any = await getOutboundChannel(targetId);
       
       const response = await channel.send({
@@ -760,49 +784,49 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       toast.error('Oproep geweigerd');
-      cleanupCall();
+      cleanupCall(true, 'Oproep geweigerd');
     })
     .on('broadcast', { event: 'reject' }, (eventObj) => {
       console.log('Received broadcast [reject] eventObj:', eventObj);
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       toast.error('Oproep geweigerd');
-      cleanupCall();
+      cleanupCall(true, 'Oproep geweigerd');
     })
     .on('broadcast', { event: 'call_busy' }, (eventObj) => {
       console.log('Received broadcast [call_busy] eventObj:', eventObj);
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       toast.error('Gebruiker is in gesprek');
-      cleanupCall();
+      cleanupCall(true, 'Gebruiker is in gesprek');
     })
     .on('broadcast', { event: 'busy' }, (eventObj) => {
       console.log('Received broadcast [busy] eventObj:', eventObj);
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       toast.error('Gebruiker is in gesprek');
-      cleanupCall();
+      cleanupCall(true, 'Gebruiker is in gesprek');
     })
     .on('broadcast', { event: 'call_ended' }, (eventObj) => {
       console.log('Received broadcast [call_ended] eventObj:', eventObj);
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       toast.info('Gesprek beëindigd');
-      cleanupCall();
+      cleanupCall(true, 'Opgehangen door beller');
     })
     .on('broadcast', { event: 'ended' }, (eventObj) => {
       console.log('Received broadcast [ended] eventObj:', eventObj);
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       toast.info('Gesprek beëindigd');
-      cleanupCall();
+      cleanupCall(true, 'Opgehangen door beller');
     })
     .on('broadcast', { event: 'hangup' }, (eventObj) => {
       console.log('Received broadcast [hangup] eventObj:', eventObj);
       const payload = eventObj?.payload || eventObj || {};
       if (payload.senderId === user.uid) return;
       toast.info('Gesprek beëindigd');
-      cleanupCall();
+      cleanupCall(true, 'Opgehangen door beller');
     })
     .on('broadcast', { event: 'video_status' }, (eventObj) => {
       console.log('Received broadcast [video_status] eventObj:', eventObj);
@@ -1038,7 +1062,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     sendSignalingMessage(targetId, 'call_rejected', { senderId: user.uid });
     sendSignalingMessage(targetId, 'reject', { senderId: user.uid });
     
-    cleanupCall();
+    cleanupCall(true, 'Oproep geweigerd');
   };
 
   const endCall = async () => {
@@ -1049,7 +1073,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
     sendSignalingMessage(targetId, 'ended', { senderId: user.uid });
     sendSignalingMessage(targetId, 'hangup', { senderId: user.uid });
     
-    cleanupCall();
+    cleanupCall(true, 'Telefoon opgehangen');
   };
 
   const toggleMute = () => {
@@ -1234,6 +1258,7 @@ export function useVoiceCall(user: any, profile: any, supabaseClient: any) {
 
   return {
     callState,
+    endingReason,
     activeCall,
     isMuted,
     isVideoMuted,

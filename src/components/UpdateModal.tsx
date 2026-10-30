@@ -18,7 +18,10 @@ import {
   Check,
   Flame,
   Palette,
-  Eye
+  Eye,
+  PhoneCall,
+  SlidersHorizontal,
+  Mic
 } from 'lucide-react';
 import { APP_VERSION, APP_VERSION_NAME, NEWS_ITEMS } from '../constants';
 import { NewsItem } from '../types';
@@ -55,83 +58,82 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
   const featureCards = [
     {
-      icon: Sparkles,
+      icon: PhoneCall,
+      gradient: 'from-emerald-400 via-teal-500 to-cyan-500',
+      shadowColor: 'shadow-emerald-500/20',
+      badge: 'Call UI Revamp',
+      badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      title: "Gestroomlijnde Call UI 📞",
+      description: "Alle nutteloze, verwarrende en niet-werkende dummy-knoppen (zoals loze kanaalwissels en inactieve placeholders) zijn resoluut verwijderd voor een rustige, betrouwbare bel-ervaring."
+    },
+    {
+      icon: SlidersHorizontal,
+      gradient: 'from-cyan-500 via-blue-600 to-indigo-600',
+      shadowColor: 'shadow-cyan-500/20',
+      badge: 'Ergonomische Dock',
+      badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+      title: "Zwevende Glazen Bedieningsdock 🎛️",
+      description: "Eén centrale ergonomische dock met duidelijke actieve statussen voor microfoon dempen, camera inschakelen, scherm delen en ophangen. Geen rommelige bedieningsknoppen meer!"
+    },
+    {
+      icon: Mic,
       gradient: 'from-purple-500 via-indigo-600 to-cyan-500',
       shadowColor: 'shadow-purple-500/20',
-      badge: 'Nieuwe Galerij',
+      badge: 'Mini-Speler & Audio',
       badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-      title: "Premade Karakter Galerij 🎭",
-      description: "Gebruikers kunnen nu direct kiezen uit meer dan 35+ kant-en-klare karakters (Sci-Fi, Katten & Dieren, Gaming, Fantasy, Minimal & FTJM Exclusief). Geen gedoe met zelf uploaden!"
+      title: "Direct Muten in Mini-Beller 🎙️",
+      description: "Schakel je microfoon direct in of uit vanuit de compacte mini-speler onderin het scherm zonder het venster te maximaliseren, compleet met levendige spraakgolf-animaties."
+    },
+    {
+      icon: Zap,
+      gradient: 'from-amber-400 to-orange-500',
+      shadowColor: 'shadow-amber-500/20',
+      badge: 'Groepsgesprekken',
+      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+      title: "Overzichtelijke Groepscalls 👥",
+      description: "Rustige en overzichtelijke deelnemersrasters met compacte statuschips en kristalheldere spraakdetectie, zonder afleidende badges of visuele ruis."
     },
     {
       icon: Palette,
       gradient: 'from-fuchsia-500 to-pink-600',
       shadowColor: 'shadow-pink-500/20',
-      badge: 'Nieuwe Identiteit',
+      badge: 'Identiteit & Security',
       badgeColor: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
-      title: "Dynamische Initiaal-Logo's (LetterAvatar)",
-      description: "Gebruikers zonder profielfoto krijgen nu automatisch een schitterend, vetgedrukt monogram met hun eerste letter op basis van levendige, gepersonaliseerde kleurgradiënten. Geen saai grijs poppetje meer!"
-    },
-    {
-      icon: ShieldCheck,
-      gradient: 'from-cyan-400 to-blue-600',
-      shadowColor: 'shadow-cyan-500/20',
-      badge: 'Beveiliging & Core',
-      badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-      title: "Crystal AES Decryptie & 'Ⱦ' Bugfix",
-      description: "De end-to-end AES encryptie- en decryptie-engine is grondig herbouwd met automatische Base64 spatie-normalisatie en pure UTF-8 decoding. Binaire ruis en de 'Ⱦ'-fout zijn definitief verleden tijd."
-    },
-    {
-      icon: Layers,
-      gradient: 'from-amber-400 to-orange-500',
-      shadowColor: 'shadow-amber-500/20',
-      badge: 'Interactief Design',
-      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-      title: "Vernieuwd Update & Release Notes Dashboard",
-      description: "Volledig gerestyled pop-up venster met interactieve tabbladen, georganiseerde changelog-categorieën, live versiegeschiedenis en vloeiende animaties."
-    },
-    {
-      icon: Gamepad2,
-      gradient: 'from-emerald-400 to-teal-600',
-      shadowColor: 'shadow-emerald-500/20',
-      badge: 'Arcade & Performance',
-      badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-      title: "Katten Klikker & UI Versnelling",
-      description: "Verbeterd Hemelvaart (Ascension) overlay met direct klikbaar sluitkruisje, opvallende amberkleurige glow-upgrades en snellere render-loops bij duizenden brokjes per seconde."
+      title: "35+ Karakters & Crystal AES Decryptie 💎",
+      description: "Kies razendsnel uit tientallen kant-en-klare avatars en dynamische letter-monogrammen, gecombineerd met de geteste Crystal AES-decryptie voor foutloze chatberichten."
     }
   ];
 
   const changelogCategories = [
     {
-      name: 'Nieuwe Functies',
+      name: 'Call UI & Gesprekken',
       badge: 'Nieuw',
       color: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30',
       items: [
-        "Premade Karakter Galerij met 35+ stijlvolle personages in 6 categorieën (Katten, Gaming, Sci-Fi, Fantasy, Cool, FTJM Exclusief).",
-        "Direct karakter kiezen bij registratie, in het profielvenster en in het instellingenmenu.",
-        "Dynamische Initiaal-Logo's (LetterAvatar) voor alle profielen in Chat, Sidebar, Forum, Media Feed en Modalen.",
-        "Automatische kleurenhashing voor monogrammen: elke gebruiker heeft een unieke, consistente gradiënt.",
-        "Overhauled Update Modal met tabbladen voor hoogtepunten, changelog en releasegeschiedenis."
+        "Volledig vernieuwde zwevende bedieningsbalk met dynamische microfoon-, camera- en schermdeelknoppen.",
+        "Definitief verwijderen van nutteloze dummy- en placeholder-knoppen (geen loze kanaalknoppen of dode knoppen meer).",
+        "Directe mute-schakelaar toegevoegd aan de geminimaliseerde zwevende mini-speler.",
+        "Realtime dynamische audiogolven die reageren op spraakactiviteit van jou en je gesprekspartners."
       ]
     },
     {
-      name: 'Verbeteringen & UI',
+      name: 'Verbeteringen & Ergonomie',
       badge: 'Verbeterd',
       color: 'text-cyan-400 bg-cyan-500/15 border-cyan-500/30',
       items: [
-        "Base64 auto-normalisatie herstelt spaties naar '+' bij websockets en realtime synchronisatie.",
-        "Scherpere contrasten en randen voor zowel donkere als lichte kleurenthema's.",
-        "Toegankelijkere modal sluitknoppen met z-50 prioriteit en ruim klikvlak."
+        "Discrete en compacte statuschips in plaats van grote, storende overlays tijdens groeps- en videogesprekken.",
+        "Geoptimaliseerd schermdeel- en videoraamwerk met soepelere overgangen bij in- en uitklappen.",
+        "Verbeterde responsive weergave en contrasten van gespreksknoppen op zowel mobiele schermen als desktop."
       ]
     },
     {
-      name: 'Bugfixes & Cryptografie',
+      name: 'Stabiliteit & Netwerk',
       badge: 'Opgelost',
       color: 'text-amber-400 bg-amber-500/15 border-amber-500/30',
       items: [
-        "Definitieve oplossing voor de 'Ⱦ' tekstfout bij decryptie van gecachte of realtime chatberichten.",
-        "Verwijdering van de instabiele Latin-1 fallback die binaire ruis veroorzaakte bij decodeerfouten.",
-        "Behoud van ongecodeerde platte tekst zonder onnodige AES-herverwerking."
+        "Verbeterde gespreksstatus-synchronisatie bij inkomende en beëindigde oproepen.",
+        "Verwijdering van spook-notificaties bij het minimaliseren van actieve voice-sessies.",
+        "Betrouwbaardere WebRTC/audio status synchronisatie zonder haperingen in het achtergrondproces."
       ]
     }
   ];
@@ -177,11 +179,11 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                         {version} • NIEUW
                       </span>
                       <span className="text-[11px] font-medium text-cyan-300/80">
-                        3 Oktober 2026
+                        {currentNews?.date ? '23 Oktober 2026' : '23 Oktober 2026'}
                       </span>
                     </div>
                     <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1 flex items-center gap-2">
-                      FTJM Enterprise Platform
+                      {APP_VERSION_NAME}
                     </h2>
                   </div>
                 </div>
@@ -246,6 +248,24 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                   animate={{ opacity: 1, y: 0 }}
                   className="space-y-4"
                 >
+                  {/* Highlights Bullet Summary */}
+                  {currentNews?.highlights && currentNews.highlights.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 space-y-2.5">
+                      <div className="flex items-center gap-2 text-cyan-400 font-extrabold text-xs uppercase tracking-wider">
+                        <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                        <span>Belangrijkste Hoogtepunten in {version}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {currentNews.highlights.map((h, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                            <span className="leading-snug">{h}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     {featureCards.map((card, idx) => {
                       const Icon = card.icon;

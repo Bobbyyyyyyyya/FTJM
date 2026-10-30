@@ -6,6 +6,26 @@ import { PROTECTED_NAMES_LIST } from '../constants/protectedNames';
 
 export { compressVideo };
 
+/**
+ * Cryptographically secure ID generator using Web Crypto API.
+ * Mitigates CodeQL insecure randomness warnings.
+ */
+export const generateSecureId = (prefix = ''): string => {
+  if (typeof crypto !== 'undefined') {
+    if (typeof crypto.randomUUID === 'function') {
+      const uuid = crypto.randomUUID().replace(/-/g, '').substring(0, 12);
+      return prefix ? `${prefix}_${uuid}` : uuid;
+    }
+    if (typeof crypto.getRandomValues === 'function') {
+      const arr = new Uint8Array(8);
+      crypto.getRandomValues(arr);
+      const hex = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+      return prefix ? `${prefix}_${hex}` : hex;
+    }
+  }
+  return prefix ? `${prefix}_${Date.now()}` : `${Date.now()}`;
+};
+
 export const audioCache = new Map<string, HTMLAudioElement>();
 
 // Local storage for audio logs to avoid database bloat and respect user request
@@ -13,7 +33,7 @@ export let localAudioLogs: AudioLog[] = [];
 
 export const logAudioEvent = async (url: string, status: 'success' | 'error' | 'warning', message: string, userId?: string, userName?: string) => {
   const newLog: AudioLog = {
-    id: Math.random().toString(36).substring(2, 11),
+    id: generateSecureId('log'),
     url,
     status,
     message,
@@ -1277,7 +1297,7 @@ export const uploadBinaryToStorage = async (
 ): Promise<string | null> => {
   try {
     const ext = blob.type.includes('webp') ? 'webp' : blob.type.includes('png') ? 'png' : blob.type.includes('video') ? 'webm' : 'jpg';
-    const randomId = Math.random().toString(36).substring(2, 9);
+    const randomId = generateSecureId();
     const fileName = `${userId ? `${userId}/` : ''}${Date.now()}_${randomId}.${ext}`;
     const possibleBuckets = ['media', 'profile_media', 'uploads', 'public', 'avatars', 'wallpapers', 'files'];
 
@@ -1503,29 +1523,61 @@ export const sanitizeCustomTheme = (theme: any): any => {
  * browser adblockers (uBlock, Brave Shields), and restricted school/corporate firewalls.
  * Automatically routes ImgBB (ibb.co & i.ibb.co) through the server image-proxy.
  */
+/**
+ * Safely formats and sanitizes any image URL to ensure 100% display reliability and prevent XSS.
+ * Strictly verifies protocols and routes external ImgBB links through the server image-proxy.
+ */
 export const getSafeImageUrl = (url?: string | null): string => {
   if (!url || typeof url !== 'string') return '';
   const clean = url.trim();
   if (!clean) return '';
-  if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
-  if (clean.startsWith('/api/image-proxy')) return clean;
 
-  // ImgBB (both direct i.ibb.co CDN and ibb.co viewer links)
+  // Block dangerous pseudo-protocols like javascript:, vbscript:, and non-image data URIs
+  if (/^(?:javascript|vbscript|data:(?!image\/(?:png|jpeg|jpg|webp|gif|svg\+xml|avif);base64,))/i.test(clean)) {
+    return '';
+  }
+
+  // Allow verified safe image data URIs and blob URLs
+  if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
+    return clean;
+  }
+
+  // Allow internal relative URLs
+  if (clean.startsWith('/api/image-proxy')) {
+    return clean;
+  }
+  if (clean.startsWith('/uploads/') || clean.startsWith('/assets/') || clean.startsWith('/avatars/')) {
+    return clean;
+  }
+
+  // Route ImgBB URLs to the server image-proxy
   if (clean.includes('ibb.co')) {
     return `/api/image-proxy?url=${encodeURIComponent(clean)}`;
   }
 
-  // Handle local uploaded files that might be missing leading slash
-  if (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('/')) {
+  // Strict check for HTTP/HTTPS protocols
+  if (clean.startsWith('https://') || clean.startsWith('http://')) {
+    try {
+      const parsed = new URL(clean);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return clean;
+      }
+    } catch {
+      return '';
+    }
+  }
+
+  // Handle local uploaded filename without leading slash (e.g. 1787748721080_h9vdr68.jpg)
+  if (/^[a-zA-Z0-9_\-\.]+$/.test(clean)) {
     return `/uploads/${clean}`;
   }
 
-  return clean;
+  return '';
 };
 
 /**
  * Image error handler fallback: if a direct third-party image fails to load,
- * automatically retries once via the server-side image-proxy before giving up.
+ * safely retries once via the server-side image-proxy before giving up.
  */
 export const handleImageError = (
   e: React.SyntheticEvent<HTMLImageElement, Event>,
@@ -1534,10 +1586,17 @@ export const handleImageError = (
   const target = e.currentTarget;
   const currentSrc = target.src;
   if (!currentSrc.includes('/api/image-proxy') && (currentSrc.startsWith('http://') || currentSrc.startsWith('https://'))) {
-    target.src = `/api/image-proxy?url=${encodeURIComponent(currentSrc)}`;
-    return;
+    try {
+      const parsed = new URL(currentSrc);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        target.src = `/api/image-proxy?url=${encodeURIComponent(currentSrc)}`;
+        return;
+      }
+    } catch {
+      // Invalid URL
+    }
   }
-  if (fallbackSrc) {
+  if (fallbackSrc && (fallbackSrc.startsWith('/') || fallbackSrc.startsWith('https://') || fallbackSrc.startsWith('data:image/'))) {
     target.src = fallbackSrc;
   }
 };

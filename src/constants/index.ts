@@ -3,10 +3,45 @@ import newsHeroImg from '../assets/images/news_featured_hero_1791016036431.jpg';
 import newsClickerImg from '../assets/images/news_cat_clicker_showcase_1791016046116.jpg';
 import newsSecurityImg from '../assets/images/news_security_core_shield_1791016056728.jpg';
 
-export const APP_VERSION = 'v2.7.0';
-export const APP_VERSION_NAME = 'FTJM Enterprise v2.7';
+export const APP_VERSION = 'v2.7.7';
+export const APP_VERSION_NAME = 'FTJM Chat v2.7.7';
 
 export const NEWS_ITEMS: NewsItem[] = [
+  {
+    id: 18,
+    title: "FTJM Chat Release v2.7.7: Call UI, Smooth Animaties & Desktop Apps 📞🚀",
+    content: "Welkom bij de officiële FTJM Chat v2.7.7 release! In deze update hebben we de bel-interface (Call UI) fundamenteel gestroomlijnd en gemoderniseerd zonder overbodige dummy-knoppen. Inkomende oproepen hebben nu een ultra-smooth pulserende animatie met dynamische belring, en bij het beëindigen van gesprekken hoor en zie je een realistische telefoon-ophang animatie. Bovendien zijn de officiële Desktop Apps voor Windows (.exe), macOS (.dmg) en Linux (.deb, .AppImage) nu direct beschikbaar via GitHub Releases v2.7.7!",
+    date: "2026-10-23",
+    category: "Grote Update",
+    version: "v2.7.7",
+    readTime: "2 min leestijd",
+    author: "FTJM Core Team",
+    image: newsHeroImg,
+    highlights: [
+      "Officiële Release v2.7.7: Directe downloads voor Windows (.exe), macOS Apple Silicon (.dmg) en Linux (.deb / .AppImage)",
+      "Gestroomlijnde Call UI: Alle verwarrende dummy- en placeholder-knoppen definitief gewist voor een schone zwevende dock",
+      "Vloeiende Inkomende Oproep UI: Concentrische radiant golven, pulserende belring en verbeterde haptische responsiviteit",
+      "Realistische Ophang-animatie: Visuele telefoonophang-transitie en akoestische disconnect-klik bij het neerleggen van de hoorn"
+    ],
+    details: {
+      overview: "Versie 2.7.7 combineert de strakke, moderne communicatie-ervaring met officiële desktop installers en intuïtieve audio/video-oproepen.",
+      features: [
+        "Officiële v2.7.7 Release: Volledig gebouwde installers beschikbaar op GitHub (Setup.exe, macOS .dmg, Linux .deb en .AppImage).",
+        "Gestroomlijnde zwevende Call Dock: Alleen werkende acties voor microfoon, camera en scherm delen zonder verwarrende loze kanaalknoppen.",
+        "Smooth Inkomende Call Animatie: Ademende halo-animatie en intuïtieve zwevende dock voor het opnemen of weigeren van oproepen.",
+        "Telefoon Ophangen Effect: Mechanische telefoonophang-animatie met zachte auditieve disconnect-klik.",
+        "Directe microfoonbediening in mini-speler: Mute of ontmute direct vanuit de geminimaliseerde widget."
+      ],
+      improvements: [
+        "Verbeterde WebRTC audio- en videokanaal synchronisatie voor stabielere 1-op-1 en groepsgesprekken.",
+        "Snellere laadtijden en geheugenoptimalisatie op zowel desktop als mobiele browsers."
+      ],
+      fixes: [
+        "Verwijdering van de niet-werkende dummy 'Kanaal'-knop en loze actieknoppen in het gespreksvenster.",
+        "Correcte status-synchronisatie en timer-afhandeling na het ophangen van oproepen."
+      ]
+    }
+  },
   {
     id: 17,
     title: "FTJM Dynamic Identity, Premade Karakters & Crystal Decrypt v2.7 💎",

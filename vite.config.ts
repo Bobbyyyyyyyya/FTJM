@@ -38,11 +38,16 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    optimizeDeps: {
+      esbuildOptions: {
+        target: 'esnext',
+      },
+    },
     build: {
       sourcemap: false,
       minify: 'esbuild',
       cssMinify: true,
-      target: 'es2020',
+      target: 'esnext',
       rollupOptions: {
         output: {
           compact: true,
@@ -58,7 +63,7 @@ export default defineConfig(({mode}) => {
       minifySyntax: true,
       minifyWhitespace: true,
       legalComments: 'none',
-      target: 'es2020',
+      target: 'esnext',
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

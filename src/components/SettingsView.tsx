@@ -3188,21 +3188,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-bold text-app-ink">Desktop App</span>
                           <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono text-[10px] font-bold border border-cyan-500/25">
-                            v1.7.5 Release
+                            v2.7.7 Release
                           </span>
                         </div>
                         <p className="text-xs text-app-muted mb-4 leading-relaxed">
-                          Zelfstandige app voor Windows (.exe), macOS en Linux met native pushnotificaties.
+                          Zelfstandige app voor Windows (.exe), macOS (.dmg) en Linux (.deb / .AppImage) met native pushnotificaties.
                         </p>
                       </div>
                       <a
-                        href="https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.7.5"
+                        href="https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.7.7"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full py-2.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-2 shadow-sm"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Download Desktop App</span>
+                        <span>Download Desktop App (v2.7.7)</span>
                         <ExternalLink className="w-3 h-3 opacity-80" />
                       </a>
                     </div>

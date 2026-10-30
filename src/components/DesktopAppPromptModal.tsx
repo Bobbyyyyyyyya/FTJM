@@ -3,7 +3,20 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Monitor, Download, Globe, X, Sparkles, ExternalLink, CheckCircle2, ShieldCheck, Laptop } from 'lucide-react';
 import { getDeviceOSInfo } from '../utils/helpers';
 
-export const DESKTOP_DOWNLOAD_URL = 'https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.7.5';
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/tag/v1.7.7';
+
+export function getDirectOsDownloadUrl(os: 'macOS' | 'Windows' | 'Linux' | null): string {
+  if (os === 'Windows') {
+    return 'https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/download/v1.7.7/FTJM.Chat.Setup.1.7.7.exe';
+  }
+  if (os === 'macOS') {
+    return 'https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/download/v1.7.7/FTJM-Chat-1.7.7-arm64.dmg';
+  }
+  if (os === 'Linux') {
+    return 'https://github.com/Bobbyyyyyyyya/FTJM-chat/releases/download/v1.7.7/FTJM-Chat_1.7.7_amd64.deb';
+  }
+  return DESKTOP_DOWNLOAD_URL;
+}
 
 export function getDesktopOperatingSystem(): 'macOS' | 'Windows' | 'Linux' | null {
   if (typeof window === 'undefined') return null;
@@ -57,6 +70,7 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
   if (!isOpen) return null;
 
   const currentOS = osName || 'Windows';
+  const directDownloadUrl = getDirectOsDownloadUrl(currentOS);
 
   const handleDownload = () => {
     if (dontShowAgain) {
@@ -64,7 +78,7 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
         localStorage.setItem('ftjm_desktop_app_choice', 'downloaded');
       } catch {}
     }
-    window.open(DESKTOP_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+    window.open(directDownloadUrl, '_blank', 'noopener,noreferrer');
     onClose();
   };
 
@@ -101,6 +115,19 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
         return '🐧';
       default:
         return '💻';
+    }
+  };
+
+  const getOsFileLabel = () => {
+    switch (currentOS) {
+      case 'macOS':
+        return 'macOS Installer (.dmg)';
+      case 'Windows':
+        return 'Windows Installer (.exe)';
+      case 'Linux':
+        return 'Linux Package (.deb / .AppImage)';
+      default:
+        return 'Desktop Installer';
     }
   };
 
@@ -147,15 +174,15 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono">
                   {currentOS} Gedetecteerd
                 </span>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700 font-mono">
-                  v1.7.5
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 font-mono">
+                  v2.7.7 Nieuw
                 </span>
               </div>
               <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white">
                 Download de Desktop App
               </h3>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Voor de ultieme ervaring op {currentOS}
+                Voor de ultieme ervaring op {currentOS} • Versie v2.7.7
               </p>
             </div>
           </div>
@@ -163,7 +190,7 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
           {/* Body Content */}
           <div className="space-y-4 mb-6 text-xs sm:text-sm text-zinc-300 leading-relaxed">
             <p>
-              Je bent ingelogd op <strong className="text-white">{currentOS}</strong>. Wil je de officiële <strong className="text-cyan-400">FTJM Desktop App</strong> downloaden of liever direct in de browser doorgaan?
+              Je bent ingelogd op <strong className="text-white">{currentOS}</strong>. Download direct de gloednieuwe <strong className="text-cyan-400">FTJM Chat Desktop App v2.7.7</strong> voor een razendsnelle ervaring met achtergrondmeldingen en soepele oproepen.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
@@ -185,21 +212,33 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             <button
               id="btn-download-desktop-app"
               onClick={handleDownload}
               className="w-full flex items-center justify-center gap-2.5 py-3.5 px-5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/25 transition-all transform active:scale-[0.98]"
             >
               <Download className="w-4 h-4" />
-              <span>Desktop App Downloaden (v1.7.5)</span>
+              <span>Download {getOsFileLabel()}</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-80" />
             </button>
+
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <a
+                href={DESKTOP_DOWNLOAD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-cyan-400 hover:text-cyan-300 underline underline-offset-2 flex items-center gap-1 font-medium"
+              >
+                <span>Alle v2.7.7 downloads bekijken (GitHub)</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
 
             <button
               id="btn-continue-on-web"
               onClick={handleContinueOnWeb}
-              className="w-full flex items-center justify-center gap-2 py-3 px-5 rounded-2xl bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 hover:text-white font-semibold text-xs transition-all border border-zinc-700/60"
+              className="w-full flex items-center justify-center gap-2 py-3 px-5 rounded-2xl bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 hover:text-white font-semibold text-xs transition-all border border-zinc-700/60 mt-1"
             >
               <Globe className="w-4 h-4 text-zinc-400" />
               <span>Doorgaan op het Web</span>
@@ -217,7 +256,7 @@ export const DesktopAppPromptModal: React.FC<DesktopAppPromptModalProps> = ({
               />
               <span>Onthoud mijn keuze (niet meer vragen)</span>
             </label>
-            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.7.5</span>
+            <span className="text-[10px] text-zinc-500 font-mono">FTJM v2.7.7</span>
           </div>
         </motion.div>
       </motion.div>

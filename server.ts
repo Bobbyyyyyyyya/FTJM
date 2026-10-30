@@ -7,6 +7,7 @@ import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilde
 import { createClient } from '@supabase/supabase-js';
 import CryptoJS from 'crypto-js';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import { postgresSecurityMiddleware, getSecurityStats } from './server/postgresSecurityMiddleware';
 
 dotenv.config();
@@ -30,6 +31,95 @@ async function startServer() {
 
   app.use(express.json({ limit: '35mb' }));
   app.use(express.urlencoded({ limit: '35mb', extended: true }));
+
+  // Rate limiters to protect endpoints against DoS and satisfy CodeQL rules (#131, #132, #135, #136)
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: 'Te veel verzoeken, probeer het later opnieuw.' }
+  });
+
+  const uploadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: 'Uploadlimiet overschreden, probeer het later opnieuw.' }
+  });
+
+  const imageProxyLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: 'Te veel proxy-verzoeken.' }
+  });
+
+  const staticLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Apply general API rate limiter
+  app.use('/api', apiLimiter);
+
+  // SSRF Protection Helper Functions (resolves CodeQL #99)
+  function isSafeExternalHost(hostname: string): boolean {
+    const host = hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal') ||
+      host.endsWith('.lan') ||
+      host === 'metadata.google.internal' ||
+      host === 'metadata'
+    ) {
+      return false;
+    }
+
+    const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4Match) {
+      const [_, o1, o2, o3, o4] = ipv4Match.map(Number);
+      if (o1 > 255 || o2 > 255 || o3 > 255 || o4 > 255) return false;
+      if (o1 === 0 || o1 === 10 || o1 === 127) return false;
+      if (o1 === 169 && o2 === 254) return false;
+      if (o1 === 172 && o2 >= 16 && o2 <= 31) return false;
+      if (o1 === 192 && o2 === 168) return false;
+      if (o1 === 100 && o2 >= 64 && o2 <= 127) return false;
+      if (o1 >= 224) return false;
+    }
+
+    if (host.includes(':') || host.startsWith('[') || host.endsWith(']')) {
+      const cleanIpv6 = host.replace(/^\[|\]$/g, '');
+      if (
+        cleanIpv6 === '::1' ||
+        cleanIpv6 === '::' ||
+        cleanIpv6.startsWith('fe80:') ||
+        cleanIpv6.startsWith('fc00:') ||
+        cleanIpv6.startsWith('fd00:')
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function getSafeProxyTargetUrl(raw: string): string | null {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+      if (parsed.port && parsed.port !== '80' && parsed.port !== '443') return null;
+      if (!isSafeExternalHost(parsed.hostname)) return null;
+      return parsed.href;
+    } catch {
+      return null;
+    }
+  }
 
   const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
   const PUBLIC_DIR = path.join(process.cwd(), 'public');
@@ -211,7 +301,7 @@ async function startServer() {
   });
 
   // Image & Media Upload Endpoint (ImgBB with local persistent /uploads/ fallback)
-  app.post('/api/upload-image', async (req, res) => {
+  app.post('/api/upload-image', uploadLimiter, async (req, res) => {
     try {
       const { image, name, mimeType } = req.body;
       if (!image) {
@@ -316,7 +406,7 @@ async function startServer() {
   });
 
   // Image Proxy to resolve ImgBB viewer pages, CDN URLs, and bypass adblockers
-  app.get('/api/image-proxy', async (req, res) => {
+  app.get('/api/image-proxy', imageProxyLimiter, async (req, res) => {
     try {
       let targetUrl = req.query.url as string;
       if (!targetUrl || typeof targetUrl !== 'string') {
@@ -347,7 +437,15 @@ async function startServer() {
       // Check if it is an ImgBB HTML viewer link (e.g. https://ibb.co/xyz)
       const isIbbViewer = targetUrl.includes('ibb.co/') && !targetUrl.includes('i.ibb.co/');
 
-      let response = await fetch(targetUrl, {
+      // Strict SSRF check before requesting remote URL
+      const safeTargetUrl = getSafeProxyTargetUrl(targetUrl);
+      if (!safeTargetUrl) {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.status(200).send(TRANSPARENT_PNG);
+      }
+
+      let response = await fetch(safeTargetUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,text/html,*/*;q=0.8',
@@ -374,9 +472,10 @@ async function startServer() {
                         html.match(/https:\/\/i\.ibb\.co\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+/i);
 
         const directImgUrl = ogMatch ? (ogMatch[1] || ogMatch[0]) : null;
+        const safeDirectUrl = directImgUrl ? getSafeProxyTargetUrl(directImgUrl) : null;
 
-        if (directImgUrl && (directImgUrl.startsWith('http://') || directImgUrl.startsWith('https://'))) {
-          const directResponse = await fetch(directImgUrl, {
+        if (safeDirectUrl) {
+          const directResponse = await fetch(safeDirectUrl, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
               'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
@@ -727,7 +826,7 @@ async function startServer() {
   });
 
   // Serve compiled assets under /assets/ or return 404 if chunk does not exist
-  app.use('/assets', (req, res, next) => {
+  app.use('/assets', staticLimiter, (req, res, next) => {
     const distAssetPath = path.join(process.cwd(), 'dist', 'assets', path.basename(req.path));
     if (fs.existsSync(distAssetPath)) {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -758,7 +857,7 @@ async function startServer() {
     }));
 
     // SPA fallback: Send index.html with NO CACHE
-    app.get('*', (req, res) => {
+    app.get('*', staticLimiter, (req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
       res.sendFile(path.join(distPath, 'index.html'));
     });

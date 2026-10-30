@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PhoneOff, Mic, MicOff, User, Volume2, VolumeX, Users, Video, VideoOff } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, Volume2, VolumeX, Users, Video, VideoOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GroupCallState, GroupParticipant } from '../hooks/useGroupVoiceCall';
 import { getSafeImageUrl, handleImageError } from '../utils/helpers';
+import { LetterAvatar } from './UserAvatar';
 
 interface GroupVoiceCallUIProps {
   state: GroupCallState;
@@ -73,7 +74,7 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-neutral-950 flex flex-col p-6 overflow-hidden animate-fade-in"
+      className="fixed inset-0 z-[200] bg-[#07070d] flex flex-col p-6 overflow-hidden select-none"
     >
       {/* Participant Audio Elements */}
       {participantList.map(p => (
@@ -88,34 +89,32 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
 
       {/* Header */}
       <div className="relative z-10 flex items-center justify-between mb-6 shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-app-accent flex items-center justify-center ring-1 ring-white/10 shadow-lg">
-            <Users className="w-6 h-6 text-white" />
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shadow-lg">
+            <Users className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">{roomName}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500/80">
-                Live Groeps{isVideoCall ? 'video' : 'voice'}call • {formatDuration(duration)}
+            <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">{roomName}</h1>
+            <div className="flex items-center gap-2 mt-0.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[11px] font-semibold text-emerald-400/90 font-mono">
+                Live Groepscall • {formatDuration(duration)}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setShowParticipantsList(prev => !prev)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all backdrop-blur-md cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border transition-all backdrop-blur-md cursor-pointer text-xs font-semibold ${
               showParticipantsList
-                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-emerald-500/10'
-                : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10 hover:text-white'
             }`}
           >
             <Users className="w-4 h-4" />
-            <span className="text-xs font-bold leading-none">
-              {participantList.length + 1} deelnemers
-            </span>
+            <span>{participantList.length + 1} deelnemers</span>
           </button>
         </div>
       </div>
@@ -170,75 +169,73 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
               initial={{ x: 300, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 300, opacity: 0 }}
-              className="w-80 shrink-0 border border-white/10 rounded-[32px] p-6 flex flex-col h-full bg-neutral-950/20 backdrop-blur-3xl relative z-10"
+              className="w-80 shrink-0 border border-white/10 rounded-3xl p-5 flex flex-col h-full bg-neutral-950/80 backdrop-blur-2xl relative z-10"
               id="group-call-sidebar"
             >
-              <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-6 shrink-0">
-                <span className="text-sm font-bold text-white tracking-wide uppercase">Deelnemers ({participantList.length + 1})</span>
+              <div className="flex items-center justify-between pb-3.5 border-b border-white/10 mb-4 shrink-0">
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Deelnemers ({participantList.length + 1})
+                </span>
                 <button 
                   onClick={() => setShowParticipantsList(false)}
-                  className="text-white/40 hover:text-white transition-colors text-xs uppercase font-bold"
+                  className="text-white/40 hover:text-white transition-colors text-xs font-semibold cursor-pointer"
                 >
                   Sluiten
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                {/* Me */}
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
+              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 custom-scrollbar">
+                {/* Me in list */}
+                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-white/10">
                       {user.photoURL ? (
                         <img src={getSafeImageUrl(user.photoURL)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <User className="w-5 h-5 text-white/40" />
-                        </div>
+                        <LetterAvatar name="Jij" className="w-full h-full rounded-full" />
                       )}
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-white leading-none">Jij</span>
-                      <span className="text-[10px] text-white/40 mt-1 font-semibold tracking-wide uppercase">Organisator</span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-sm font-semibold text-white truncate">Jij</span>
+                      <span className="text-[10px] text-white/40 font-medium">Jouw microfoon</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     {isMuted ? (
-                      <MicOff className="w-4 h-4 text-amber-500" />
+                      <MicOff className="w-4 h-4 text-amber-400" />
                     ) : (
-                      <Mic className="w-4 h-4 text-emerald-500" />
+                      <Mic className="w-4 h-4 text-emerald-400" />
                     )}
                     {isVideoCall && (
                       isVideoMuted ? (
-                        <VideoOff className="w-4 h-4 text-amber-500" />
+                        <VideoOff className="w-4 h-4 text-amber-400" />
                       ) : (
-                        <Video className="w-4 h-4 text-emerald-500" />
+                        <Video className="w-4 h-4 text-emerald-400" />
                       )
                     )}
                   </div>
                 </div>
 
-                {/* Others */}
+                {/* Others in list */}
                 {participantList.map(p => (
-                  <div key={p.uid} className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
+                  <div key={p.uid} className="flex items-center justify-between p-2.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-white/10">
                         {p.photo_url?.trim() ? (
                           <img src={getSafeImageUrl(p.photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-white/40" />
-                          </div>
+                          <LetterAvatar name={p.name} className="w-full h-full rounded-full" />
                         )}
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-white leading-none">{p.name}</span>
-                        <div className="flex items-center gap-1.5 mt-1.5">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-semibold text-white truncate">{p.name}</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
                           {p.isMuted && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 uppercase tracking-widest">Muted</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 uppercase tracking-wider">Gedempt</span>
                           )}
                           {locallyMutedUsers.includes(p.uid) && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-500 uppercase tracking-widest leading-none">Lokaal Gedempt</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 uppercase tracking-wider">Lokaal Stil</span>
                           )}
                         </div>
                       </div>
@@ -253,7 +250,7 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
                         }}
                         className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
                           locallyMutedUsers.includes(p.uid)
-                            ? 'bg-red-500/20 border-red-500/30 text-red-500 shadow-lg shadow-red-500/10'
+                            ? 'bg-red-500/20 border-red-500/30 text-red-400'
                             : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/15'
                         }`}
                         title={locallyMutedUsers.includes(p.uid) ? "Geluid herstellen" : "Lokaal dempen"}
@@ -273,53 +270,57 @@ export const GroupVoiceCallUI: React.FC<GroupVoiceCallUIProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Controls */}
-      <div className="relative z-10 flex items-center justify-center gap-5 mt-6 shrink-0">
-        <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={toggleMute}
-          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border backdrop-blur-md shadow-2xl cursor-pointer ${
-            isMuted 
-              ? 'bg-amber-500/20 border-amber-500/40 text-amber-500 shadow-amber-500/10' 
-              : 'bg-white/10 border-white/10 text-white hover:bg-white/20'
-          }`}
-          title={isMuted ? "Geluidsopname activeren" : "Geluidsopname dempen"}
-        >
-          {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-        </motion.button>
-
-        {isVideoCall && toggleVideo && (
+      {/* Streamlined Ergonomic Controls Dock */}
+      <div className="relative z-20 flex items-center justify-center pb-2 pt-4 shrink-0">
+        <div className="flex items-center gap-3 sm:gap-4 px-5 py-3 rounded-full bg-neutral-950/75 border border-white/10 backdrop-blur-2xl shadow-2xl">
+          {/* Mute */}
           <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={toggleVideo}
-            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border backdrop-blur-md shadow-2xl cursor-pointer ${
-              isVideoMuted 
-                ? 'bg-amber-500/20 border-amber-500/40 text-amber-500 shadow-amber-500/10' 
-                : 'bg-white/10 border-white/10 text-white hover:bg-white/20'
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleMute}
+            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
+              isMuted 
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]' 
+                : 'bg-white/10 border-white/15 text-white hover:bg-white/20'
             }`}
-            title={isVideoMuted ? "Camera inschakelen" : "Camera uitschakelen"}
+            title={isMuted ? "Microfoon inschakelen" : "Microfoon dempen"}
           >
-            {isVideoMuted ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+            {isMuted ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
           </motion.button>
-        )}
 
-        <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={leaveCall}
-          className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-2xl transition-all border border-red-400/20 cursor-pointer"
-          title="Gesprek verlaten"
-        >
-          <PhoneOff className="w-6 h-6" />
-        </motion.button>
+          {/* Video Toggle (if Video Call enabled) */}
+          {isVideoCall && toggleVideo && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={toggleVideo}
+              className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
+                isVideoMuted 
+                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]' 
+                  : 'bg-white/10 border-white/15 text-white hover:bg-white/20'
+              }`}
+              title={isVideoMuted ? "Camera aanzetten" : "Camera uitzetten"}
+            >
+              {isVideoMuted ? <VideoOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Video className="w-5 h-5 sm:w-6 sm:h-6" />}
+            </motion.button>
+          )}
+
+          {/* Leave Call */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={leaveCall}
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white flex items-center justify-center shadow-lg shadow-red-950/50 cursor-pointer border-none transition-all"
+            title="Groepscall verlaten"
+          >
+            <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
+          </motion.button>
+        </div>
       </div>
 
-      {/* Background Decor */}
+      {/* Ambient background blur */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-emerald-500/5 blur-[120px] rounded-full animate-pulse" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-blue-500/5 blur-[100px] rounded-full translate-x-1/2 translate-y-1/2" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-emerald-500/5 blur-[120px] rounded-full" />
       </div>
     </motion.div>
   );
@@ -351,11 +352,11 @@ const ParticipantCard = ({
   return (
     <motion.div 
       layout
-      className="relative flex flex-col items-center justify-center bg-white/5 border border-white/10 rounded-[32px] overflow-hidden group backdrop-blur-sm"
+      className="relative flex flex-col items-center justify-center bg-white/[0.03] border border-white/10 rounded-3xl overflow-hidden group backdrop-blur-md p-4"
     >
       {/* Video stream layer */}
       {isVideoCall && stream && (
-        <div className="absolute inset-0 z-0 overflow-hidden rounded-[32px]">
+        <div className="absolute inset-0 z-0 overflow-hidden rounded-3xl">
           <VideoStream 
             stream={stream} 
             muted={isMe} 
@@ -367,67 +368,60 @@ const ParticipantCard = ({
       )}
 
       {/* Profile Ring Overlay */}
-      <div className="relative z-10 w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden mb-4 ring-4 ring-white/5 group-hover:ring-white/10 transition-all shadow-2xl shrink-0">
+      <div className="relative z-10 w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full overflow-hidden mb-3 ring-4 ring-white/10 group-hover:ring-white/20 transition-all shadow-xl shrink-0">
         {photo_url?.trim() ? (
           <img src={getSafeImageUrl(photo_url)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={handleImageError} />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-white/5">
-            <User className="w-12 h-12 text-white/20" />
-          </div>
+          <LetterAvatar name={name} className="w-full h-full rounded-full" />
         )}
         
         {!isMuted && !isLocallyMuted && (
-          <div className="absolute inset-0 border-4 border-emerald-500 animate-pulse rounded-full" />
+          <div className="absolute inset-0 border-2 border-emerald-400 animate-pulse rounded-full" />
         )}
       </div>
 
-      <span className="relative z-10 text-lg font-bold text-white drop-shadow-md">{name}</span>
+      <span className="relative z-10 text-sm sm:text-base font-bold text-white drop-shadow-md truncate max-w-full px-2">
+        {name}
+      </span>
       
-      <div className="relative z-10 mt-2 flex items-center gap-2">
+      {/* Discrete status chip */}
+      <div className="relative z-10 mt-1.5 flex items-center gap-1.5">
         {isLocallyMuted ? (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/30">
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/30">
             <VolumeX className="w-3 h-3 text-red-400" />
-            <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Lokaal Stemloos</span>
+            <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider">Lokaal stil</span>
           </div>
         ) : isMuted ? (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-            <MicOff className="w-3 h-3 text-amber-500" />
-            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Gedempt</span>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30">
+            <MicOff className="w-3 h-3 text-amber-400" />
+            <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider">Gedempt</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-            <Volume2 className="w-3 h-3 text-emerald-500" />
-            <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Spreekt</span>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+            <Volume2 className="w-3 h-3 text-emerald-400" />
+            <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">Spreekt</span>
           </div>
         )}
 
-        {isVideoCall && (
-          isVideoMuted ? (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-              <VideoOff className="w-3 h-3 text-amber-500" />
-              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Cam Uit</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-              <Video className="w-3 h-3 text-emerald-500" />
-              <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Cam Aan</span>
-            </div>
-          )
+        {isVideoCall && isVideoMuted && (
+          <div className="flex items-center p-1 rounded-full bg-amber-500/15 border border-amber-500/30" title="Camera uit">
+            <VideoOff className="w-3 h-3 text-amber-400" />
+          </div>
         )}
       </div>
 
       {isMe && (
-        <div className="absolute top-4 right-4 px-2 py-1 rounded-lg bg-white/10 border border-white/10 backdrop-blur-md z-20">
-          <span className="text-[8px] font-black uppercase tracking-widest text-white/40">Jij</span>
+        <div className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-md bg-white/10 border border-white/10 backdrop-blur-md z-20">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-white/60">Jij</span>
         </div>
       )}
 
       {!isMe && onToggleLocalMute && (
         <button 
           onClick={onToggleLocalMute}
-          className={`absolute top-4 right-4 p-2 rounded-xl border backdrop-blur-md z-20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer ${
+          className={`absolute top-3.5 right-3.5 p-1.5 rounded-xl border backdrop-blur-md z-20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer ${
             isLocallyMuted 
-              ? 'bg-red-500/20 border-red-500/40 text-red-500' 
+              ? 'bg-red-500/20 border-red-500/40 text-red-400' 
               : 'bg-white/10 border-white/10 text-white/80 hover:bg-white/20'
           }`}
           title={isLocallyMuted ? "Geluid herstellen" : "Lokaal dempen"}

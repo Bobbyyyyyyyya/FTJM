@@ -24,7 +24,7 @@ content = content.replace(
 content = content.replace(/ascensionCount: number;\n  totalKittyPoints: number;/, "ascensionCount: number;\n  totalKittyPoints: number;\n  mysticMiceCaught: number;");
 
 // Update all occurrences of setStats initializations
-content = content.replace(/totalKittyPoints: 0(\n|\r\n|\s)*\}/g, "totalKittyPoints: 0,\n      mysticMiceCaught: 0\n    }");
+content = content.replace(/totalKittyPoints: 0\s*\}/g, "totalKittyPoints: 0,\n      mysticMiceCaught: 0\n    }");
 content = content.replace(/totalKittyPoints: data\.stats\.totalKittyPoints \|\| 0/, "totalKittyPoints: data.stats.totalKittyPoints || 0,\n            mysticMiceCaught: data.stats.mysticMiceCaught || 0");
 
 fs.writeFileSync('src/components/CatClickerGame.tsx', content);

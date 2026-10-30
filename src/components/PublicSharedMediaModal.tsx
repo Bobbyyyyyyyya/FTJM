@@ -482,7 +482,7 @@ export const PublicSharedMediaModal: React.FC<PublicSharedMediaModalProps> = ({
                 Wil je swipen, liken & reageren?
               </span>
             </div>
-            <span className="text-[10px] text-zinc-500 font-mono">FTJM v1.7.5</span>
+            <span className="text-[10px] text-zinc-500 font-mono">FTJM v2.7.7</span>
           </div>
 
           <button
