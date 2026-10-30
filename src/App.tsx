@@ -10624,9 +10624,11 @@ export default function App() {
                           const updated = list.map((pk: any) => {
                             if (!userEmail || pk.email?.toLowerCase() === userEmail.toLowerCase()) {
                               const secretKey = pk.credentialId + "_secure_passkey";
+                              const iv = CryptoJS.lib.WordArray.random(16);
                               const newEncryptedPayload = CryptoJS.AES.encrypt(
                                 JSON.stringify({ email: pk.email, password: newPass }),
-                                secretKey
+                                secretKey,
+                                { iv: iv }
                               ).toString();
                               return { ...pk, payload: newEncryptedPayload, updatedAt: new Date().toISOString() };
                             }

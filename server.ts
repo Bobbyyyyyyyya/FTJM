@@ -109,12 +109,30 @@ async function startServer() {
     return true;
   }
 
+  const ALLOWED_IMAGE_DOMAINS = [
+    'ibb.co',
+    'i.ibb.co',
+    'supabase.co',
+    'images.unsplash.com',
+    'ui-avatars.com',
+    'cdn.discordapp.com',
+    'media.discordapp.net',
+    'lh3.googleusercontent.com',
+    'googleusercontent.com'
+  ];
+
+  function isAllowedProxyHost(hostname: string): boolean {
+    const host = hostname.toLowerCase();
+    return ALLOWED_IMAGE_DOMAINS.some(allowed => host === allowed || host.endsWith('.' + allowed));
+  }
+
   function getSafeProxyTargetUrl(raw: string): string | null {
     try {
       const parsed = new URL(raw);
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
       if (parsed.port && parsed.port !== '80' && parsed.port !== '443') return null;
       if (!isSafeExternalHost(parsed.hostname)) return null;
+      if (!isAllowedProxyHost(parsed.hostname)) return null;
       return parsed.href;
     } catch {
       return null;

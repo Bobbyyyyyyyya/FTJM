@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { AudioLog, SupabaseErrorInfo, AdminNotesData } from '../types';
 import { supabase } from './supabase';
 import { compressVideo } from './videoCompressor';
@@ -1529,38 +1530,38 @@ export const sanitizeCustomTheme = (theme: any): any => {
  */
 export const getSafeImageUrl = (url?: string | null): string => {
   if (!url || typeof url !== 'string') return '';
-  const clean = url.trim();
-  if (!clean) return '';
+  const sanitized = DOMPurify.sanitize(url.trim(), { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  if (!sanitized) return '';
 
   // Block dangerous pseudo-protocols like javascript:, vbscript:, and non-image data URIs
-  if (/^(?:javascript|vbscript|data:(?!image\/(?:png|jpeg|jpg|webp|gif|svg\+xml|avif);base64,))/i.test(clean)) {
+  if (/^(?:javascript|vbscript|data:(?!image\/(?:png|jpeg|jpg|webp|gif|svg\+xml|avif);base64,))/i.test(sanitized)) {
     return '';
   }
 
   // Allow verified safe image data URIs and blob URLs
-  if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
-    return clean;
+  if (sanitized.startsWith('data:image/') || sanitized.startsWith('blob:')) {
+    return sanitized;
   }
 
   // Allow internal relative URLs
-  if (clean.startsWith('/api/image-proxy')) {
-    return clean;
+  if (sanitized.startsWith('/api/image-proxy')) {
+    return sanitized;
   }
-  if (clean.startsWith('/uploads/') || clean.startsWith('/assets/') || clean.startsWith('/avatars/')) {
-    return clean;
+  if (sanitized.startsWith('/uploads/') || sanitized.startsWith('/assets/') || sanitized.startsWith('/avatars/')) {
+    return encodeURI(sanitized);
   }
 
   // Route ImgBB URLs to the server image-proxy
-  if (clean.includes('ibb.co')) {
-    return `/api/image-proxy?url=${encodeURIComponent(clean)}`;
+  if (sanitized.includes('ibb.co')) {
+    return `/api/image-proxy?url=${encodeURIComponent(sanitized)}`;
   }
 
-  // Strict check for HTTP/HTTPS protocols
-  if (clean.startsWith('https://') || clean.startsWith('http://')) {
+  // Strict check for HTTP/HTTPS protocols and return parsed.href
+  if (sanitized.startsWith('https://') || sanitized.startsWith('http://')) {
     try {
-      const parsed = new URL(clean);
+      const parsed = new URL(sanitized);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        return clean;
+        return parsed.href;
       }
     } catch {
       return '';
@@ -1568,8 +1569,8 @@ export const getSafeImageUrl = (url?: string | null): string => {
   }
 
   // Handle local uploaded filename without leading slash (e.g. 1787748721080_h9vdr68.jpg)
-  if (/^[a-zA-Z0-9_\-\.]+$/.test(clean)) {
-    return `/uploads/${clean}`;
+  if (/^[a-zA-Z0-9_\-\.]+$/.test(sanitized)) {
+    return `/uploads/${encodeURIComponent(sanitized)}`;
   }
 
   return '';

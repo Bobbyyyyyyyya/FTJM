@@ -3,23 +3,25 @@ import { X, Scissors, Play, Pause, Film, Clock, Sparkles, Zap, ShieldCheck } fro
 import { motion } from 'motion/react';
 import { compressVideo } from '../utils/videoCompressor';
 import { ThemedSpinner } from './ThemedLoadingScreen';
+import DOMPurify from 'dompurify';
 
 const getSafeVideoUrl = (url?: string): string => {
   if (!url || typeof url !== 'string') return '';
-  const clean = url.trim();
-  if (/^(?:javascript|vbscript):/i.test(clean)) return '';
-  if (clean.startsWith('blob:') || clean.startsWith('data:video/')) return clean;
-  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+  const sanitized = DOMPurify.sanitize(url.trim(), { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  if (!sanitized) return '';
+  if (/^(?:javascript|vbscript):/i.test(sanitized)) return '';
+  if (sanitized.startsWith('blob:') || sanitized.startsWith('data:video/')) return sanitized;
+  if (sanitized.startsWith('http://') || sanitized.startsWith('https://')) {
     try {
-      const parsed = new URL(clean);
+      const parsed = new URL(sanitized);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        return clean;
+        return parsed.href;
       }
     } catch {
       return '';
     }
   }
-  if (clean.startsWith('/')) return clean;
+  if (sanitized.startsWith('/')) return encodeURI(sanitized);
   return '';
 };
 
