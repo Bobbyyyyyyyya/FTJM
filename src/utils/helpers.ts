@@ -255,9 +255,19 @@ export const playSound = (url: string, enabled: boolean, userId?: string, userNa
 
   let resolvedUrl = urlMapping[url] || url;
 
+  const isYouTubeUrl = (testUrl: string): boolean => {
+    try {
+      const parsed = new URL(testUrl);
+      const host = parsed.hostname.toLowerCase();
+      return host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com' || host === 'youtu.be';
+    } catch {
+      return false;
+    }
+  };
+
   // Add cache-busting to bypass browser-level corrupt/incomplete cached ranges
   if (resolvedUrl && typeof resolvedUrl === 'string' && !resolvedUrl.startsWith('data:')) {
-    const isYt = /(?:youtube\.com|youtu\.be)/i.test(resolvedUrl);
+    const isYt = isYouTubeUrl(resolvedUrl);
     if (!isYt) {
       if (resolvedUrl.startsWith('/')) {
         resolvedUrl += (resolvedUrl.includes('?') ? '&' : '?') + 'v=3.2';
@@ -269,7 +279,7 @@ export const playSound = (url: string, enabled: boolean, userId?: string, userNa
             resolvedUrl = urlObj.toString();
           }
         } catch (e) {
-          if (!resolvedUrl.includes('youtube.com') && !resolvedUrl.includes('youtu.be')) {
+          if (!isYouTubeUrl(resolvedUrl)) {
             resolvedUrl += (resolvedUrl.includes('?') ? '&' : '?') + 'v=3.2';
           }
         }
@@ -283,24 +293,27 @@ export const playSound = (url: string, enabled: boolean, userId?: string, userNa
     const ytMatch = resolvedUrl.match(ytRegex);
 
     if (ytMatch) {
-      const videoId = ytMatch[1];
-      console.log('YouTube sound detected:', videoId);
-      logAudioEvent(resolvedUrl, 'success', `YouTube audio gestart: ${videoId}`, userId, userName);
-      let iframe = document.getElementById('yt-audio-player') as HTMLIFrameElement;
-      if (!iframe) {
-        iframe = document.createElement('iframe');
-        iframe.id = 'yt-audio-player';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        iframe.style.position = 'absolute';
-        iframe.style.visibility = 'hidden';
-        iframe.allow = "autoplay";
-        document.body.appendChild(iframe);
+      const rawVideoId = ytMatch[1];
+      if (/^[a-zA-Z0-9_-]{11}$/.test(rawVideoId)) {
+        const videoId = encodeURIComponent(rawVideoId);
+        console.log('YouTube sound detected:', videoId);
+        logAudioEvent(resolvedUrl, 'success', `YouTube audio gestart: ${videoId}`, userId, userName);
+        let iframe = document.getElementById('yt-audio-player') as HTMLIFrameElement;
+        if (!iframe) {
+          iframe = document.createElement('iframe');
+          iframe.id = 'yt-audio-player';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = '0';
+          iframe.style.position = 'absolute';
+          iframe.style.visibility = 'hidden';
+          iframe.allow = "autoplay";
+          document.body.appendChild(iframe);
+        }
+        const safeOrigin = typeof window !== 'undefined' ? encodeURIComponent(window.location.origin) : '';
+        iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&controls=0&mute=0&rel=0&origin=${safeOrigin}&v=${Date.now()}`;
+        return;
       }
-      // Use a random param to force reload and autoplay
-      iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=0&mute=0&rel=0&origin=${window.location.origin}&v=${Date.now()}`;
-      return;
     }
 
     console.log('Attempting to play sound:', resolvedUrl);

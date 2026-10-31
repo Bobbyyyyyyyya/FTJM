@@ -110,7 +110,7 @@ import { UpdateModal } from './components/UpdateModal';
 import { PremadeCharacterModal } from './components/PremadeCharacterModal';
 import { PREMADE_CHARACTERS } from './data/premadeCharacters';
 
-import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage } from './utils/encryption';
+import { encryptGeneralChat, decryptGeneralChat, secureLocalStorage, encryptPasskeyPayload, decryptPasskeyPayload } from './utils/encryption';
 import { saveDMsBatchLocally, getLocalDMsForConversation, savePostsBatchLocally, getLocalPosts, deletePostLocally, deleteDMLocally } from './utils/localMessageArchive';
 import { runAutoBase64Migration, containsBase64DataUrl, migrateFeedMediaList } from './utils/base64Migration';
 import { rateLimiter } from './utils/rateLimiter';
@@ -2248,10 +2248,9 @@ export default function App() {
         throw new Error("Deze passkey is niet herkend op dit apparaat.");
       }
 
-      // Decrypt credentials
+      // Decrypt credentials with PBKDF2 (resolves CodeQL #32 & #58)
       const secretKey = assertion.id + "_secure_passkey";
-      const decryptedBytes = CryptoJS.AES.decrypt(matchingRecord.payload, secretKey);
-      const decryptedText = decryptedBytes.toString(CryptoJS.enc.Utf8);
+      const decryptedText = decryptPasskeyPayload(matchingRecord.payload, secretKey);
       
       if (!decryptedText) {
         throw new Error("Kan de opgeslagen accountgegevens niet ontsleutelen met de passkey.");
@@ -10624,12 +10623,10 @@ export default function App() {
                           const updated = list.map((pk: any) => {
                             if (!userEmail || pk.email?.toLowerCase() === userEmail.toLowerCase()) {
                               const secretKey = pk.credentialId + "_secure_passkey";
-                              const iv = CryptoJS.lib.WordArray.random(16);
-                              const newEncryptedPayload = CryptoJS.AES.encrypt(
-                                JSON.stringify({ email: pk.email, password: newPass }),
-                                secretKey,
-                                { iv: iv }
-                              ).toString();
+                              const newEncryptedPayload = encryptPasskeyPayload(
+                                { email: pk.email, password: newPass },
+                                secretKey
+                              );
                               return { ...pk, payload: newEncryptedPayload, updatedAt: new Date().toISOString() };
                             }
                             return pk;

@@ -446,5 +446,35 @@ export const secureSupabaseStorage = {
   }
 };
 
-// No aggressive auto-clear timers. Storage values are encrypted with AES and signed with HMAC for security.
+/**
+ * Cryptographically secure passkey credential encryption using PBKDF2 with 10,000 iterations and random IV.
+ * Resolves CodeQL alerts #32 (insufficient computational effort) and #58 (insecure randomness).
+ */
+export const encryptPasskeyPayload = (data: object, secretKey: string): string => {
+  const salt = CryptoJS.lib.WordArray.random(16);
+  const iv = CryptoJS.lib.WordArray.random(16);
+  const derivedKey = CryptoJS.PBKDF2(secretKey, salt, {
+    keySize: 256 / 32,
+    iterations: 10000
+  });
+  const encrypted = CryptoJS.AES.encrypt(JSON.stringify(data), derivedKey, { iv: iv });
+  return `pbkdf2:${salt.toString()}:${iv.toString()}:${encrypted.toString()}`;
+};
 
+export const decryptPasskeyPayload = (payload: string, secretKey: string): string => {
+  if (payload.startsWith('pbkdf2:')) {
+    const parts = payload.split(':');
+    const salt = CryptoJS.enc.Hex.parse(parts[1]);
+    const iv = CryptoJS.enc.Hex.parse(parts[2]);
+    const cipherText = parts[3];
+    const derivedKey = CryptoJS.PBKDF2(secretKey, salt, {
+      keySize: 256 / 32,
+      iterations: 10000
+    });
+    const decrypted = CryptoJS.AES.decrypt(cipherText, derivedKey, { iv: iv });
+    return decrypted.toString(CryptoJS.enc.Utf8);
+  }
+  // Backward compatibility with legacy OpenSSL AES encryption format
+  const decryptedBytes = CryptoJS.AES.decrypt(payload, secretKey);
+  return decryptedBytes.toString(CryptoJS.enc.Utf8);
+};

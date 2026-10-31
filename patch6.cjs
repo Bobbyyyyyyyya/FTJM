@@ -10,7 +10,6 @@ const synergyKittensLogic = `
     }`;
 
 content = content.replace(/tps \*= 1\.5;\n    \}/, "tps *= 1.5;\n    }\n" + synergyKittensLogic);
-content = content.replace(/useCallback\(\(bId: string, bBaseTps: number\) => \{/, "useCallback((bId: string, bBaseTps: number) => {");
 content = content.replace(/\}?, \[upgrades, ascensionUpgrades\]\);/, "}, [upgrades, ascensionUpgrades, buildings]);");
 
 // 2. Heavenly Paws 2 in calculateTps

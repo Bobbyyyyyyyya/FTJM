@@ -4,6 +4,7 @@ import { UserCog, Bell, Palette, Shield, User as UserIcon, Users, Camera, Save, 
 import { toast } from 'sonner';
 import { rateLimiter } from '../utils/rateLimiter';
 import CryptoJS from 'crypto-js';
+import { encryptPasskeyPayload } from '../utils/encryption';
 import { UserProfile, CustomTheme, NotificationSettings, User, Report, Conversation, ModernUICustomization } from '../types';
 import { SOUND_OPTIONS, RINGTONE_OPTIONS, PATTERNS, isVerifiedEmail, isBetaTester, APP_VERSION } from '../constants';
 import { VerifiedBadge } from './VerifiedBadge';
@@ -881,13 +882,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         throw new Error("WebAuthn registratie is geannuleerd.");
       }
 
-      // 3. Encrypt password and store
+      // 3. Encrypt password with PBKDF2 (resolves CodeQL #32 & #58) and store
       const credentialId = credential.id;
       const secretKey = credentialId + "_secure_passkey";
-      const encryptedPayload = CryptoJS.AES.encrypt(
-        JSON.stringify({ email: user.email, password: passwordConfirm }),
+      const encryptedPayload = encryptPasskeyPayload(
+        { email: user.email, password: passwordConfirm },
         secretKey
-      ).toString();
+      );
 
       const newPasskey = {
         credentialId: credentialId,
@@ -1022,10 +1023,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       // 4. Als er een passkey gekoppeld is, update de versleutelde credentials in localStorage zodat inloggen met passkey blijft werken
       if (userPasskey) {
         const secretKey = userPasskey.credentialId + "_secure_passkey";
-        const newEncryptedPayload = CryptoJS.AES.encrypt(
-          JSON.stringify({ email: user.email, password: newTrimmed }),
+        const newEncryptedPayload = encryptPasskeyPayload(
+          { email: user.email, password: newTrimmed },
           secretKey
-        ).toString();
+        );
 
         const updatedList = passkeyList.map((pk: any) => {
           if (pk.credentialId === userPasskey.credentialId) {
