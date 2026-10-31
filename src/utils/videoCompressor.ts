@@ -17,6 +17,8 @@ export interface VideoCompressionOptions {
  * Compresses a video File, Blob, or data:video Data URL.
  * Returns an optimized data:video URL.
  */
+import DOMPurify from 'dompurify';
+
 export const compressVideo = async (
   input: File | Blob | string,
   options: VideoCompressionOptions = {}
@@ -35,25 +37,28 @@ export const compressVideo = async (
     let videoSrc = '';
 
     if (typeof input === 'string') {
-      const clean = input.trim();
-      if (/^(?:javascript|vbscript):/i.test(clean)) {
+      const sanitized = DOMPurify.sanitize(input.trim(), { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+      if (!sanitized || /^(?:javascript|vbscript):/i.test(sanitized)) {
         resolve('');
         return;
       }
-      if (clean.startsWith('blob:') || clean.startsWith('data:video/')) {
-        videoSrc = clean;
-      } else if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      if (sanitized.startsWith('blob:') || sanitized.startsWith('data:video/')) {
+        videoSrc = sanitized;
+      } else if (sanitized.startsWith('http://') || sanitized.startsWith('https://')) {
         try {
-          const parsed = new URL(clean);
+          const parsed = new URL(sanitized);
           if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            videoSrc = clean;
+            videoSrc = parsed.href;
+          } else {
+            resolve('');
+            return;
           }
         } catch {
           resolve('');
           return;
         }
-      } else if (clean.startsWith('/')) {
-        videoSrc = clean;
+      } else if (sanitized.startsWith('/')) {
+        videoSrc = encodeURI(sanitized);
       } else {
         resolve('');
         return;
