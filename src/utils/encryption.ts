@@ -447,34 +447,62 @@ export const secureSupabaseStorage = {
 };
 
 /**
- * Cryptographically secure passkey credential encryption using PBKDF2 with 10,000 iterations and random IV.
- * Resolves CodeQL alerts #32 (insufficient computational effort) and #58 (insecure randomness).
+ * Retrieves or generates a cryptographically secure device master key using Web Crypto CSPRNG.
+ * Ensures the root key material is always generated from cryptographically secure random values.
  */
-export const encryptPasskeyPayload = (data: object, secretKey: string): string => {
-  const salt = CryptoJS.lib.WordArray.random(16);
+const getPasskeyDeviceKey = (): string => {
+  const KEY_STORAGE = 'ftjm_pk_device_master_key';
+  let k = nativeGetItem(KEY_STORAGE);
+  if (!k) {
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const arr = new Uint8Array(32);
+      crypto.getRandomValues(arr);
+      k = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+    } else {
+      k = CryptoJS.lib.WordArray.random(32).toString();
+    }
+    nativeSetItem(KEY_STORAGE, k);
+  }
+  return k;
+};
+
+/**
+ * Cryptographically secure passkey credential encryption using CSPRNG master key,
+ * PBKDF2 with 100,000 iterations (OWASP recommendation), SHA-256, and random IV.
+ * Resolves CodeQL alerts #164 (insufficient computational effort) and #165, #166 (insecure randomness).
+ */
+export const encryptPasskeyPayload = (data: object, credentialId: string): string => {
+  const masterKey = getPasskeyDeviceKey();
+  const salt = CryptoJS.lib.WordArray.random(32);
   const iv = CryptoJS.lib.WordArray.random(16);
-  const derivedKey = CryptoJS.PBKDF2(secretKey, salt, {
+  const keyMaterial = masterKey + ":" + credentialId;
+  const derivedKey = CryptoJS.PBKDF2(keyMaterial, salt, {
     keySize: 256 / 32,
-    iterations: 10000
+    iterations: 100000,
+    hasher: CryptoJS.algo.SHA256
   });
   const encrypted = CryptoJS.AES.encrypt(JSON.stringify(data), derivedKey, { iv: iv });
   return `pbkdf2:${salt.toString()}:${iv.toString()}:${encrypted.toString()}`;
 };
 
-export const decryptPasskeyPayload = (payload: string, secretKey: string): string => {
+export const decryptPasskeyPayload = (payload: string, credentialId: string): string => {
   if (payload.startsWith('pbkdf2:')) {
     const parts = payload.split(':');
     const salt = CryptoJS.enc.Hex.parse(parts[1]);
     const iv = CryptoJS.enc.Hex.parse(parts[2]);
     const cipherText = parts[3];
-    const derivedKey = CryptoJS.PBKDF2(secretKey, salt, {
+    const masterKey = getPasskeyDeviceKey();
+    const keyMaterial = masterKey + ":" + credentialId;
+    const derivedKey = CryptoJS.PBKDF2(keyMaterial, salt, {
       keySize: 256 / 32,
-      iterations: 10000
+      iterations: 100000,
+      hasher: CryptoJS.algo.SHA256
     });
     const decrypted = CryptoJS.AES.decrypt(cipherText, derivedKey, { iv: iv });
     return decrypted.toString(CryptoJS.enc.Utf8);
   }
   // Backward compatibility with legacy OpenSSL AES encryption format
-  const decryptedBytes = CryptoJS.AES.decrypt(payload, secretKey);
+  const legacySecret = credentialId.includes('_secure_passkey') ? credentialId : credentialId + '_secure_passkey';
+  const decryptedBytes = CryptoJS.AES.decrypt(payload, legacySecret);
   return decryptedBytes.toString(CryptoJS.enc.Utf8);
 };

@@ -2248,9 +2248,8 @@ export default function App() {
         throw new Error("Deze passkey is niet herkend op dit apparaat.");
       }
 
-      // Decrypt credentials with PBKDF2 (resolves CodeQL #32 & #58)
-      const secretKey = assertion.id + "_secure_passkey";
-      const decryptedText = decryptPasskeyPayload(matchingRecord.payload, secretKey);
+      // Decrypt credentials with CSPRNG master key and 100,000 PBKDF2 iterations
+      const decryptedText = decryptPasskeyPayload(matchingRecord.payload, assertion.id);
       
       if (!decryptedText) {
         throw new Error("Kan de opgeslagen accountgegevens niet ontsleutelen met de passkey.");
@@ -10622,10 +10621,9 @@ export default function App() {
                           const userEmail = resetSentEmail || authEmail;
                           const updated = list.map((pk: any) => {
                             if (!userEmail || pk.email?.toLowerCase() === userEmail.toLowerCase()) {
-                              const secretKey = pk.credentialId + "_secure_passkey";
                               const newEncryptedPayload = encryptPasskeyPayload(
                                 { email: pk.email, password: newPass },
-                                secretKey
+                                pk.credentialId
                               );
                               return { ...pk, payload: newEncryptedPayload, updatedAt: new Date().toISOString() };
                             }

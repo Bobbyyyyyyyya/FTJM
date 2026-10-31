@@ -882,12 +882,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         throw new Error("WebAuthn registratie is geannuleerd.");
       }
 
-      // 3. Encrypt password with PBKDF2 (resolves CodeQL #32 & #58) and store
+      // 3. Encrypt credentials with CSPRNG master key and 100,000 PBKDF2 iterations
       const credentialId = credential.id;
-      const secretKey = credentialId + "_secure_passkey";
       const encryptedPayload = encryptPasskeyPayload(
         { email: user.email, password: passwordConfirm },
-        secretKey
+        credentialId
       );
 
       const newPasskey = {
@@ -1022,10 +1021,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       // 4. Als er een passkey gekoppeld is, update de versleutelde credentials in localStorage zodat inloggen met passkey blijft werken
       if (userPasskey) {
-        const secretKey = userPasskey.credentialId + "_secure_passkey";
         const newEncryptedPayload = encryptPasskeyPayload(
           { email: user.email, password: newTrimmed },
-          secretKey
+          userPasskey.credentialId
         );
 
         const updatedList = passkeyList.map((pk: any) => {
